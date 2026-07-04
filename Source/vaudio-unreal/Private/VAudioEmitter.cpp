@@ -63,7 +63,7 @@ void AVAudioEmitter::BeginPlay()
 	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
 
 	bool bSDKAffectsGrouped = bAffectsGroupedEAX && !bIsMainListener;
-	vaEmitterSetAffectsGroupedEax(Emitter, bSDKAffectsGrouped);
+	vaEmitterSetAffectsGroupedEAX(Emitter, bSDKAffectsGrouped);
 	vaEmitterSetHasRelativeReverb(Emitter, bIsMainListener);
 	UE_LOG(LogTemp, Log, TEXT("VA Emitter '%s': affectsGroupedEAX=%d (bAffectsGroupedEAX=%d bIsMainListener=%d)"),
 		*GetActorLabel(), (int32)bSDKAffectsGrouped, (int32)bAffectsGroupedEAX, (int32)bIsMainListener);
@@ -198,7 +198,7 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 		if (GEngine)
 		{
-			int32 Idx = vaEmitterGetGroupedEaxIndex(Emitter);
+			int32 Idx = vaEmitterGetGroupedEAXIndex(Emitter);
 			USoundSubmix* Submix = (AudioWorld && Idx >= 0) ? AudioWorld->GetGroupedEAXSubmix(Idx) : nullptr;
 			GEngine->AddOnScreenDebugMessage((uint64)this + 100, 0.0f, FColor::Cyan,
 				FString::Printf(TEXT("VA Source '%s': groupedEAXIndex=%d submix=%s sourceComp=%s"),
@@ -297,7 +297,7 @@ void AVAudioEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChang
 	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
 	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
 
-	vaEmitterSetAffectsGroupedEax(Emitter, bAffectsGroupedEAX && !bIsMainListener);
+	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX && !bIsMainListener);
 }
 #endif
 
@@ -347,7 +347,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 {
 	if (!SourceAudioComponent || !AudioWorld || !Emitter) return;
 
-	int32 NewIndex = vaEmitterGetGroupedEaxIndex(Emitter);
+	int32 NewIndex = vaEmitterGetGroupedEAXIndex(Emitter);
 
 	if (NewIndex != CurrentGroupedEAXIndex)
 	{
@@ -386,7 +386,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 			const VAEAXReverb* EAX = GroupedEAX[CurrentGroupedEAXIndex];
 			VAEmitter* ListenerVA = Listener->GetVAEmitter();
 
-			float* Gain = vaEaxReverbGetRelativeGain(EAX, ListenerVA);
+			float* Gain = vaEAXReverbGetRelativeGain(EAX, ListenerVA);
 			if (Gain)
 			{
 				DebugGain = *Gain;
