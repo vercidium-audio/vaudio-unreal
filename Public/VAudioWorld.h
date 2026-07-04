@@ -1,0 +1,145 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "SubmixEffects/AudioMixerSubmixEffectReverb.h"
+#include "Sound/SoundSubmix.h"
+#include "VAudioWorld.generated.h"
+
+struct VAWorld;
+struct VAMeshPrimitive;
+struct VACapsulePrimitive;
+struct VASpherePrimitive;
+struct VAPrismPrimitive;
+class AVAudioEmitter;
+class AVAudioMaterial;
+
+// Place one of these in your level. It owns the VA raytracing world and scans
+// for UVAudioMaterialComponent on BeginPlay to populate the scene geometry.
+UCLASS(DisplayName = "VA Audio World")
+class VERCIDIUMAUDIO_API AVAudioWorld : public AActor
+{
+	GENERATED_BODY()
+
+public:
+	AVAudioWorld();
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+public:
+	virtual void Tick(float DeltaTime) override;
+
+	// --- World bounds ---
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	FVector WorldPosition = FVector(-3000.f, -3000.f, -3000.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	FVector WorldSize = FVector(6000.f, 6000.f, 6000.f);
+
+	// --- Physics ---
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	float MetersPerUnit = 0.01f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	float SpeedOfSound = 343.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	bool bIsIndoors = false;
+
+	// Epsilon value used for ray offsets, world bounds clamping and line-of-sight tests.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	float Epsilon = 0.01f;
+
+	// --- Air Absorption ---
+
+	// Relative humidity as a percentage (0–1).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Humidity = 0.1f;
+
+	// Air temperature in degrees Celsius.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption")
+	float Temperature = 26.0f;
+
+	// Atmospheric pressure in Pascals.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0"))
+	float Pressure = 101325.0f;
+
+	// Low-frequency reference (Hz) for air absorption, reverb, and material scattering.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001"))
+	float ReferenceFrequencyLF = 300.0f;
+
+	// High-frequency reference (Hz) for air absorption, reverb, and material scattering.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001"))
+	float ReferenceFrequencyHF = 4000.0f;
+
+	// --- Reverb ---
+
+	// One submix per grouped EAX zone. The SDK assigns each source emitter a zone index;
+	// that index selects which submix its audio is sent to. Must have at least 2 entries.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb")
+	TArray<USoundSubmix*> GroupedEAXSubmixes;
+
+	// --- Emitters ---
+
+	// Whether emitters outside the world have 0 occlusion/permeation energy (true) or maximum energy (false).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Emitters")
+	bool bEmittersOutsideTheWorldAreMuffled = true;
+
+	// --- Threading ---
+
+	// Number of work items to split trails across for load balancing.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading", meta = (ClampMin = "1"))
+	int32 WorkItemCount = 128;
+
+	// Maximum number of background threads used for raytracing.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading", meta = (ClampMin = "1"))
+	int32 MaximumConcurrencyLevel = 4;
+
+	// When true, stops submitting work to background threads. Safe to destroy the world once threads have drained.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading")
+	bool bPendingShutdown = false;
+
+	// --- Mode ---
+
+	// Silence all direct audio but keep reverb submix sends active.
+	// Useful for auditioning the acoustic response of a space in isolation.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	bool bReverbOnly = false;
+
+	// --- Debug ---
+
+	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Export World"))
+	void ExportWorld();
+
+	// --- Internal API used by AVAudioEmitter ---
+
+	VAWorld* GetVAWorld() const { return World; }
+	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;
+	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
+	int32 GetGroupedEAXPresetCount() const { return GroupedEAXPresets.Num(); }
+	int32 GetMaximumGroupedEAXCount() const { return GroupedEAXSubmixes.Num(); }
+	void RegisterEmitter(AVAudioEmitter* Emitter);
+	void UnregisterEmitter(AVAudioEmitter* Emitter);
+	AVAudioEmitter* GetMainListener() const;
+
+private:
+	VAWorld* World = nullptr;
+
+	UPROPERTY()
+	TArray<USubmixEffectReverbPreset*> GroupedEAXPresets;
+
+	TArray<VAMeshPrimitive*>    MeshPrimitives;
+	TArray<VACapsulePrimitive*> CapsulePrimitives;
+	TArray<VASpherePrimitive*>  SpherePrimitives;
+	TArray<VAPrismPrimitive*>   PrismPrimitives;
+
+	TArray<AVAudioEmitter*> RegisteredEmitters;
+
+	void ApplyChildMaterials();
+	void ScanAndAddPrimitives();
+	void DestroyPrimitives();
+};

@@ -1,0 +1,164 @@
+#include "VAudioMaterial.h"
+#include "VAudioWorld.h"
+#include "Components/SceneComponent.h"
+
+extern "C" {
+#include "vaudio.h"
+}
+
+// Maps actor label strings to EVAudioMaterial enum values.
+static bool LabelToMaterialEnum(const FString& Label, EVAudioMaterial& Out)
+{
+	static const TMap<FString, EVAudioMaterial> Map = {
+		{ TEXT("Brick"),              EVAudioMaterial::Brick            },
+		{ TEXT("Cloth"),              EVAudioMaterial::Cloth            },
+		{ TEXT("Concrete"),           EVAudioMaterial::Concrete         },
+		{ TEXT("ConcretePolished"),   EVAudioMaterial::ConcretePolished },
+		{ TEXT("Concrete Polished"),  EVAudioMaterial::ConcretePolished },
+		{ TEXT("Dirt"),               EVAudioMaterial::Dirt             },
+		{ TEXT("Glass"),              EVAudioMaterial::Glass            },
+		{ TEXT("Grass"),              EVAudioMaterial::Grass            },
+		{ TEXT("Gravel"),             EVAudioMaterial::Gravel           },
+		{ TEXT("Gyprock"),            EVAudioMaterial::Gyprock          },
+		{ TEXT("Ice"),                EVAudioMaterial::Ice              },
+		{ TEXT("Leaf"),               EVAudioMaterial::Leaf             },
+		{ TEXT("Marble"),             EVAudioMaterial::Marble           },
+		{ TEXT("Metal"),              EVAudioMaterial::Metal            },
+		{ TEXT("Mud"),                EVAudioMaterial::Mud              },
+		{ TEXT("Rock"),               EVAudioMaterial::Rock             },
+		{ TEXT("Sand"),               EVAudioMaterial::Sand             },
+		{ TEXT("Snow"),               EVAudioMaterial::Snow             },
+		{ TEXT("Tile"),               EVAudioMaterial::Tile             },
+		{ TEXT("Tree"),               EVAudioMaterial::Tree             },
+		{ TEXT("Water"),              EVAudioMaterial::Water            },
+		{ TEXT("WoodIndoor"),         EVAudioMaterial::WoodIndoor       },
+		{ TEXT("Wood Indoor"),        EVAudioMaterial::WoodIndoor       },
+		{ TEXT("WoodOutdoor"),        EVAudioMaterial::WoodOutdoor      },
+		{ TEXT("Wood Outdoor"),       EVAudioMaterial::WoodOutdoor      },
+	};
+
+	const EVAudioMaterial* Found = Map.Find(Label);
+	if (Found)
+	{
+		Out = *Found;
+		return true;
+	}
+	return false;
+}
+
+static VAMaterialType EVAudioMaterialToVA(EVAudioMaterial M)
+{
+	switch (M)
+	{
+	case EVAudioMaterial::Brick:            return VAMaterialBrick;
+	case EVAudioMaterial::Cloth:            return VAMaterialCloth;
+	case EVAudioMaterial::Concrete:         return VAMaterialConcrete;
+	case EVAudioMaterial::ConcretePolished: return VAMaterialConcretePolished;
+	case EVAudioMaterial::Dirt:             return VAMaterialDirt;
+	case EVAudioMaterial::Glass:            return VAMaterialGlass;
+	case EVAudioMaterial::Grass:            return VAMaterialGrass;
+	case EVAudioMaterial::Gravel:           return VAMaterialGravel;
+	case EVAudioMaterial::Gyprock:          return VAMaterialGyprock;
+	case EVAudioMaterial::Ice:              return VAMaterialIce;
+	case EVAudioMaterial::Leaf:             return VAMaterialLeaf;
+	case EVAudioMaterial::Marble:           return VAMaterialMarble;
+	case EVAudioMaterial::Metal:            return VAMaterialMetal;
+	case EVAudioMaterial::Mud:              return VAMaterialMud;
+	case EVAudioMaterial::Rock:             return VAMaterialRock;
+	case EVAudioMaterial::Sand:             return VAMaterialSand;
+	case EVAudioMaterial::Snow:             return VAMaterialSnow;
+	case EVAudioMaterial::Tile:             return VAMaterialTile;
+	case EVAudioMaterial::Tree:             return VAMaterialTree;
+	case EVAudioMaterial::Water:            return VAMaterialWater;
+	case EVAudioMaterial::WoodIndoor:       return VAMaterialWoodIndoor;
+	case EVAudioMaterial::WoodOutdoor:      return VAMaterialWoodOutdoor;
+	default:                                return VAMaterialConcrete;
+	}
+}
+
+AVAudioMaterial::AVAudioMaterial()
+{
+	PrimaryActorTick.bCanEverTick = false;
+
+	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
+}
+
+bool AVAudioMaterial::ResolveMaterialType(EVAudioMaterial& OutMaterial) const
+{
+	return LabelToMaterialEnum(GetActorLabel(), OutMaterial);
+}
+
+VAWorld* AVAudioMaterial::GetOwningVAWorld() const
+{
+	AActor* Parent = GetAttachParentActor();
+	if (!Parent) return nullptr;
+	AVAudioWorld* AudioWorld = Cast<AVAudioWorld>(Parent);
+	if (!AudioWorld) return nullptr;
+	return AudioWorld->GetVAWorld();
+}
+
+void AVAudioMaterial::LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId)
+{
+	AbsorptionLF        = vaWorldGetMaterialAbsorptionLF(World, MaterialId);
+	AbsorptionHF        = vaWorldGetMaterialAbsorptionHF(World, MaterialId);
+	Scattering          = vaWorldGetMaterialScattering(World, MaterialId);
+	TransmissionLF      = vaWorldGetMaterialTransmissionLF(World, MaterialId);
+	TransmissionHF      = vaWorldGetMaterialTransmissionHF(World, MaterialId);
+	PlaneTransmissionLF = vaWorldGetMaterialPlaneTransmissionLF(World, MaterialId);
+	PlaneTransmissionHF = vaWorldGetMaterialPlaneTransmissionHF(World, MaterialId);
+}
+
+void AVAudioMaterial::ApplyToWorld(VAWorld* World) const
+{
+	EVAudioMaterial MatEnum;
+	if (!ResolveMaterialType(MatEnum))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': actor label doesn't match any built-in material name — no changes applied."), *GetActorLabel());
+		return;
+	}
+
+	int32 MaterialId = (int32)EVAudioMaterialToVA(MatEnum);
+	vaWorldSetMaterialAbsorptionLF(World,        MaterialId, AbsorptionLF);
+	vaWorldSetMaterialAbsorptionHF(World,        MaterialId, AbsorptionHF);
+	vaWorldSetMaterialScattering(World,          MaterialId, Scattering);
+	vaWorldSetMaterialTransmissionLF(World,      MaterialId, TransmissionLF);
+	vaWorldSetMaterialTransmissionHF(World,      MaterialId, TransmissionHF);
+	vaWorldSetMaterialPlaneTransmissionLF(World, MaterialId, PlaneTransmissionLF);
+	vaWorldSetMaterialPlaneTransmissionHF(World, MaterialId, PlaneTransmissionHF);
+}
+
+void AVAudioMaterial::ResetToDefaults()
+{
+	VAWorld* World = GetOwningVAWorld();
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': not attached to a VAudioWorld or world hasn't started — can't read defaults."), *GetActorLabel());
+		return;
+	}
+
+	EVAudioMaterial MatEnum;
+	if (!ResolveMaterialType(MatEnum))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': actor label doesn't match any built-in material name."), *GetActorLabel());
+		return;
+	}
+
+	int32 MaterialId = (int32)EVAudioMaterialToVA(MatEnum);
+	LoadDefaultsFromSDK(World, MaterialId);
+
+#if WITH_EDITOR
+	Modify();
+#endif
+}
+
+#if WITH_EDITOR
+void AVAudioMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	VAWorld* World = GetOwningVAWorld();
+	if (!World) return;
+
+	ApplyToWorld(World);
+}
+#endif
