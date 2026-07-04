@@ -108,7 +108,7 @@ void AVAudioWorld::BeginPlay()
 	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
 	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
 	if (bPendingShutdown)
-		vaWorldSetPendingShutdown(World);
+		vaWorldSetPendingShutdown(World, true);
 	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
 	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
 	vaWorldSetAirAbsorptionHumidity(World, Humidity);
