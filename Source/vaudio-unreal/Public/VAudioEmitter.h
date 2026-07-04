@@ -16,7 +16,7 @@ class AVAudioWorld;
 // Place this actor in the level for each audio source (or the player listener).
 // Assign the VAudioWorld reference and tune per-emitter ray settings in the Details panel.
 UCLASS(DisplayName = "VA Audio Emitter")
-class VERCIDIUMAUDIO_API AVAudioEmitter : public AActor
+class VAUDIOUNREAL_API AVAudioEmitter : public AActor
 {
 	GENERATED_BODY()
 

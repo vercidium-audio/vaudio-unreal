@@ -37,7 +37,7 @@ enum class EVAudioMaterial : uint8
 // acoustic raytracing. AVAudioWorld scans for this component on BeginPlay and
 // submits the actor's collision/mesh geometry to the VA raytracing world.
 UCLASS(ClassGroup = ("Vercidium Audio"), meta = (BlueprintSpawnableComponent), DisplayName = "VA Audio Material")
-class VERCIDIUMAUDIO_API UVAudioMaterialComponent : public UActorComponent
+class VAUDIOUNREAL_API UVAudioMaterialComponent : public UActorComponent
 {
 	GENERATED_BODY()
 

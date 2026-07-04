@@ -17,7 +17,7 @@ class AVAudioMaterial;
 // Place one of these in your level. It owns the VA raytracing world and scans
 // for UVAudioMaterialComponent on BeginPlay to populate the scene geometry.
 UCLASS(DisplayName = "VA Audio World")
-class VERCIDIUMAUDIO_API AVAudioWorld : public AActor
+class VAUDIOUNREAL_API AVAudioWorld : public AActor
 {
 	GENERATED_BODY()
 

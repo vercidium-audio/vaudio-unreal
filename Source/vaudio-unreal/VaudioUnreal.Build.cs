@@ -1,9 +1,9 @@
 using System.IO;
 using UnrealBuildTool;
 
-public class VercidiumAudio : ModuleRules
+public class VaudioUnreal : ModuleRules
 {
-	public VercidiumAudio(ReadOnlyTargetRules Target) : base(Target)
+	public VaudioUnreal(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 

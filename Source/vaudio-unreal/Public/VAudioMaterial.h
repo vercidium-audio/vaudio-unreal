@@ -12,7 +12,7 @@ struct VAWorld;
 // that material's defaults, then override individual properties as needed.
 // Changes to properties during PIE are applied immediately.
 UCLASS(DisplayName = "VA Audio Material")
-class VERCIDIUMAUDIO_API AVAudioMaterial : public AActor
+class VAUDIOUNREAL_API AVAudioMaterial : public AActor
 {
 	GENERATED_BODY()
 
