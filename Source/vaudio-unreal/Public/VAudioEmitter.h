@@ -173,4 +173,9 @@ private:
 	void ApplyGroupedEAXReverb();
 	void ApplyAmbientFilter();
 	void UpdateSourceSubmix();
+
+	// Creates the VA emitter and wires up audio components. Safe to call repeatedly:
+	// no-ops (returns true) if already initialized, returns false if AudioWorld's
+	// VAWorld isn't ready yet (actor BeginPlay order isn't guaranteed).
+	bool TryInitializeEmitter();
 };

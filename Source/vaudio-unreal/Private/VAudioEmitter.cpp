@@ -12,8 +12,11 @@ extern "C" {
 #include "vaudio.h"
 }
 
+#include "VaRawLog.h"
+
 AVAudioEmitter::AVAudioEmitter()
 {
+	VaRawLog(L"AVAudioEmitter::AVAudioEmitter() CONSTRUCTED");
 	PrimaryActorTick.bCanEverTick = true;
 
 	UBillboardComponent* Root = CreateDefaultSubobject<UBillboardComponent>(TEXT("Root"));
@@ -24,16 +27,39 @@ void AVAudioEmitter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	VaRawLog(L"AVAudioEmitter::BeginPlay ENTER '%s' bIsMainListener=%d HasAuthority=%d AudioWorld=%s",
+		*GetName(), (int32)bIsMainListener, (int32)HasAuthority(), AudioWorld ? *AudioWorld->GetName() : TEXT("NULL"));
+	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioEmitter::BeginPlay ENTER '%s' bIsMainListener=%d HasAuthority=%d AudioWorld=%s"),
+		*GetName(), (int32)bIsMainListener, (int32)HasAuthority(), AudioWorld ? *AudioWorld->GetName() : TEXT("NULL"));
+
 	if (!AudioWorld)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': AudioWorld is not assigned â€” emitter will not raytrace."), *GetActorLabel());
+		VaRawLog(L"'%s': AudioWorld is not assigned - emitter will not raytrace.", *GetName());
+		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': AudioWorld is not assigned - emitter will not raytrace."), *GetName());
 		return;
 	}
 
+	// AVAudioWorld may not have run its own BeginPlay yet (actor BeginPlay order is
+	// not guaranteed), in which case GetVAWorld() is still null here. TryInitializeEmitter()
+	// is safe to call repeatedly - it no-ops if Emitter is already set - so Tick() retries
+	// it every frame until AudioWorld's VAWorld becomes valid.
+	TryInitializeEmitter();
+}
+
+bool AVAudioEmitter::TryInitializeEmitter()
+{
+	if (Emitter) return true;
+	if (!AudioWorld) return false;
+
 	VAWorld* VAW = AudioWorld->GetVAWorld();
-	if (!VAW) return;
+	VaRawLog(L"'%s' GetVAWorld() returned %s", *GetName(), VAW ? L"valid" : L"NULL");
+	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' GetVAWorld() returned %s"), *GetName(), VAW ? TEXT("valid") : TEXT("NULL"));
+	if (!VAW) return false;
 
 	Emitter = vaEmitterCreate();
+	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' vaEmitterCreate() returned %s"), *GetName(), Emitter ? TEXT("valid") : TEXT("NULL"));
+	vaEmitterSetLogCallback(Emitter, &VaSdkLogCallback);
+	vaEmitterSetLogErrorCallback(Emitter, &VaSdkLogCallback);
 
 	FVector Pos = GetActorLocation();
 	vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Z, -(float)Pos.Y));
@@ -65,8 +91,14 @@ void AVAudioEmitter::BeginPlay()
 	bool bSDKAffectsGrouped = bAffectsGroupedEAX && !bIsMainListener;
 	vaEmitterSetAffectsGroupedEAX(Emitter, bSDKAffectsGrouped);
 	vaEmitterSetHasRelativeReverb(Emitter, bIsMainListener);
-	UE_LOG(LogTemp, Log, TEXT("VA Emitter '%s': affectsGroupedEAX=%d (bAffectsGroupedEAX=%d bIsMainListener=%d)"),
-		*GetActorLabel(), (int32)bSDKAffectsGrouped, (int32)bAffectsGroupedEAX, (int32)bIsMainListener);
+	UE_LOG(LogTemp, Warning, TEXT("VA Emitter '%s': affectsGroupedEAX=%d (bAffectsGroupedEAX=%d bIsMainListener=%d)"),
+		*GetName(), (int32)bSDKAffectsGrouped, (int32)bAffectsGroupedEAX, (int32)bIsMainListener);
+
+	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' ListenerReverbSubmix=%s AmbientSound=%s SourceSound=%s"),
+		*GetName(),
+		ListenerReverbSubmix ? *ListenerReverbSubmix->GetName() : TEXT("NULL"),
+		AmbientSound ? *AmbientSound->GetName() : TEXT("NULL"),
+		SourceSound ? *SourceSound->GetName() : TEXT("NULL"));
 
 	if (bIsMainListener)
 	{
@@ -79,6 +111,7 @@ void AVAudioEmitter::BeginPlay()
 		if (AmbientSound)
 		{
 			AmbientAudioComponent = UGameplayStatics::SpawnSound2D(GetWorld(), AmbientSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
+			UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' AmbientAudioComponent=%s"), *GetName(), AmbientAudioComponent ? TEXT("valid") : TEXT("NULL"));
 			if (AmbientAudioComponent)
 			{
 				AmbientAudioComponent->SetLowPassFilterEnabled(true);
@@ -109,6 +142,9 @@ void AVAudioEmitter::BeginPlay()
 		SourceAudioComponent = UGameplayStatics::SpawnSoundAtLocation(
 			GetWorld(), SourceSound, GetActorLocation(),
 			FRotator::ZeroRotator, 1.0f, 1.0f, 0.0f, nullptr, nullptr, bLooping);
+		UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' SourceAudioComponent=%s (SourceSound='%s' at %s)"),
+			*GetName(), SourceAudioComponent ? TEXT("valid") : TEXT("NULL"),
+			*SourceSound->GetName(), *GetActorLocation().ToString());
 		if (SourceAudioComponent)
 		{
 			SourceAudioComponent->SetSourceEffectChain(SourceEffectChain);
@@ -116,9 +152,16 @@ void AVAudioEmitter::BeginPlay()
 			// Submix assignment is deferred to Tick once the SDK assigns a groupedEAXIndex.
 		}
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' is a source emitter but SourceSound is NULL - no audio will play."), *GetName());
+	}
 
 	vaWorldAddEmitter(VAW, Emitter);
 	AudioWorld->RegisterEmitter(this);
+	VaRawLog(L"'%s' BeginPlay COMPLETE - registered with world '%s'", *GetName(), *AudioWorld->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' BeginPlay COMPLETE - registered with world '%s'"), *GetName(), *AudioWorld->GetName());
+	return true;
 }
 
 void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -161,7 +204,20 @@ void AVAudioEmitter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!Emitter) return;
+	if (!Emitter)
+	{
+		if (!TryInitializeEmitter())
+		{
+			static float TimeSinceLastNullLog = 0.0f;
+			TimeSinceLastNullLog += DeltaTime;
+			if (TimeSinceLastNullLog >= 2.0f)
+			{
+				TimeSinceLastNullLog = 0.0f;
+				UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' Tick() - Emitter still NULL, waiting on AudioWorld"), *GetName());
+			}
+			return;
+		}
+	}
 
 	if (bIsMainListener && !bTargetsRegistered)
 	{
@@ -171,8 +227,8 @@ void AVAudioEmitter::Tick(float DeltaTime)
 			if (Target && Target->GetVAEmitter())
 				vaEmitterAddTarget(Emitter, Target->GetVAEmitter());
 			else
-				UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': target '%s' has no VA emitter â€” skipping"),
-					*GetActorLabel(), Target ? *Target->GetActorLabel() : TEXT("null"));
+				UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': target '%s' has no VA emitter - skipping"),
+					*GetName(), Target ? *Target->GetName() : TEXT("null"));
 		}
 	}
 
@@ -202,7 +258,7 @@ void AVAudioEmitter::Tick(float DeltaTime)
 			USoundSubmix* Submix = (AudioWorld && Idx >= 0) ? AudioWorld->GetGroupedEAXSubmix(Idx) : nullptr;
 			GEngine->AddOnScreenDebugMessage((uint64)this + 100, 0.0f, FColor::Cyan,
 				FString::Printf(TEXT("VA Source '%s': groupedEAXIndex=%d submix=%s sourceComp=%s"),
-					*GetActorLabel(), Idx,
+					*GetName(), Idx,
 					Submix          ? TEXT("valid") : TEXT("null"),
 					SourceAudioComponent ? TEXT("valid") : TEXT("null")));
 		}
@@ -224,7 +280,7 @@ void AVAudioEmitter::Tick(float DeltaTime)
 			{
 				if (GEngine)
 					GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange,
-						FString::Printf(TEXT("VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f"), *Target->GetActorLabel(), F->gainLF, F->gainHF));
+						FString::Printf(TEXT("VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f"), *Target->GetName(), F->gainLF, F->gainHF));
 				Target->ApplySourceFilter(F->gainLF, F->gainHF);
 			}
 		}
@@ -352,7 +408,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 	if (NewIndex != CurrentGroupedEAXIndex)
 	{
 		UE_LOG(LogTemp, Log, TEXT("VA UpdateSourceSubmix '%s': groupedEAXIndex %d -> %d"),
-			*GetActorLabel(), CurrentGroupedEAXIndex, NewIndex);
+			*GetName(), CurrentGroupedEAXIndex, NewIndex);
 
 		if (CurrentGroupedEAXIndex >= 0)
 		{
@@ -404,7 +460,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 			? FString::Printf(TEXT("gain=%.3f send=%.3f"), DebugGain, SendLevel)
 			: TEXT("no relative data (listener not ready?)");
 		GEngine->AddOnScreenDebugMessage((uint64)this + 200, 0.0f, FColor::Magenta,
-			FString::Printf(TEXT("VA Relative '%s': %s"), *GetActorLabel(), *RelStr));
+			FString::Printf(TEXT("VA Relative '%s': %s"), *GetName(), *RelStr));
 	}
 }
 

@@ -85,7 +85,7 @@ AVAudioMaterial::AVAudioMaterial()
 
 bool AVAudioMaterial::ResolveMaterialType(EVAudioMaterial& OutMaterial) const
 {
-	return LabelToMaterialEnum(GetActorLabel(), OutMaterial);
+	return LabelToMaterialEnum(GetName(), OutMaterial);
 }
 
 VAWorld* AVAudioMaterial::GetOwningVAWorld() const
@@ -113,7 +113,7 @@ void AVAudioMaterial::ApplyToWorld(VAWorld* World) const
 	EVAudioMaterial MatEnum;
 	if (!ResolveMaterialType(MatEnum))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': actor label doesn't match any built-in material name — no changes applied."), *GetActorLabel());
+		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': actor name doesn't match any built-in material name - no changes applied."), *GetName());
 		return;
 	}
 
@@ -132,14 +132,14 @@ void AVAudioMaterial::ResetToDefaults()
 	VAWorld* World = GetOwningVAWorld();
 	if (!World)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': not attached to a VAudioWorld or world hasn't started — can't read defaults."), *GetActorLabel());
+		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': not attached to a VAudioWorld or world hasn't started - can't read defaults."), *GetName());
 		return;
 	}
 
 	EVAudioMaterial MatEnum;
 	if (!ResolveMaterialType(MatEnum))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': actor label doesn't match any built-in material name."), *GetActorLabel());
+		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': actor name doesn't match any built-in material name."), *GetName());
 		return;
 	}
 

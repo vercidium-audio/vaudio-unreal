@@ -15,6 +15,8 @@ extern "C" {
 #include "vaudio.h"
 }
 
+#include "VaRawLog.h"
+
 // ---------------------------------------------------------------------------
 // Helpers (identical coordinate remapping to the original BPLib)
 // ---------------------------------------------------------------------------
@@ -87,9 +89,13 @@ AVAudioWorld::AVAudioWorld()
 
 void AVAudioWorld::BeginPlay()
 {
+	VaRawLog(L"AVAudioWorld::BeginPlay ENTER '%s'", *GetName());
+
 	Super::BeginPlay();
 
 	World = vaWorldCreate();
+	vaWorldSetLogMemoryAllocationWarnings(World, true);
+	vaWorldSetLogCallback(World, &VaSdkLogCallback);
 	// VA coord system: X=UE_X, Y=UE_Z, Z=-UE_Y
 	// The Z axis is negated, so the min corner's Z = -(UE_Y_max) = -(WorldPosition.Y + WorldSize.Y)
 	vaWorldSetPosition(World, vaVectorCreate(
@@ -131,6 +137,9 @@ void AVAudioWorld::BeginPlay()
 
 	ApplyChildMaterials();
 	ScanAndAddPrimitives();
+
+	VaRawLog(L"AVAudioWorld '%s' BeginPlay COMPLETE, World=%s", *GetName(), World ? L"valid" : L"NULL");
+	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioWorld '%s' BeginPlay COMPLETE, World=%s"), *GetName(), World ? TEXT("valid") : TEXT("NULL"));
 }
 
 void AVAudioWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -152,9 +161,28 @@ void AVAudioWorld::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	static float TimeSinceHeartbeat = 0.0f;
+	TimeSinceHeartbeat += DeltaTime;
+	if (TimeSinceHeartbeat >= 2.0f)
+	{
+		TimeSinceHeartbeat = 0.0f;
+		VaRawLog(L"AVAudioWorld '%s' Tick heartbeat - World=%s RegisteredEmitters=%d",
+			*GetName(), World ? L"valid" : L"NULL", RegisteredEmitters.Num());
+		UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioWorld '%s' Tick heartbeat - World=%s RegisteredEmitters=%d"),
+			*GetName(), World ? TEXT("valid") : TEXT("NULL"), RegisteredEmitters.Num());
+	}
+
 	if (World)
 	{
 		vaWorldUpdate(World);
+
+		static uint32 FrameCounter = 0;
+		++FrameCounter;
+		if (FrameCounter % 60 == 0)
+		{
+			VaRawLog(L"AVAudioWorld '%s' RaytracingTime=%.3fms RegisteredEmitters=%d",
+				*GetName(), vaWorldGetRaytracingTime(World), RegisteredEmitters.Num());
+		}
 
 		bool bDryEnabled = !bReverbOnly;
 		for (AVAudioEmitter* E : RegisteredEmitters)
@@ -200,7 +228,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				FColor Color = bInBounds ? FColor::Green : FColor::Red;
 				GEngine->AddOnScreenDebugMessage(2000 + i, 0.0f, Color,
 					FString::Printf(TEXT("VA Emitter[%d] '%s': (%.1f, %.1f, %.1f) %s"),
-						i, *E->GetActorLabel(), P.X, P.Y, P.Z,
+						i, *E->GetName(), P.X, P.Y, P.Z,
 						bInBounds ? TEXT("[in bounds]") : TEXT("[OUT OF BOUNDS]")));
 			}
 		}
@@ -220,11 +248,19 @@ USubmixEffectReverbPreset* AVAudioWorld::GetGroupedEAXPreset(int32 Index) const
 void AVAudioWorld::RegisterEmitter(AVAudioEmitter* Emitter)
 {
 	RegisteredEmitters.AddUnique(Emitter);
+	VaRawLog(L"AVAudioWorld '%s' RegisterEmitter('%s') - now %d registered",
+		*GetName(), Emitter ? *Emitter->GetName() : L"NULL", RegisteredEmitters.Num());
+	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioWorld '%s' RegisterEmitter('%s') - now %d registered"),
+		*GetName(), Emitter ? *Emitter->GetName() : TEXT("NULL"), RegisteredEmitters.Num());
 }
 
 void AVAudioWorld::UnregisterEmitter(AVAudioEmitter* Emitter)
 {
 	RegisteredEmitters.Remove(Emitter);
+	VaRawLog(L"AVAudioWorld '%s' UnregisterEmitter('%s') - now %d registered",
+		*GetName(), Emitter ? *Emitter->GetName() : L"NULL", RegisteredEmitters.Num());
+	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioWorld '%s' UnregisterEmitter('%s') - now %d registered"),
+		*GetName(), Emitter ? *Emitter->GetName() : TEXT("NULL"), RegisteredEmitters.Num());
 }
 
 AVAudioEmitter* AVAudioWorld::GetMainListener() const
@@ -281,7 +317,7 @@ static UVAudioMaterialComponent* FindMaterialInChain(AActor* Actor)
 		{
 			if (A != Actor)
 				UE_LOG(LogTemp, Log, TEXT("VA:   '%s' inherits material from parent '%s'"),
-					*Actor->GetActorLabel(), *A->GetActorLabel());
+					*Actor->GetName(), *A->GetName());
 			return C;
 		}
 	}
@@ -316,12 +352,12 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		if (MeshComps.IsEmpty())
 		{
 			UE_LOG(LogTemp, Log, TEXT("VA: actor '%s' -> no static mesh components, skipping"),
-				*Actor->GetActorLabel());
+				*Actor->GetName());
 			continue;
 		}
 
 		UE_LOG(LogTemp, Log, TEXT("VA: actor '%s' -> material %d (%d mesh components)"),
-			*Actor->GetActorLabel(), (int32)Material, MeshComps.Num());
+			*Actor->GetName(), (int32)Material, MeshComps.Num());
 
 		for (UStaticMeshComponent* MeshComp : MeshComps)
 		{
