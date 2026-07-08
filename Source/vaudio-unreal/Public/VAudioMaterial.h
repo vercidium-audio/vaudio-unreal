@@ -31,13 +31,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float Scattering = 0.1f;
 
-	// Low-frequency energy lost (dB/m) when a permeation ray passes through this material
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0"))
-	float TransmissionLF = 50.0f;
+	// How many meters a ray must travel through a primitive before it loses all low-frequency energy (0.01 to max)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01"))
+	float TransmissionLF = 10.0f;
 
-	// High-frequency energy lost (dB/m) when a permeation ray passes through this material
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0"))
-	float TransmissionHF = 100.0f;
+	// How many meters a ray must travel through a primitive before it loses all high-frequency energy (0.01 to max)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01"))
+	float TransmissionHF = 5;
 
 	// Low-frequency energy lost when a permeation ray passes through a flat primitive (0.0 to 1.0)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))

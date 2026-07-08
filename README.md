@@ -44,7 +44,7 @@ Otherwise, just clone or extract this repository directly into `Plugins/vaudio-u
 
 ### 2. Add the Vercidium Audio SDK
 
-This plugin links against the native Vercidium Audio SDK, which is **not** included in this repository. It's expected to sit in a `ThirdParty/vaudio` folder at the root of your *project* (next to your `.uproject` file, not inside the plugin):
+This plugin links against the native Vercidium Audio SDK, which is not included in this repository. The SDK files must live in the `ThirdParty/vaudio` folder at the root of your project (next to your `.uproject` file, not inside the plugin):
 
 ```
 YourProject/ThirdParty/vaudio/include/vaudio.h
