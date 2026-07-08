@@ -49,7 +49,11 @@ void AVAudioEmitter::BeginPlay()
 bool AVAudioEmitter::TryInitializeEmitter()
 {
 	if (Emitter) return true;
-	if (!AudioWorld) return false;
+	if (!AudioWorld)
+	{
+		VaRawLog(L"AVAudioEmitter::TryInitializeEmitter() failed as AudioWorld is null");
+		return false;
+	}
 
 	VAWorld* VAW = AudioWorld->GetVAWorld();
 	VaRawLog(L"'%s' GetVAWorld() returned %s", *GetName(), VAW ? L"valid" : L"NULL");
@@ -206,8 +210,12 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 	if (!Emitter)
 	{
+		VaRawLog(L"Emitter is null");
+
 		if (!TryInitializeEmitter())
 		{
+			VaRawLog(L"Emitter init failed");
+
 			static float TimeSinceLastNullLog = 0.0f;
 			TimeSinceLastNullLog += DeltaTime;
 			if (TimeSinceLastNullLog >= 2.0f)
@@ -215,21 +223,37 @@ void AVAudioEmitter::Tick(float DeltaTime)
 				TimeSinceLastNullLog = 0.0f;
 				UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' Tick() - Emitter still NULL, waiting on AudioWorld"), *GetName());
 			}
+
 			return;
 		}
+
+		VaRawLog(L"Emitter init succeeded");
 	}
 
 	if (bIsMainListener && !bTargetsRegistered)
 	{
-		bTargetsRegistered = true;
+		bool bAllTargetsReady = true;
 		for (AVAudioEmitter* Target : TargetEmitters)
 		{
+			if (RegisteredTargets.Contains(Target))
+				continue;
+
 			if (Target && Target->GetVAEmitter())
+			{
 				vaEmitterAddTarget(Emitter, Target->GetVAEmitter());
+				RegisteredTargets.Add(Target);
+			}
 			else
-				UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': target '%s' has no VA emitter - skipping"),
+			{
+				// Target's BeginPlay/first Tick may not have run yet (actor init order
+				// isn't guaranteed). Don't latch bTargetsRegistered until every target
+				// has a VA emitter, otherwise stragglers are silently dropped forever.
+				bAllTargetsReady = false;
+				UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': target '%s' has no VA emitter yet - will retry"),
 					*GetName(), Target ? *Target->GetName() : TEXT("null"));
+			}
 		}
+		bTargetsRegistered = bAllTargetsReady;
 	}
 
 	if (bIsMainListener)
@@ -247,6 +271,7 @@ void AVAudioEmitter::Tick(float DeltaTime)
 		FVector Pos = GetActorLocation();
 		vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Z, -(float)Pos.Y));
 	}
+
 
 	if (!bIsMainListener && bAffectsGroupedEAX)
 	{
@@ -272,8 +297,17 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 		for (AVAudioEmitter* Target : TargetEmitters)
 		{
-			if (!Target || !Target->GetVAEmitter()) continue;
-			if (!vaEmitterHasRaytracedTarget(Emitter, Target->GetVAEmitter())) continue;
+			if (!Target || !Target->GetVAEmitter())
+			{
+				VaRawLog(L"Is not a target");
+				continue;
+			}
+
+			if (!vaEmitterHasRaytracedTarget(Emitter, Target->GetVAEmitter()))
+			{
+				VaRawLog(L"Has not raytraced target");
+				continue;
+			}
 
 			VALowPassFilter* F = vaEmitterGetTargetFilter(Emitter, Target->GetVAEmitter());
 			if (F)
@@ -281,7 +315,15 @@ void AVAudioEmitter::Tick(float DeltaTime)
 				if (GEngine)
 					GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange,
 						FString::Printf(TEXT("VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f"), *Target->GetName(), F->gainLF, F->gainHF));
+
+
+				VaRawLog(L"VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f", *Target->GetName(), F->gainLF, F->gainHF);
+
 				Target->ApplySourceFilter(F->gainLF, F->gainHF);
+			}
+			else
+			{
+				VaRawLog(L"No target filter");
 			}
 		}
 	}

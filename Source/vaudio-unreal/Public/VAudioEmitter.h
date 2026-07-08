@@ -158,6 +158,7 @@ private:
 
 	int32 CurrentGroupedEAXIndex = -1;
 	bool bTargetsRegistered = false;
+	TSet<AVAudioEmitter*> RegisteredTargets;
 	bool bCurrentDryEnabled = true;
 
 	UPROPERTY()
