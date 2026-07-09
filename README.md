@@ -3,7 +3,7 @@
 Unreal Engine plugin for Vercidium Audio — raytraced audio simulation with realistic muffling, reverb, ambience and occlusion.
 
 > [!WARNING]
-> This plugin is experimental and requires thorough testing and feedback
+> This plugin requires Vercidium Audio v1.3.0, which is not yet released. Please check back soon.
 
 This repository requires the Vercidium Audio SDK to run:
 - Download the Vercidium Audio SDK from [vercidium.com](https://vercidium.com)
