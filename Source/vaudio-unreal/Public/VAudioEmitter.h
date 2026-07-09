@@ -150,10 +150,14 @@ public:
 private:
 	VAEmitter* Emitter = nullptr;
 
-	UPROPERTY()
+	// Transient: created via NewObject()/SpawnSound* in BeginPlay/TryInitializeEmitter and
+	// torn down in EndPlay. Must never be serialized — saving the level while these are set
+	// (e.g. mid-PIE, or after a crash skips EndPlay) writes them as real exports that don't
+	// round-trip through a reload and corrupt the package (see FLinkerLoad::CreateExport crash).
+	UPROPERTY(Transient)
 	UAudioComponent* AmbientAudioComponent = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;
 
 	int32 CurrentGroupedEAXIndex = -1;
@@ -161,13 +165,13 @@ private:
 	TSet<AVAudioEmitter*> RegisteredTargets;
 	bool bCurrentDryEnabled = true;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	USourceEffectFilterPreset* SourceLPFPreset = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(Transient)
 	USoundEffectSourcePresetChain* SourceEffectChain = nullptr;
 
 	void ApplyListenerReverb();

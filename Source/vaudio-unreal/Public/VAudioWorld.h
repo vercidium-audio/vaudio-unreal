@@ -14,6 +14,28 @@ struct VAPrismPrimitive;
 class AVAudioEmitter;
 class AVAudioMaterial;
 
+// Baked local-space triangle mesh for one UStaticMeshComponent, captured in-editor via
+// AVAudioWorld::BakeGeometry so shipping builds don't depend on the mesh's CPU-accessible
+// render data (which UStaticMesh::bAllowCPUAccess does not reliably guarantee is retained
+// after cooking for every mesh type/pipeline).
+USTRUCT()
+struct FVAudioBakedMesh
+{
+	GENERATED_BODY()
+
+	// Owning actor + component name, used to match this entry back to its UStaticMeshComponent at runtime.
+	UPROPERTY()
+	FString ActorName;
+
+	UPROPERTY()
+	FName ComponentName;
+
+	// Local-space (component space) vertex positions, already expanded/duplicated per-index
+	// (i.e. Vertices[i] corresponds to triangle-list index i — no separate index array needed).
+	UPROPERTY()
+	TArray<FVector3f> Vertices;
+};
+
 // Place one of these in your level. It owns the VA raytracing world and scans
 // for UVAudioMaterialComponent on BeginPlay to populate the scene geometry.
 UCLASS(DisplayName = "VA Audio World")
@@ -115,6 +137,22 @@ public:
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Export World"))
 	void ExportWorld();
 
+	// --- Baked geometry (shipping fallback) ---
+
+#if WITH_EDITOR
+	// Captures the local-space triangle mesh of every UStaticMeshComponent reachable from a
+	// UVAudioMaterialComponent actor into BakedMeshes below, so ScanAndAddPrimitives can use it
+	// in shipping builds where the live mesh render data may not be CPU-accessible. Re-run this
+	// (and save the level) whenever affected meshes or actor placements change.
+	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Bake Geometry For Shipping"))
+	void BakeGeometry();
+#endif
+
+	// Populated by BakeGeometry and saved with the level. Used by ScanAndAddPrimitives as a
+	// fallback source of triangle data when the live mesh's render data is unavailable.
+	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio", AdvancedDisplay)
+	TArray<FVAudioBakedMesh> BakedMeshes;
+
 	// --- Internal API used by AVAudioEmitter ---
 
 	VAWorld* GetVAWorld() const { return World; }
@@ -129,7 +167,9 @@ public:
 private:
 	VAWorld* World = nullptr;
 
-	UPROPERTY()
+	// Transient: populated in BeginPlay from NewObject() and must never be saved into the level —
+	// saving these as real exports corrupts the package (they don't round-trip through a reload).
+	UPROPERTY(Transient)
 	TArray<USubmixEffectReverbPreset*> GroupedEAXPresets;
 
 	TArray<VAMeshPrimitive*>    MeshPrimitives;

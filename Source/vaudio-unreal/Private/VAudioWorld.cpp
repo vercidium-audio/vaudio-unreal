@@ -325,6 +325,80 @@ static UVAudioMaterialComponent* FindMaterialInChain(AActor* Actor)
 	return nullptr;
 }
 
+// True if this mesh would use its simple collision (sphyl/sphere/box) rather than the
+// triangle-mesh fallback, matching the bAddedSimple check in ScanAndAddPrimitives.
+static bool HasSimpleCollision(UStaticMesh* Mesh)
+{
+	UBodySetup* BodySetup = Mesh ? Mesh->GetBodySetup() : nullptr;
+	if (!BodySetup) return false;
+
+	const FKAggregateGeom& Agg = BodySetup->AggGeom;
+	return !Agg.SphylElems.IsEmpty() || !Agg.SphereElems.IsEmpty() || !Agg.BoxElems.IsEmpty();
+}
+
+#if WITH_EDITOR
+void AVAudioWorld::BakeGeometry()
+{
+	UWorld* UEWorld = GetWorld();
+	if (!UEWorld)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VA BakeGeometry: no world (open a level first)."));
+		return;
+	}
+
+	Modify();
+	BakedMeshes.Reset();
+
+	int32 BakedCount = 0;
+
+	for (TActorIterator<AActor> ActorIt(UEWorld); ActorIt; ++ActorIt)
+	{
+		AActor* Actor = *ActorIt;
+
+		UVAudioMaterialComponent* MatComp = FindMaterialInChain(Actor);
+		if (!MatComp || MatComp->AudioWorld != this) continue;
+
+		TArray<UStaticMeshComponent*> MeshComps;
+		Actor->GetComponents<UStaticMeshComponent>(MeshComps);
+
+		for (UStaticMeshComponent* MeshComp : MeshComps)
+		{
+			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
+			if (!Mesh || HasSimpleCollision(Mesh)) continue;
+
+			if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("VA BakeGeometry: mesh '%s' on '%s' has no render data in-editor, skipping"),
+					*Mesh->GetName(), *Actor->GetName());
+				continue;
+			}
+
+			FStaticMeshLODResources& LOD = Mesh->GetRenderData()->LODResources[0];
+			FPositionVertexBuffer& PosBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+
+			TArray<uint32> Indices;
+			LOD.IndexBuffer.GetCopy(Indices);
+			if (Indices.IsEmpty()) continue;
+
+			FVAudioBakedMesh& Baked = BakedMeshes.AddDefaulted_GetRef();
+			Baked.ActorName = Actor->GetName();
+			Baked.ComponentName = MeshComp->GetFName();
+			Baked.Vertices.Reserve(Indices.Num());
+
+			for (uint32 Idx : Indices)
+				Baked.Vertices.Add(PosBuffer.VertexPosition(Idx));
+
+			++BakedCount;
+			UE_LOG(LogTemp, Log, TEXT("VA BakeGeometry: baked '%s'.'%s' tris=%d"),
+				*Actor->GetName(), *MeshComp->GetName(), Indices.Num() / 3);
+		}
+	}
+
+	MarkPackageDirty();
+	UE_LOG(LogTemp, Log, TEXT("VA BakeGeometry: baked %d mesh component(s). Save the level to persist."), BakedCount);
+}
+#endif
+
 void AVAudioWorld::ScanAndAddPrimitives()
 {
 	UWorld* UEWorld = GetWorld();
@@ -428,25 +502,58 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 			if (bAddedSimple) continue;
 
-			// Fall back to triangle mesh
-			if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty()) continue;
+			// Fall back to triangle mesh: prefer baked geometry (reliable in shipping builds
+			// regardless of bAllowCPUAccess/cook quirks), otherwise use the mesh's live render
+			// data (always up to date, but may be unavailable in cooked builds).
+			const FVAudioBakedMesh* Baked = nullptr;
+			for (const FVAudioBakedMesh& B : BakedMeshes)
+			{
+				if (B.ComponentName == MeshComp->GetFName() && B.ActorName == Actor->GetName())
+				{
+					Baked = &B;
+					break;
+				}
+			}
 
-			FStaticMeshLODResources& LOD = Mesh->GetRenderData()->LODResources[0];
-			FPositionVertexBuffer& PosBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+			TArray<FVector3f> LocalPositions;
+			if (Baked)
+			{
+				LocalPositions = Baked->Vertices;
+			}
+			else
+			{
+				if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
+				{
+					UE_LOG(LogTemp, Warning, TEXT("VA:   mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level."), *Mesh->GetName());
+					VaRawLog(L"VA: mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
+					continue;
+				}
 
-			TArray<uint32> Indices;
-			LOD.IndexBuffer.GetCopy(Indices);
-			if (Indices.IsEmpty()) continue;
+				FStaticMeshLODResources& LOD = Mesh->GetRenderData()->LODResources[0];
+				FPositionVertexBuffer& PosBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+
+				TArray<uint32> Indices;
+				LOD.IndexBuffer.GetCopy(Indices);
+				if (Indices.IsEmpty())
+				{
+					UE_LOG(LogTemp, Warning, TEXT("VA:   mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level."), *Mesh->GetName());
+					VaRawLog(L"VA: mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
+					continue;
+				}
+
+				LocalPositions.Reserve(Indices.Num());
+				for (uint32 Idx : Indices)
+					LocalPositions.Add(PosBuffer.VertexPosition(Idx));
+			}
 
 			TArray<VAVector> VAVerts;
-			VAVerts.Reserve(Indices.Num());
+			VAVerts.Reserve(LocalPositions.Num());
 			VAVector MinB = VECTOR_MAX;
 			VAVector MaxB = VECTOR_MIN;
 
-			for (uint32 Idx : Indices)
+			for (const FVector3f& LocalPos : LocalPositions)
 			{
-				FVector3f LocalPos = PosBuffer.VertexPosition(Idx);
-				FVector RotScaled  = CompTransform.GetRotation().RotateVector(Scale * FVector(LocalPos));
+				FVector RotScaled = CompTransform.GetRotation().RotateVector(Scale * FVector(LocalPos));
 				VAVector V = vaVectorCreate((float)RotScaled.X, (float)RotScaled.Z, -(float)RotScaled.Y);
 				VAVerts.Add(V);
 				MinB = vaVectorMin(MinB, V);
@@ -466,7 +573,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			MeshPrimitives.Add(MeshPrim);
 			++MeshCount;
 
-			UE_LOG(LogTemp, Log, TEXT("VA:   mesh '%s' tris=%d"), *Mesh->GetName(), Indices.Num() / 3);
+			UE_LOG(LogTemp, Log, TEXT("VA:   mesh '%s' tris=%d (%s)"), *Mesh->GetName(), LocalPositions.Num() / 3, Baked ? TEXT("baked") : TEXT("live"));
 		}
 	}
 
