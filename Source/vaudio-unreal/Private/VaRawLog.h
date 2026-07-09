@@ -16,6 +16,9 @@ inline void VaRawLog(const wchar_t* Fmt, ...)
 
 	fwprintf(F, L"\n");
 	fclose(F);
+
+	// TODO - also log to UE editor here?
+	// UE_LOG(LogTemp, Warning, TEXT(Fmt, Args));
 }
 
 // Matches VALogCallback = void(*)(const char*). Pass directly to vaWorldSetLogCallback,

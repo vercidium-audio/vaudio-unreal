@@ -14,28 +14,26 @@ extern "C" {
 
 #include "VaRawLog.h"
 
+const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
+const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
+
 AVAudioEmitter::AVAudioEmitter()
 {
-	VaRawLog(L"AVAudioEmitter::AVAudioEmitter() CONSTRUCTED");
 	PrimaryActorTick.bCanEverTick = true;
 
 	UBillboardComponent* Root = CreateDefaultSubobject<UBillboardComponent>(TEXT("Root"));
 	SetRootComponent(Root);
+
+	VaRawLog(L"VAudioEmitter.cpp: %s: Constructed", *GetName());
 }
 
 void AVAudioEmitter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	VaRawLog(L"AVAudioEmitter::BeginPlay ENTER '%s' bIsMainListener=%d HasAuthority=%d AudioWorld=%s",
-		*GetName(), (int32)bIsMainListener, (int32)HasAuthority(), AudioWorld ? *AudioWorld->GetName() : TEXT("NULL"));
-	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioEmitter::BeginPlay ENTER '%s' bIsMainListener=%d HasAuthority=%d AudioWorld=%s"),
-		*GetName(), (int32)bIsMainListener, (int32)HasAuthority(), AudioWorld ? *AudioWorld->GetName() : TEXT("NULL"));
-
 	if (!AudioWorld)
 	{
-		VaRawLog(L"'%s': AudioWorld is not assigned - emitter will not raytrace.", *GetName());
-		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': AudioWorld is not assigned - emitter will not raytrace."), *GetName());
+		VaRawLog(L"VAudioEmitter.cpp: BeginPlay(): %s: AudioWorld is null", *GetName());
 		return;
 	}
 
@@ -48,20 +46,25 @@ void AVAudioEmitter::BeginPlay()
 
 bool AVAudioEmitter::TryInitializeEmitter()
 {
-	if (Emitter) return true;
+	// Already initialised
+	if (Emitter)
+		return true;
+
 	if (!AudioWorld)
 	{
-		VaRawLog(L"AVAudioEmitter::TryInitializeEmitter() failed as AudioWorld is null");
+		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: AudioWorld is null", *GetName());
 		return false;
 	}
 
-	VAWorld* VAW = AudioWorld->GetVAWorld();
-	VaRawLog(L"'%s' GetVAWorld() returned %s", *GetName(), VAW ? L"valid" : L"NULL");
-	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' GetVAWorld() returned %s"), *GetName(), VAW ? TEXT("valid") : TEXT("NULL"));
-	if (!VAW) return false;
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+
+	if (!vaWorld)
+	{
+		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: vaWorld is null", *GetName());
+		return false;
+	}
 
 	Emitter = vaEmitterCreate();
-	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' vaEmitterCreate() returned %s"), *GetName(), Emitter ? TEXT("valid") : TEXT("NULL"));
 	vaEmitterSetLogCallback(Emitter, &VaSdkLogCallback);
 	vaEmitterSetLogErrorCallback(Emitter, &VaSdkLogCallback);
 
@@ -82,9 +85,6 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	vaEmitterSetPermeationBounceCount(Emitter, PermeationBounceCount);
 	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
 
-	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
-	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
-
 	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
 	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
 	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
@@ -92,17 +92,11 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
 	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
 
-	bool bSDKAffectsGrouped = bAffectsGroupedEAX && !bIsMainListener;
-	vaEmitterSetAffectsGroupedEAX(Emitter, bSDKAffectsGrouped);
-	vaEmitterSetHasRelativeReverb(Emitter, bIsMainListener);
-	UE_LOG(LogTemp, Warning, TEXT("VA Emitter '%s': affectsGroupedEAX=%d (bAffectsGroupedEAX=%d bIsMainListener=%d)"),
-		*GetName(), (int32)bSDKAffectsGrouped, (int32)bAffectsGroupedEAX, (int32)bIsMainListener);
+	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
+	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
 
-	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' ListenerReverbSubmix=%s AmbientSound=%s SourceSound=%s"),
-		*GetName(),
-		ListenerReverbSubmix ? *ListenerReverbSubmix->GetName() : TEXT("NULL"),
-		AmbientSound ? *AmbientSound->GetName() : TEXT("NULL"),
-		SourceSound ? *SourceSound->GetName() : TEXT("NULL"));
+	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
+	vaEmitterSetHasRelativeReverb(Emitter, bIsMainListener);
 
 	if (bIsMainListener)
 	{
@@ -110,31 +104,43 @@ bool AVAudioEmitter::TryInitializeEmitter()
 		{
 			ListenerReverbPreset = NewObject<USubmixEffectReverbPreset>(this);
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
+
+			VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Listener submix added", *GetName());
 		}
 
 		if (AmbientSound)
 		{
 			AmbientAudioComponent = UGameplayStatics::SpawnSound2D(GetWorld(), AmbientSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
-			UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' AmbientAudioComponent=%s"), *GetName(), AmbientAudioComponent ? TEXT("valid") : TEXT("NULL"));
+
 			if (AmbientAudioComponent)
 			{
 				AmbientAudioComponent->SetLowPassFilterEnabled(true);
+
 				if (bAmbientThroughReverb && ListenerReverbSubmix)
+				{
 					AmbientAudioComponent->SetSubmixSend(ListenerReverbSubmix, 1.0f);
+					VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Ambient sound is sent through listener reverb submix", *GetName());
+				}
+			}
+			else
+			{
+				VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Failed to play ambient sound", *GetName());
 			}
 		}
-		// Target wiring is deferred to the first Tick â€” target emitters may not have
+
+		// Target wiring is deferred to the first Tick as target emitters may not have
 		// called vaEmitterCreate yet if their BeginPlay runs after ours.
 	}
 	else if (SourceSound)
 	{
 		// Build the source effect chain (LPF only on the dry path; reverb submix taps the pre-effect signal).
 		SourceLPFPreset = NewObject<USourceEffectFilterPreset>(this);
+
 		FSourceEffectFilterSettings LPFSettings;
 		LPFSettings.FilterCircuit    = ESourceEffectFilterCircuit::StateVariable;
 		LPFSettings.FilterType       = ESourceEffectFilterType::LowPass;
 		LPFSettings.CutoffFrequency  = 20000.0f;
-		LPFSettings.FilterQ          = 0.707f;
+		LPFSettings.FilterQ          = 0.707f; // TODO - what is resonance?
 		SourceLPFPreset->SetSettings(LPFSettings);
 
 		SourceEffectChain = NewObject<USoundEffectSourcePresetChain>(this);
@@ -143,28 +149,33 @@ bool AVAudioEmitter::TryInitializeEmitter()
 		ChainEntry.bBypass = false;
 		SourceEffectChain->Chain.Add(ChainEntry);
 
-		SourceAudioComponent = UGameplayStatics::SpawnSoundAtLocation(
-			GetWorld(), SourceSound, GetActorLocation(),
-			FRotator::ZeroRotator, 1.0f, 1.0f, 0.0f, nullptr, nullptr, bLooping);
-		UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' SourceAudioComponent=%s (SourceSound='%s' at %s)"),
-			*GetName(), SourceAudioComponent ? TEXT("valid") : TEXT("NULL"),
-			*SourceSound->GetName(), *GetActorLocation().ToString());
+		// TODO - wait for raytracing to complete before playing the sound (else it starts clear then is instantly muffled)
+		SourceAudioComponent = UGameplayStatics::SpawnSoundAtLocation(GetWorld(), SourceSound, GetActorLocation(), FRotator::ZeroRotator, 1.0f, 1.0f, 0.0f, nullptr, nullptr, bLooping);
+
 		if (SourceAudioComponent)
 		{
 			SourceAudioComponent->SetSourceEffectChain(SourceEffectChain);
 
 			// Submix assignment is deferred to Tick once the SDK assigns a groupedEAXIndex.
+			VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Low pass filter created and sound played", *GetName());
+		}
+		else
+		{
+			VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Failed to play sound", *GetName());
 		}
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' is a source emitter but SourceSound is NULL - no audio will play."), *GetName());
+		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Emitter is neither main listener nor has a sound", *GetName());
 	}
 
-	vaWorldAddEmitter(VAW, Emitter);
+	VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
+
+	// TODO - assert result is success. If not, add a warning message in the editor
+
 	AudioWorld->RegisterEmitter(this);
-	VaRawLog(L"'%s' BeginPlay COMPLETE - registered with world '%s'", *GetName(), *AudioWorld->GetName());
-	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' BeginPlay COMPLETE - registered with world '%s'"), *GetName(), *AudioWorld->GetName());
+
+	VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Complete. vaWorldAddEmitter() returned %d", *GetName(), result);
 	return true;
 }
 
@@ -176,24 +187,41 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		AmbientAudioComponent->Stop();
 		AmbientAudioComponent = nullptr;
+
+		VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Stopped ambient sound", *GetName());
 	}
 
 	if (SourceAudioComponent)
 	{
 		SourceAudioComponent->Stop();
 		SourceAudioComponent = nullptr;
+
+		VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Stopped source sound", *GetName());
 	}
 
+	// TODO - also set submix send gain to 0.0f? If not needed, all good
 	CurrentGroupedEAXIndex = -1;
 
 	if (AudioWorld)
 	{
 		AudioWorld->UnregisterEmitter(this);
 
-		VAWorld* VAW = AudioWorld->GetVAWorld();
-		if (VAW && Emitter)
+		VAWorld* vaWorld = AudioWorld->GetVAWorld();
+
+		if (!vaWorld)
 		{
-			vaWorldRemoveEmitter(VAW, Emitter);
+			// TODO - too much null propagation! Why is vaWorld null here?
+			VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: vaWorld is null.", *GetName());
+		}
+		else if (!Emitter)
+		{
+			// TODO - too much null propagation! Why is Emitter null here?
+			VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Can't remove emitter from world as Emitter is null.", *GetName());
+		}
+		else
+		{
+			vaWorldRemoveEmitter(vaWorld, Emitter);
+			VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Emitter successfully removed from vaWorld.", *GetName());
 		}
 	}
 
@@ -201,6 +229,11 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		vaEmitterDestroy(Emitter);
 		Emitter = nullptr;
+	}
+	else
+	{
+		// TODO - too much null propagation! Why is Emitter null here?
+		VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Can't destroy emitter as Emitter is null.", *GetName());
 	}
 }
 
@@ -258,7 +291,9 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 	if (bIsMainListener)
 	{
+		// TODO - let the user set the main listener position manually via a script or blueprint or something
 		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+
 		if (PC && PC->PlayerCameraManager)
 		{
 			FVector CamPos = PC->PlayerCameraManager->GetCameraLocation();
@@ -281,6 +316,7 @@ void AVAudioEmitter::Tick(float DeltaTime)
 		{
 			int32 Idx = vaEmitterGetGroupedEAXIndex(Emitter);
 			USoundSubmix* Submix = (AudioWorld && Idx >= 0) ? AudioWorld->GetGroupedEAXSubmix(Idx) : nullptr;
+
 			GEngine->AddOnScreenDebugMessage((uint64)this + 100, 0.0f, FColor::Cyan,
 				FString::Printf(TEXT("VA Source '%s': groupedEAXIndex=%d submix=%s sourceComp=%s"),
 					*GetName(), Idx,
@@ -298,33 +334,25 @@ void AVAudioEmitter::Tick(float DeltaTime)
 		for (AVAudioEmitter* Target : TargetEmitters)
 		{
 			if (!Target || !Target->GetVAEmitter())
-			{
-				VaRawLog(L"Is not a target");
 				continue;
-			}
 
 			if (!vaEmitterHasRaytracedTarget(Emitter, Target->GetVAEmitter()))
-			{
-				VaRawLog(L"Has not raytraced target");
 				continue;
-			}
 
-			VALowPassFilter* F = vaEmitterGetTargetFilter(Emitter, Target->GetVAEmitter());
-			if (F)
+			VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(Emitter, Target->GetVAEmitter());
+
+			// TODO - assert here, low pass filter should be defined if vaEmitterHasRaytracedTarget above returned true
+			if (!lowPassFilter)
+				continue;
+
+			if (GEngine)
 			{
-				if (GEngine)
-					GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange,
-						FString::Printf(TEXT("VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f"), *Target->GetName(), F->gainLF, F->gainHF));
-
-
-				VaRawLog(L"VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f", *Target->GetName(), F->gainLF, F->gainHF);
-
-				Target->ApplySourceFilter(F->gainLF, F->gainHF);
+				GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange, FString::Printf(TEXT("VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f"), *Target->GetName(), lowPassFilter->gainLF, lowPassFilter->gainHF));
 			}
-			else
-			{
-				VaRawLog(L"No target filter");
-			}
+
+			VaRawLog(L"VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f", *Target->GetName(), lowPassFilter->gainLF, lowPassFilter->gainHF);
+
+			Target->ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 		}
 	}
 }
@@ -426,37 +454,39 @@ void AVAudioEmitter::SetDryOutputEnabled(bool bEnabled)
 
 void AVAudioEmitter::ApplySourceFilter(float GainLF, float GainHF)
 {
-	if (!SourceAudioComponent || !SourceLPFPreset) return;
+	// TODO - assert GainLF and GainHF is in range 0.0f to 1.0f (inclusive)
+	
+	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	if (!SourceAudioComponent || !SourceLPFPreset)
+		return;
 
-	const float MinFreq = 200.0f;
-	const float MaxFreq = 20000.0f;
+	FSourceEffectFilterSettings settings;
+	settings.FilterCircuit   = ESourceEffectFilterCircuit::StateVariable;
+	settings.FilterType      = ESourceEffectFilterType::LowPass;
+	settings.CutoffFrequency = FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, GainHF);
+	settings.FilterQ         = 0.707f; // TODO - what is resonance?
+	SourceLPFPreset->SetSettings(settings);
 
-	FSourceEffectFilterSettings S;
-	S.FilterCircuit   = ESourceEffectFilterCircuit::StateVariable;
-	S.FilterType      = ESourceEffectFilterType::LowPass;
-	S.CutoffFrequency = FMath::Lerp(MinFreq, MaxFreq, FMath::Clamp(GainHF, 0.0f, 1.0f));
-	S.FilterQ         = 0.707f;
-	SourceLPFPreset->SetSettings(S);
-
-	SourceAudioComponent->SetVolumeMultiplier(FMath::Clamp(GainLF, 0.0f, 1.0f));
+	SourceAudioComponent->SetVolumeMultiplier(GainLF);
 }
 
 void AVAudioEmitter::UpdateSourceSubmix()
 {
-	if (!SourceAudioComponent || !AudioWorld || !Emitter) return;
+	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	if (!SourceAudioComponent || !AudioWorld || !Emitter)
+		return;
 
 	int32 NewIndex = vaEmitterGetGroupedEAXIndex(Emitter);
 
 	if (NewIndex != CurrentGroupedEAXIndex)
 	{
-		UE_LOG(LogTemp, Log, TEXT("VA UpdateSourceSubmix '%s': groupedEAXIndex %d -> %d"),
-			*GetName(), CurrentGroupedEAXIndex, NewIndex);
+		UE_LOG(LogTemp, Log, TEXT("VAudioEmitter.cpp: UpdateSourceSubmix(): '%s': groupedEAXIndex changed from %d to %d"), *GetName(), CurrentGroupedEAXIndex, NewIndex);
 
+		// Unlink from the old submix
 		if (CurrentGroupedEAXIndex >= 0)
 		{
 			USoundSubmix* OldSubmix = AudioWorld->GetGroupedEAXSubmix(CurrentGroupedEAXIndex);
-			UE_LOG(LogTemp, Log, TEXT("VA   removing send from submix[%d]: %s"),
-				CurrentGroupedEAXIndex, OldSubmix ? TEXT("valid") : TEXT("null"));
+
 			if (OldSubmix)
 				SourceAudioComponent->SetSubmixSend(OldSubmix, 0.0f);
 		}
@@ -464,72 +494,125 @@ void AVAudioEmitter::UpdateSourceSubmix()
 		CurrentGroupedEAXIndex = NewIndex;
 	}
 
-	if (CurrentGroupedEAXIndex < 0) return;
+	if (CurrentGroupedEAXIndex < 0)
+		return;
 
 	USoundSubmix* Submix = AudioWorld->GetGroupedEAXSubmix(CurrentGroupedEAXIndex);
-	if (!Submix) return;
 
-	// Default send level â€” overridden below if the listener has relative reverb data
+	// TODO - assert or write a warning message somewhere that there aren't enough submixes allocated in the VAudioWorld actor
+	if (!Submix)
+		return;
+
+	// Default send level is overridden below if the listener has relative reverb data
 	float SendLevel = 1.0f;
-	float DebugGain = -1.0f;
 	bool bHasRelative = false;
 
-	VAWorld* VAW = AudioWorld->GetVAWorld();
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 	AVAudioEmitter* Listener = AudioWorld->GetMainListener();
-	if (VAW && Listener && vaWorldGetReverbCalculated(VAW))
+
+	if (!vaWorld)
 	{
-		const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(VAW);
-		if (GroupedEAX && GroupedEAX[CurrentGroupedEAXIndex])
+		VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Unable to access grouped EAX data as vaWorld is null");
+	}
+	// Wait for raytracing to run at least once
+	else if (vaWorldGetReverbCalculated(vaWorld))
+	{
+		const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(vaWorld);
+
+		if (!GroupedEAX)
+		{
+			// TODO - if vaWorldGetReverbCalculated above is true, GroupedEAX shouldn't be null, because world.maximumGroupedEAXCount has to be >= 2. Check if this >= 2 range is defined in vaudio.h
+			VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Reverb is calculated but vaWorldGetGroupedEAX() returned null");
+		}
+		else if (GroupedEAX[CurrentGroupedEAXIndex])
 		{
 			const VAEAXReverb* EAX = GroupedEAX[CurrentGroupedEAXIndex];
-			VAEmitter* ListenerVA = Listener->GetVAEmitter();
 
-			float* Gain = vaEAXReverbGetRelativeGain(EAX, ListenerVA);
-			if (Gain)
+			if (!Listener)
 			{
-				DebugGain = *Gain;
-				SendLevel = FMath::Clamp(*Gain, 0.0f, 1.0f);
-				bHasRelative = true;
+				VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Unable to access relative EAX gain as Listener is null");
+			}
+			else
+			{
+				VAEmitter* ListenerVA = Listener->GetVAEmitter();
+
+				// UE-LIMITATION - only relative gain is supported. Can't do directional reverb
+				float* Gain = vaEAXReverbGetRelativeGain(EAX, ListenerVA);
+
+				if (Gain)
+				{
+					// Assert gain is >= 0 and <= 1
+					SendLevel = *Gain;
+					bHasRelative = true;
+				}
 			}
 		}
+		else
+		{
+			VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Reverb is calculated but GroupedEAX[CurrentGroupedEAXIndex] is null");
+		}
+	}
+	else
+	{
+		VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Unable to access grouped EAX data as vaWorldGetReverbCalculated() is false");
 	}
 
 	SourceAudioComponent->SetSubmixSend(Submix, SendLevel);
 
 	if (GEngine)
 	{
-		FString RelStr = bHasRelative
-			? FString::Printf(TEXT("gain=%.3f send=%.3f"), DebugGain, SendLevel)
-			: TEXT("no relative data (listener not ready?)");
-		GEngine->AddOnScreenDebugMessage((uint64)this + 200, 0.0f, FColor::Magenta,
-			FString::Printf(TEXT("VA Relative '%s': %s"), *GetName(), *RelStr));
+		FString RelStr = FString::Printf(TEXT("Submix gain is %.3f"), SendLevel);
+		GEngine->AddOnScreenDebugMessage((uint64)this + 200, 0.0f, FColor::Magenta, FString::Printf(TEXT("VAudioEmitter.cpp: UpdateSourceSubmix(): '%s': %s"), *GetName(), *RelStr));
 	}
 }
 
 void AVAudioEmitter::ApplyGroupedEAXReverb()
 {
-	if (!AudioWorld) return;
-
-	VAWorld* VAW = AudioWorld->GetVAWorld();
-	if (!VAW) return;
-
-	bool bReverbReady = vaWorldGetReverbCalculated(VAW);
-	const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(VAW);
-	int32 Count = vaWorldGetGroupedEAXCount(VAW);
-
-	if (GEngine)
+	if (!AudioWorld)
 	{
-		GEngine->AddOnScreenDebugMessage(3000, 0.0f, FColor::White,
-			FString::Printf(TEXT("VA GroupedEAX: reverbReady=%d count=%d presetSlots=%d"),
-				(int32)bReverbReady, Count, AudioWorld->GetGroupedEAXPresetCount()));
+		VaRawLog(L"VaudioEmitter.cpp: ApplyGroupedEAXReverb(): AudioWorld is null");
+		return;
 	}
 
-	if (!bReverbReady || !GroupedEAX) return;
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+	if (!vaWorld)
+	{
+		VaRawLog(L"VaudioEmitter.cpp: ApplyGroupedEAXReverb(): vaWorld is null");
+		return;
+	}
+
+	const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(vaWorld);
+	int32 Count = vaWorldGetGroupedEAXCount(vaWorld);
+
+	// Wait for raytracing to run at least once
+	if (!vaWorldGetReverbCalculated(vaWorld))
+		return;
+
+	if (!GroupedEAX)
+	{
+		// Assert here - if vaWorldGetReverbCalculated is true, vaWorldGetGroupedEAX() shouldn't return null
+		return;
+	}
 
 	for (int32 i = 0; i < Count; ++i)
 	{
 		USubmixEffectReverbPreset* Preset = AudioWorld->GetGroupedEAXPreset(i);
+
+		if (!Preset)
+		{
+			// Assert here - why is it null? Submixes should all be set up by now. Need less null propagation in this codebase
+			VaRawLog(L"VaudioEmitter.cpp: ApplyGroupedEAXReverb(): AudioWorld->GetGroupedEAXPreset[%d] is null", i);
+			continue;
+		}
+
 		const VAEAXReverb* EAX = GroupedEAX[i];
+
+		if (!EAX)
+		{
+			// Assert here - why is it null? Submixes should all be set up by now. Need less null propagation in this codebase
+			VaRawLog(L"VaudioEmitter.cpp: ApplyGroupedEAXReverb(): GroupedEAX[%d] is null", i);
+			continue;
+		}
 
 		if (GEngine)
 		{
@@ -543,22 +626,22 @@ void AVAudioEmitter::ApplyGroupedEAXReverb()
 					EAX    ? EAX->gain             : 0.0f));
 		}
 
-		if (!Preset || !EAX) continue;
-
-		FSubmixEffectReverbSettings S;
-		S.DecayTime           = FMath::Clamp(EAX->decayTime,           0.1f,  20.0f);
-		S.DecayHFRatio        = FMath::Clamp(EAX->decayHFRatio,        0.1f,   2.0f);
-		S.Density             = FMath::Clamp(EAX->density,             0.0f,   1.0f);
-		S.Diffusion           = FMath::Clamp(EAX->diffusion,           0.0f,   1.0f);
-		S.Gain                = FMath::Clamp(EAX->gain,                0.0f,   1.0f);
-		S.GainHF              = FMath::Clamp(EAX->gainHF,              0.0f,   1.0f);
-		S.ReflectionsGain     = FMath::Clamp(EAX->reflectionsGain,     0.0f,   3.16f);
-		S.ReflectionsDelay    = FMath::Clamp(EAX->reflectionsDelay,    0.0f,   0.3f);
-		S.LateGain            = FMath::Clamp(EAX->lateReverbGain,      0.0f,  10.0f);
-		S.LateDelay           = FMath::Clamp(EAX->lateReverbDelay,     0.0f,   0.1f);
-		S.AirAbsorptionGainHF = FMath::Clamp(EAX->airAbsorptionGainHF, 0.0f,   1.0f);
-		S.WetLevel            = FMath::Clamp(EAX->returnedPercent,    0.0f,   1.0f);
-		S.DryLevel            = 0.0f;
-		Preset->SetSettings(S);
+		// TODO - do we need to clamp? EAX is already clamped to the constants in vaudio.h
+		FSubmixEffectReverbSettings settings;
+		settings.DecayTime           = FMath::Clamp(EAX->decayTime,           0.1f,  20.0f);
+		settings.DecayHFRatio        = FMath::Clamp(EAX->decayHFRatio,        0.1f,   2.0f);
+		settings.Density             = FMath::Clamp(EAX->density,             0.0f,   1.0f);
+		settings.Diffusion           = FMath::Clamp(EAX->diffusion,           0.0f,   1.0f);
+		settings.Gain                = FMath::Clamp(EAX->gain,                0.0f,   1.0f);
+		settings.GainHF              = FMath::Clamp(EAX->gainHF,              0.0f,   1.0f);
+		settings.ReflectionsGain     = FMath::Clamp(EAX->reflectionsGain,     0.0f,   3.16f);
+		settings.ReflectionsDelay    = FMath::Clamp(EAX->reflectionsDelay,    0.0f,   0.3f);
+		settings.LateGain            = FMath::Clamp(EAX->lateReverbGain,      0.0f,  10.0f);
+		settings.LateDelay           = FMath::Clamp(EAX->lateReverbDelay,     0.0f,   0.1f);
+		settings.AirAbsorptionGainHF = FMath::Clamp(EAX->airAbsorptionGainHF, 0.0f,   1.0f);
+		settings.WetLevel            = FMath::Clamp(EAX->returnedPercent,     0.0f,   1.0f);
+		settings.DryLevel            = 0.0f;
+		Preset->SetSettings(settings);
 	}
 }
+
