@@ -52,7 +52,7 @@ static VAMaterialType EnumToVAMaterial(EVAudioMaterial M)
 
 static VAMatrix MakeTranslationMatrix(const FVector& P)
 {
-	return vaMatrixCreateTranslation((float)P.X, (float)P.Z, -(float)P.Y);
+	return vaMatrixCreateTranslation((float)P.X, (float)P.Y, (float)P.Z);
 }
 
 static VAMatrix MakeRotTransMatrix(const FTransform& T)
@@ -64,16 +64,11 @@ static VAMatrix MakeRotTransMatrix(const FTransform& T)
 	FVector AxY = Q.GetAxisY();
 	FVector AxZ = Q.GetAxisZ();
 
-	// UE(X,Y,Z) → VA(X,Z,-Y)
-	float c0x =  (float)AxX.X, c0y =  (float)AxX.Z, c0z = -(float)AxX.Y;
-	float c1x =  (float)AxZ.X, c1y =  (float)AxZ.Z, c1z = -(float)AxZ.Y;
-	float c2x = -(float)AxY.X, c2y = -(float)AxY.Z, c2z =  (float)AxY.Y;
-
 	return vaMatrixCreate(
-		c0x, c0y, c0z, 0.f,
-		c1x, c1y, c1z, 0.f,
-		c2x, c2y, c2z, 0.f,
-		(float)P.X, (float)P.Z, -(float)P.Y, 1.f
+		(float)AxX.X, (float)AxX.Y, (float)AxX.Z, 0.f,
+		(float)AxY.X, (float)AxY.Y, (float)AxY.Z, 0.f,
+		(float)AxZ.X, (float)AxZ.Y, (float)AxZ.Z, 0.f,
+		(float)P.X,   (float)P.Y,   (float)P.Z,   1.f
 	);
 }
 
@@ -96,16 +91,14 @@ void AVAudioWorld::BeginPlay()
 	World = vaWorldCreate();
 	vaWorldSetLogMemoryAllocationWarnings(World, true);
 	vaWorldSetLogCallback(World, &VaSdkLogCallback);
-	// VA coord system: X=UE_X, Y=UE_Z, Z=-UE_Y
-	// The Z axis is negated, so the min corner's Z = -(UE_Y_max) = -(WorldPosition.Y + WorldSize.Y)
 	vaWorldSetPosition(World, vaVectorCreate(
 		(float)WorldPosition.X,
-		(float)WorldPosition.Z,
-		-(float)(WorldPosition.Y + WorldSize.Y)));
+		(float)WorldPosition.Y,
+		(float)WorldPosition.Z));
 	vaWorldSetSize(World, vaVectorCreate(
 		(float)WorldSize.X,
-		(float)WorldSize.Z,
-		(float)WorldSize.Y));
+		(float)WorldSize.Y,
+		(float)WorldSize.Z));
 	vaWorldSetInverseSpeedOfSound(World, 1.0f / SpeedOfSound);
 	vaWorldSetMetersPerUnit(World, MetersPerUnit);
 	vaWorldSetWorldIsIndoors(World, bIsIndoors);
@@ -296,12 +289,22 @@ void AVAudioWorld::ApplyChildMaterials()
 	TArray<AActor*> AttachedActors;
 	GetAttachedActors(AttachedActors);
 
+	UE_LOG(LogTemp, Log, TEXT("VA: ApplyChildMaterials - %d directly attached actor(s) found on '%s'"),
+		AttachedActors.Num(), *GetName());
+
+	int32 AppliedCount = 0;
 	for (AActor* Child : AttachedActors)
 	{
 		AVAudioMaterial* Mat = Cast<AVAudioMaterial>(Child);
 		if (Mat)
+		{
+			UE_LOG(LogTemp, Log, TEXT("VA: registering custom material actor '%s' (MaterialName='%s'), transmissionLF: %f"), *Mat->GetName(), *Mat->MaterialName, Mat->TransmissionLF);
 			Mat->ApplyToWorld(World);
+			++AppliedCount;
+		}
 	}
+
+	UE_LOG(LogTemp, Log, TEXT("VA: ApplyChildMaterials - applied %d custom material actor(s)"), AppliedCount);
 }
 
 // ---------------------------------------------------------------------------
@@ -473,7 +476,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					float   Radius = Sphere.Radius * Scale.GetAbsMax();
 
 					VASpherePrimitive* Sp = vaSpherePrimitiveCreate();
-					vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Z, -(float)Center.Y));
+					vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
 					vaSpherePrimitiveSetRadius(Sp,   Radius);
 					vaSpherePrimitiveSetMaterial(Sp, Material);
 					vaWorldAddPrimitive_(World, Sp);
@@ -490,7 +493,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					VAMatrix Mat = MakeRotTransMatrix(WT);
 
 					VAPrismPrimitive* Prism = vaPrismPrimitiveCreate();
-					vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Box.X * Scale.X, Box.Z * Scale.Z, Box.Y * Scale.Y));
+					vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Box.X * Scale.X, Box.Y * Scale.Y, Box.Z * Scale.Z));
 					vaPrismPrimitiveSetMaterial(Prism, Material);
 					vaPrismPrimitiveSetTransform(Prism, &Mat);
 					vaWorldAddPrimitive_(World, Prism);
@@ -554,7 +557,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			for (const FVector3f& LocalPos : LocalPositions)
 			{
 				FVector RotScaled = CompTransform.GetRotation().RotateVector(Scale * FVector(LocalPos));
-				VAVector V = vaVectorCreate((float)RotScaled.X, (float)RotScaled.Z, -(float)RotScaled.Y);
+				VAVector V = vaVectorCreate((float)RotScaled.X, (float)RotScaled.Y, (float)RotScaled.Z);
 				VAVerts.Add(V);
 				MinB = vaVectorMin(MinB, V);
 				MaxB = vaVectorMax(MaxB, V);

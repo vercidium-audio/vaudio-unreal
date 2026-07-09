@@ -66,7 +66,7 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	vaEmitterSetLogErrorCallback(Emitter, &VaSdkLogCallback);
 
 	FVector Pos = GetActorLocation();
-	vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Z, -(float)Pos.Y));
+	vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Y, (float)Pos.Z));
 
 	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
 	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
@@ -262,14 +262,14 @@ void AVAudioEmitter::Tick(float DeltaTime)
 		if (PC && PC->PlayerCameraManager)
 		{
 			FVector CamPos = PC->PlayerCameraManager->GetCameraLocation();
-			vaEmitterSetPosition(Emitter, vaVectorCreate((float)CamPos.X, (float)CamPos.Z, -(float)CamPos.Y));
+			vaEmitterSetPosition(Emitter, vaVectorCreate((float)CamPos.X, (float)CamPos.Y, (float)CamPos.Z));
 			SetActorLocation(CamPos);
 		}
 	}
 	else
 	{
 		FVector Pos = GetActorLocation();
-		vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Z, -(float)Pos.Y));
+		vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Y, (float)Pos.Z));
 	}
 
 
