@@ -90,6 +90,7 @@ void AVAudioWorld::BeginPlay()
 
 	World = vaWorldCreate();
 	vaWorldSetLogMemoryAllocationWarnings(World, true);
+	vaWorldSetCoordinateSystem(World, VACoordinateSystemUnreal);
 	vaWorldSetLogCallback(World, &VaSdkLogCallback);
 	vaWorldSetPosition(World, vaVectorCreate(
 		(float)WorldPosition.X,
