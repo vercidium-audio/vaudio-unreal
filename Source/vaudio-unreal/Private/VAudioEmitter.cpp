@@ -49,6 +49,7 @@ extern "C" {
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
 const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
+const float LOW_PASS_RESONANCE = 0.707f; // Butterworth Q constant
 
 AVAudioEmitter::AVAudioEmitter()
 {
@@ -62,48 +63,36 @@ void AVAudioEmitter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// AudioWorld is a user-assigned reference (Details panel) - there's no code path that
-	// leaves it null other than the user forgetting to set it, so warn loudly rather than
-	// silently failing to play any sound.
+	// Display a warning if the user forgot to set the AudioWorld
 	if (!AudioWorld)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': AudioWorld is not assigned - this emitter will do nothing. Assign a VAudioWorld actor in the Details panel."), *GetName());
 		return;
 	}
 
-	// AVAudioWorld may not have run its own BeginPlay yet (actor BeginPlay order is
-	// not guaranteed), in which case GetVAWorld() is still null here. TryInitializeEmitter()
-	// is safe to call repeatedly - it no-ops if Emitter is already set - so Tick() retries
-	// it every frame until AudioWorld's VAWorld becomes valid.
+	// AVAudioWorld may not have run its own BeginPlay yet (actor BeginPlay order is not guaranteed), in which case GetVAWorld() is still null here.
+	//  TryInitializeEmitter() is safe to call repeatedly - it no-ops if Emitter is already set - so Tick() retries it every frame until AudioWorld's VAWorld becomes valid.
 	TryInitializeEmitter();
 }
 
 bool AVAudioEmitter::TryInitializeEmitter()
 {
-	// Already initialised
+	// Already initialised, all is good
 	if (Emitter)
 		return true;
 
-	// Unassigned AudioWorld is already reported once (as a warning) in BeginPlay - this is called
-	// again every Tick while uninitialised, so just no-op quietly here to avoid log spam.
+	// The user forgot to set the AudioWorld
 	if (!AudioWorld)
-	{
-		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: AudioWorld is null", *GetName());
 		return false;
-	}
 
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 
-	// AVAudioWorld's own BeginPlay hasn't run yet (actor BeginPlay order isn't guaranteed) -
-	// this resolves itself once AVAudioWorld::BeginPlay() creates its VAWorld, and Tick() retries
-	// every frame until then.
+	// AVAudioWorld's own BeginPlay hasn't run yet (actor BeginPlay order isn't guaranteed)
 	if (!vaWorld)
-	{
-		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: vaWorld is null", *GetName());
 		return false;
-	}
 
 	Emitter = vaEmitterCreate();
+
 	vaEmitterSetLogCallback(Emitter, &VaSdkLogCallback);
 	vaEmitterSetLogErrorCallback(Emitter, &VaSdkLogCallback);
 
@@ -172,9 +161,6 @@ bool AVAudioEmitter::TryInitializeEmitter()
 				}
 			}
 		}
-
-		// Target wiring is deferred to the first Tick as target emitters may not have
-		// called vaEmitterCreate yet if their BeginPlay runs after ours.
 	}
 	else if (SourceSound)
 	{
@@ -185,7 +171,7 @@ bool AVAudioEmitter::TryInitializeEmitter()
 		LPFSettings.FilterCircuit    = ESourceEffectFilterCircuit::StateVariable;
 		LPFSettings.FilterType       = ESourceEffectFilterType::LowPass;
 		LPFSettings.CutoffFrequency  = MAX_LOW_PASS_CUTOFF_FREQUENCY;
-		LPFSettings.FilterQ          = 0.707f; // Butterworth Q - maximally flat passband, no resonant peak at the cutoff
+		LPFSettings.FilterQ          = LOW_PASS_RESONANCE;
 		SourceLPFPreset->SetSettings(LPFSettings);
 
 		SourceEffectChain = NewObject<USoundEffectSourcePresetChain>(this);
@@ -219,10 +205,7 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	// VA_INVALID_VALUE = already added to this world, VA_OUT_OF_RANGE = already added to another world
 	if (result != VA_SUCCESS)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': vaWorldAddEmitter() failed with result %d - this emitter may already be registered to a VAudioWorld."), *GetName(), result);
-
-		if (GEngine)
-			GEngine->AddOnScreenDebugMessage((uint64)this + 300, 5.0f, FColor::Red, FString::Printf(TEXT("VAudioEmitter '%s': failed to add to VAudioWorld (result %d)"), *GetName(), result));
+		VaRawLog(L"VAudioEmitter.cpp TryInitializeEmitter(): '%s': vaWorldAddEmitter() failed with result %d - this emitter may already be registered to a VAudioWorld.", *GetName(), result);
 	}
 
 	AudioWorld->RegisterEmitter(this);

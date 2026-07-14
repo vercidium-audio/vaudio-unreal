@@ -34,3 +34,64 @@ particularly noticeable if the source starts heavily occluded (e.g. behind a wal
   theory (though this plugin currently assumes one main listener).
 - Whatever is chosen, needs to interact correctly with `bLooping` sounds and with `SetDryOutputEnabled()`
   (used for `bReverbOnly` mode in `AVAudioWorld::Tick`).
+
+# TODO: Single main-listener tracking on AVAudioWorld
+
+Source: `Source/vaudio-unreal/Private/VAudioWorld.cpp`, `AVAudioWorld::Tick()` and
+`AVAudioWorld::GetMainListener()`.
+
+## Problem
+
+Every frame, `Tick()` linearly scans `RegisteredEmitters` to find the one with
+`bIsMainListener == true` (for the on-screen debug display), and `GetMainListener()` does the
+same scan on demand. There can only be one true main listener, but nothing enforces this — if a
+second emitter has `bIsMainListener = true`, both scans silently return/use whichever comes first
+in registration order, with no warning that the setup is ambiguous.
+
+## Proposed fix
+
+- Cache a `TWeakObjectPtr<AVAudioEmitter> MainListener` on `AVAudioWorld`, set in
+  `RegisterEmitter()`/`UnregisterEmitter()` (or when `bIsMainListener` toggles - see
+  `AVAudioEmitter::PostEditChangeProperty` for the editor-time hook, plus a runtime setter if
+  `bIsMainListener` can change post-BeginPlay).
+- When `RegisterEmitter()` is called (or `bIsMainListener` is set true) while `MainListener` is
+  already valid and different, log a warning (`UE_LOG(LogTemp, Warning, ...)`) - first-registered
+  wins, or last-registered wins; needs a decision either way.
+- Replace the scan in `Tick()` and the body of `GetMainListener()` with a direct read of the
+  cached pointer.
+
+## Notes for implementation
+
+- Need to decide the conflict-resolution rule (reject the second one vs. replace) and whether
+  unsetting `bIsMainListener` at runtime should clear the cached pointer.
+- `RegisterEmitter`/`UnregisterEmitter` currently take a bare `AVAudioEmitter*`; this would need
+  to read `Emitter->bIsMainListener` at registration time, so ordering vs. property
+  initialization on the emitter matters (registration happens in `AVAudioEmitter::BeginPlay`,
+  after properties are already set from the level/defaults, so this should be safe).
+
+# TODO: Fall back to collision shapes when a UStaticMeshComponent has no mesh assigned
+
+Source: `Source/vaudio-unreal/Private/VAudioWorld.cpp`, `AVAudioWorld::ScanAndAddPrimitives()`
+(the `if (!Mesh) continue;` check).
+
+## Problem
+
+`ScanAndAddPrimitives()` currently skips a `UStaticMeshComponent` entirely if `GetStaticMesh()`
+returns null, even though the component could still carry a capsule/sphere/box collision shape
+that the rest of the function knows how to convert into a VA primitive (the `Agg.SphylElems` /
+`SphereElems` / `BoxElems` loops immediately below already do this, just keyed off `Mesh->GetBodySetup()`).
+
+## Options considered (not yet decided)
+
+1. Read collision shapes from a `UShapeComponent` (`UCapsuleComponent`/`USphereComponent`/`UBoxComponent`)
+   sibling on the same actor, separately from the `UStaticMeshComponent` loop - these carry their
+   own `BodyInstance`/shape data without needing a static mesh at all.
+2. Decide whether a mesh-less `UStaticMeshComponent` can even carry simple-collision `AggGeom`
+   data independent of its (absent) `UStaticMesh` - if not, option 1 is the only real path.
+
+## Notes for implementation
+
+- This changes what actors are picked up by the scan (currently mesh-less components are silently
+  skipped), so needs a decision on whether that silent skip is relied upon anywhere before
+  widening the scan.
+

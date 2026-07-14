@@ -55,6 +55,16 @@ static VAMatrix MakeTranslationMatrix(const FVector& P)
 	return vaMatrixCreateTranslation((float)P.X, (float)P.Y, (float)P.Z);
 }
 
+// On-screen debug message keys (AddOnScreenDebugMessage slots), grouped here so the
+// per-emitter bounds messages (VABoundsMessageBase + index) can't collide with them.
+enum EVADebugMessageKey : uint32
+{
+	VARaytracingTimeMessage = 1001,
+	VAListenerPosMessage    = 1002,
+	VAAmbientFilterMessage  = 1003,
+	VABoundsMessageBase     = 2000,
+};
+
 static VAMatrix MakeRotTransMatrix(const FTransform& T)
 {
 	FQuat Q = T.GetRotation();
@@ -161,58 +171,44 @@ void AVAudioWorld::Tick(float DeltaTime)
 			TimeSinceHeartbeat = 0.0f;
 		}
 
-		bool bDryEnabled = !bReverbOnly;
-
-		// TODO - Rather than doing this in a loop every tick, invoke SetDryOutputEnabled() whenever bReverbOnly actually changes
-		for (AVAudioEmitter* emitter : RegisteredEmitters)
+		if (bReverbOnly != bWasReverbOnly)
 		{
-			if (emitter)
-				emitter->SetDryOutputEnabled(bDryEnabled);
+			bWasReverbOnly = bReverbOnly;
+			bool bDryEnabled = !bReverbOnly;
+
+			for (AVAudioEmitter* Emitter : RegisteredEmitters)
+				Emitter->SetDryOutputEnabled(bDryEnabled);
 		}
 
 		if (GEngine)
 		{
-			// TODO - proper codes in an enum somewhere instead of 1001, 1002, etc.
-			GEngine->AddOnScreenDebugMessage(1001, 0.0f, FColor::Cyan, FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
+			GEngine->AddOnScreenDebugMessage(VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
 
-			for (AVAudioEmitter* emitter : RegisteredEmitters)
+			if (AVAudioEmitter* MainListener = GetMainListener())
 			{
-				// TODO - rather than looping, store the main listener on this world. There can only be one main listener, so throw a warning/error if a 2nd emitter tries to set bIsMainListener to true
-				if (!emitter || !emitter->bIsMainListener)
-					continue;
+				FVector ListenerPos = MainListener->GetActorLocation();
+				GEngine->AddOnScreenDebugMessage(VAListenerPosMessage, 0.0f, FColor::Green, FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), ListenerPos.X, ListenerPos.Y, ListenerPos.Z));
 
-				FVector actorPosition = emitter->GetActorLocation();
-				// TODO - proper codes in an enum somewhere instead of 1001, 1002, etc.
-				GEngine->AddOnScreenDebugMessage(1002, 0.0f, FColor::Green, FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), actorPosition.X, actorPosition.Y, actorPosition.Z));
-
-				VALowPassFilter* ambientFilter = vaEmitterGetAmbientFilter(emitter->GetVAEmitter());
-				if (ambientFilter)
-				{
-					// TODO - proper codes in an enum somewhere instead of 1001, 1002, etc.
-					GEngine->AddOnScreenDebugMessage(1003, 0.0f, FColor::Yellow, FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), ambientFilter->gainLF, ambientFilter->gainHF));
-				}
-				break;
+				if (VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(MainListener->GetVAEmitter()))
+					GEngine->AddOnScreenDebugMessage(VAAmbientFilterMessage, 0.0f, FColor::Yellow, FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), AmbientFilter->gainLF, AmbientFilter->gainHF));
 			}
 
-			// TODO - each emitter already has a vaEmitterWithinWorldBounds() call, use that here instead
 			// Per-emitter position and world-bounds check
-			const FVector BoundsMin = WorldPosition;
-			const FVector BoundsMax = WorldPosition + WorldSize;
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
-				AVAudioEmitter* E = RegisteredEmitters[i];
-				if (!E)
+				AVAudioEmitter* emitter = RegisteredEmitters[i];
+				VAEmitter* vaEmitter = emitter->GetVAEmitter();
+
+				if (!vaEmitter)
 					continue;
 
-				FVector P = E->GetActorLocation();
-				bool bInBounds = P.X >= BoundsMin.X && P.X <= BoundsMax.X
-				              && P.Y >= BoundsMin.Y && P.Y <= BoundsMax.Y
-				              && P.Z >= BoundsMin.Z && P.Z <= BoundsMax.Z;
+				bool bInBounds = vaEmitterWithinWorldBounds(vaEmitter);
+				VAVector P = vaEmitterGetPosition(vaEmitter);
 
 				FColor Color = bInBounds ? FColor::Green : FColor::Red;
-				GEngine->AddOnScreenDebugMessage(2000 + i, 0.0f, Color,
+				GEngine->AddOnScreenDebugMessage(VABoundsMessageBase + i, 0.0f, Color,
 					FString::Printf(TEXT("VA Emitter[%d] '%s': (%.1f, %.1f, %.1f) %s"),
-						i, *E->GetName(), P.X, P.Y, P.Z,
+						i, *emitter->GetName(), P.x, P.y, P.z,
 						bInBounds ? TEXT("[in bounds]") : TEXT("[OUT OF BOUNDS]")));
 			}
 		}
@@ -231,7 +227,8 @@ USubmixEffectReverbPreset* AVAudioWorld::GetGroupedEAXPreset(int32 Index) const
 
 void AVAudioWorld::RegisterEmitter(AVAudioEmitter* Emitter)
 {
-	RegisteredEmitters.AddUnique(Emitter);
+	if (Emitter)
+		RegisteredEmitters.AddUnique(Emitter);
 }
 
 void AVAudioWorld::UnregisterEmitter(AVAudioEmitter* Emitter)
@@ -241,10 +238,10 @@ void AVAudioWorld::UnregisterEmitter(AVAudioEmitter* Emitter)
 
 AVAudioEmitter* AVAudioWorld::GetMainListener() const
 {
-	// TODO - rather than looping, store the main listener on this world. There can only be one main listener, so throw a warning/error if a 2nd emitter tries to set bIsMainListener to true
+	// See plan.md for caching this instead of scanning every call.
 	for (AVAudioEmitter* E : RegisteredEmitters)
 	{
-		if (E && E->bIsMainListener)
+		if (E->bIsMainListener)
 			return E;
 	}
 
@@ -385,7 +382,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 {
 	UWorld* UEWorld = GetWorld();
 
-	// TODO - why null? 
+	// Null if this actor isn't in a live level (e.g. called outside BeginPlay/PIE).
 	if (!UEWorld)
 		return;
 
@@ -418,7 +415,8 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		{
 			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
 
-			// TODO - why null? It could still have a capsule/sphere/box collision shape we can use
+			// Null if the component has no mesh assigned. See plan.md for picking up
+			// simple collision shapes on mesh-less components instead of skipping them.
 			if (!Mesh)
 				continue;
 

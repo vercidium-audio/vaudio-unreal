@@ -179,6 +179,10 @@ private:
 
 	TArray<AVAudioEmitter*> RegisteredEmitters;
 
+	// Mirrors bReverbOnly as of the last Tick(), so the dry-output loop over RegisteredEmitters
+	// only runs on the tick where it actually changes.
+	bool bWasReverbOnly = false;
+
 	void ApplyChildMaterials();
 	void ScanAndAddPrimitives();
 	void DestroyPrimitives();
