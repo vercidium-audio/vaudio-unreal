@@ -6,6 +6,10 @@
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/ShapeComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SphereComponent.h"
+#include "Components/BoxComponent.h"
 #include "StaticMeshResources.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/AggregateGeom.h"
@@ -414,6 +418,53 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 		VAMaterialType Material = EnumToVAMaterial(MatComp->Material);
 
+		TArray<UShapeComponent*> ShapeComps;
+		Actor->GetComponents<UShapeComponent>(ShapeComps);
+
+		for (UShapeComponent* ShapeComp : ShapeComps)
+		{
+			FTransform CompTransform = ShapeComp->GetComponentTransform();
+
+			if (UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(ShapeComp))
+			{
+				VAMatrix Mat = MakeRotTransMatrix(CompTransform);
+
+				VACapsulePrimitive* Cap = vaCapsulePrimitiveCreate();
+				vaCapsulePrimitiveSetRadius(Cap,   Capsule->GetScaledCapsuleRadius());
+				vaCapsulePrimitiveSetLength(Cap,   Capsule->GetScaledCapsuleHalfHeight_WithoutHemisphere() * 2.0f);
+				vaCapsulePrimitiveSetMaterial(Cap, Material);
+				vaCapsulePrimitiveSetTransform(Cap, &Mat);
+				vaWorldAddPrimitive_(World, Cap);
+				CapsulePrimitives.Add(Cap);
+				++SimpleCount;
+			}
+			else if (USphereComponent* Sphere = Cast<USphereComponent>(ShapeComp))
+			{
+				FVector Center = CompTransform.GetTranslation();
+
+				VASpherePrimitive* Sp = vaSpherePrimitiveCreate();
+				vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
+				vaSpherePrimitiveSetRadius(Sp,   Sphere->GetScaledSphereRadius());
+				vaSpherePrimitiveSetMaterial(Sp, Material);
+				vaWorldAddPrimitive_(World, Sp);
+				SpherePrimitives.Add(Sp);
+				++SimpleCount;
+			}
+			else if (UBoxComponent* Box = Cast<UBoxComponent>(ShapeComp))
+			{
+				VAMatrix Mat = MakeRotTransMatrix(CompTransform);
+				FVector Extent = Box->GetScaledBoxExtent();
+
+				VAPrismPrimitive* Prism = vaPrismPrimitiveCreate();
+				vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Extent.X * 2.0f, Extent.Y * 2.0f, Extent.Z * 2.0f));
+				vaPrismPrimitiveSetMaterial(Prism, Material);
+				vaPrismPrimitiveSetTransform(Prism, &Mat);
+				vaWorldAddPrimitive_(World, Prism);
+				PrismPrimitives.Add(Prism);
+				++SimpleCount;
+			}
+		}
+
 		TArray<UStaticMeshComponent*> MeshComps;
 		Actor->GetComponents<UStaticMeshComponent>(MeshComps);
 
@@ -426,8 +477,8 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		{
 			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
 
-			// Null if the component has no mesh assigned. See plan.md for picking up
-			// simple collision shapes on mesh-less components instead of skipping them.
+			// Null if the component has no mesh assigned; simple collision shapes on
+			// mesh-less actors are picked up separately via UShapeComponent above.
 			if (!Mesh)
 				continue;
 
