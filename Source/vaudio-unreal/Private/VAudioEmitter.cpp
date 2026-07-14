@@ -95,6 +95,19 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
 	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
 
+	vaEmitterSetVisualisationRayCount(Emitter, VisualisationRayCount);
+	vaEmitterSetVisualisationBounceCount(Emitter, VisualisationBounceCount);
+	vaEmitterSetVisualisationUpdateFrequency(Emitter, VisualisationUpdateFrequency);
+
+	vaEmitterSetMaxVolume(Emitter, MaxVolume);
+	vaEmitterSetType(Emitter, EmitterType);
+	vaEmitterSetClampPosition(Emitter, bClampPosition);
+	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
+	vaEmitterSetReservedEmitterCount(Emitter, ReservedEmitterCount);
+	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
+	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
+	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
+
 	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
 	vaEmitterSetHasRelativeReverb(Emitter, bIsMainListener);
 
@@ -422,6 +435,19 @@ void AVAudioEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChang
 	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
 	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
 	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
+
+	vaEmitterSetVisualisationRayCount(Emitter, VisualisationRayCount);
+	vaEmitterSetVisualisationBounceCount(Emitter, VisualisationBounceCount);
+	vaEmitterSetVisualisationUpdateFrequency(Emitter, VisualisationUpdateFrequency);
+
+	vaEmitterSetMaxVolume(Emitter, MaxVolume);
+	vaEmitterSetType(Emitter, EmitterType);
+	vaEmitterSetClampPosition(Emitter, bClampPosition);
+	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
+	vaEmitterSetReservedEmitterCount(Emitter, ReservedEmitterCount);
+	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
+	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
+	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
 
 	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX && !bIsMainListener);
 }
