@@ -13,6 +13,39 @@ extern "C" {
 }
 
 #include "VaRawLog.h"
+#include <SubmixEffects/AudioMixerSubmixEffectReverb.h>
+#include <UObject/UnrealType.h>
+#include <UObject/UObjectGlobals.h>
+#include <Containers/UnrealString.h.inl>
+#include <Components/BillboardComponent.h>
+#include <Engine/Engine.h>
+#include <Engine/EngineTypes.h>
+#include <Sound/SoundSubmix.h>
+#include <SharedDefinitions.UnrealEd.Project.ValApi.ValExpApi.Cpp20.InclOrderUnreal5_4.h>
+#include <HAL/Platform.h>
+#include <Logging/LogMacros.h>
+#include <Math/Color.h>
+#include <Math/MathFwd.h>
+#include <Math/UnrealMathUtility.h>
+#include <Components/AudioComponent.h>
+#include <CoreGlobals.h>
+#include <HAL/Platform.h>
+#include <Logging/LogMacros.h>
+#include <SubmixEffects/AudioMixerSubmixEffectReverb.h>
+#include <UObject/UnrealType.h>
+#include <UObject/UObjectGlobals.h>
+#include <Containers/UnrealString.h.inl>
+#include <CoreGlobals.h>
+#include <Math/Color.h>
+#include <Math/MathFwd.h>
+#include <Math/UnrealMathUtility.h>
+#include <Components/AudioComponent.h>
+#include <Components/BillboardComponent.h>
+#include <Engine/Engine.h>
+#include <Engine/EngineTypes.h>
+#include <SharedDefinitions.UnrealEd.Project.ValApi.ValExpApi.Cpp20.InclOrderUnreal5_4.h>
+#include <Sound/SoundSubmix.h>
+#include <Containers/UnrealString.h.inl>
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
 const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
@@ -23,19 +56,15 @@ AVAudioEmitter::AVAudioEmitter()
 
 	UBillboardComponent* Root = CreateDefaultSubobject<UBillboardComponent>(TEXT("Root"));
 	SetRootComponent(Root);
-
-	VaRawLog(L"VAudioEmitter.cpp: %s: Constructed", *GetName());
 }
 
 void AVAudioEmitter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// TODO - why could these be null? There is too much null propagation, need to clean it up
 	if (!AudioWorld)
-	{
-		VaRawLog(L"VAudioEmitter.cpp: BeginPlay(): %s: AudioWorld is null", *GetName());
 		return;
-	}
 
 	// AVAudioWorld may not have run its own BeginPlay yet (actor BeginPlay order is
 	// not guaranteed), in which case GetVAWorld() is still null here. TryInitializeEmitter()
@@ -50,6 +79,7 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	if (Emitter)
 		return true;
 
+	// TODO - why could these be null? There is too much null propagation, need to clean it up
 	if (!AudioWorld)
 	{
 		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: AudioWorld is null", *GetName());
@@ -58,6 +88,7 @@ bool AVAudioEmitter::TryInitializeEmitter()
 
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 
+	// TODO - why could these be null? There is too much null propagation, need to clean it up
 	if (!vaWorld)
 	{
 		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: vaWorld is null", *GetName());
@@ -117,8 +148,6 @@ bool AVAudioEmitter::TryInitializeEmitter()
 		{
 			ListenerReverbPreset = NewObject<USubmixEffectReverbPreset>(this);
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
-
-			VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Listener submix added", *GetName());
 		}
 
 		if (AmbientSound)
@@ -132,12 +161,7 @@ bool AVAudioEmitter::TryInitializeEmitter()
 				if (bAmbientThroughReverb && ListenerReverbSubmix)
 				{
 					AmbientAudioComponent->SetSubmixSend(ListenerReverbSubmix, 1.0f);
-					VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Ambient sound is sent through listener reverb submix", *GetName());
 				}
-			}
-			else
-			{
-				VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Failed to play ambient sound", *GetName());
 			}
 		}
 
@@ -152,7 +176,7 @@ bool AVAudioEmitter::TryInitializeEmitter()
 		FSourceEffectFilterSettings LPFSettings;
 		LPFSettings.FilterCircuit    = ESourceEffectFilterCircuit::StateVariable;
 		LPFSettings.FilterType       = ESourceEffectFilterType::LowPass;
-		LPFSettings.CutoffFrequency  = 20000.0f;
+		LPFSettings.CutoffFrequency  = MAX_LOW_PASS_CUTOFF_FREQUENCY;
 		LPFSettings.FilterQ          = 0.707f; // TODO - what is resonance?
 		SourceLPFPreset->SetSettings(LPFSettings);
 
@@ -346,6 +370,7 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 		for (AVAudioEmitter* Target : TargetEmitters)
 		{
+			// TODO - why could these be null? There is too much null propagation, need to clean it up
 			if (!Target || !Target->GetVAEmitter())
 				continue;
 
@@ -363,8 +388,6 @@ void AVAudioEmitter::Tick(float DeltaTime)
 				GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange, FString::Printf(TEXT("VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f"), *Target->GetName(), lowPassFilter->gainLF, lowPassFilter->gainHF));
 			}
 
-			VaRawLog(L"VA Source '%s' LPF: gainLF=%.3f  gainHF=%.3f", *Target->GetName(), lowPassFilter->gainLF, lowPassFilter->gainHF);
-
 			Target->ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 		}
 	}
@@ -372,37 +395,50 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 void AVAudioEmitter::ApplyListenerReverb()
 {
-	if (!ListenerReverbPreset) return;
+	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	if (!ListenerReverbPreset)
+		return;
 
 	VAEAXReverb* EAX = vaEmitterGetEAX(Emitter);
-	if (!EAX) return;
 
-	FSubmixEffectReverbSettings S;
-	S.DecayTime           = FMath::Clamp(EAX->decayTime,           0.1f,  20.0f);
-	S.DecayHFRatio        = FMath::Clamp(EAX->decayHFRatio,        0.1f,   2.0f);
-	S.Density             = FMath::Clamp(EAX->density,             0.0f,   1.0f);
-	S.Diffusion           = FMath::Clamp(EAX->diffusion,           0.0f,   1.0f);
-	S.Gain                = FMath::Clamp(EAX->gain,                0.0f,   1.0f);
-	S.GainHF              = FMath::Clamp(EAX->gainHF,              0.0f,   1.0f);
-	S.ReflectionsGain     = FMath::Clamp(EAX->reflectionsGain,     0.0f,   3.16f);
-	S.ReflectionsDelay    = FMath::Clamp(EAX->reflectionsDelay,    0.0f,   0.3f);
-	S.LateGain            = FMath::Clamp(EAX->lateReverbGain,      0.0f,  10.0f);
-	S.LateDelay           = FMath::Clamp(EAX->lateReverbDelay,     0.0f,   0.1f);
-	S.AirAbsorptionGainHF = FMath::Clamp(EAX->airAbsorptionGainHF, 0.0f,   1.0f);
-	S.WetLevel            = FMath::Clamp(EAX->returnedPercent,    0.0f,   1.0f);
-	S.DryLevel            = 0.0f;
-	ListenerReverbPreset->SetSettings(S);
+	// Raytracing has not completed at least once yet
+	if (!EAX)
+		return;
+
+	FSubmixEffectReverbSettings settings;
+
+	// EAX is already clamped, but ensure its clamped again here in case UE EAX changes one day
+	settings.DecayTime           = FMath::Clamp(EAX->decayTime,           0.1f,  20.0f);
+	settings.DecayHFRatio        = FMath::Clamp(EAX->decayHFRatio,        0.1f,   2.0f);
+	settings.Density             = FMath::Clamp(EAX->density,             0.0f,   1.0f);
+	settings.Diffusion           = FMath::Clamp(EAX->diffusion,           0.0f,   1.0f);
+	settings.Gain                = FMath::Clamp(EAX->gain,                0.0f,   1.0f);
+	settings.GainHF              = FMath::Clamp(EAX->gainHF,              0.0f,   1.0f);
+	settings.ReflectionsGain     = FMath::Clamp(EAX->reflectionsGain,     0.0f,  3.16f);
+	settings.ReflectionsDelay    = FMath::Clamp(EAX->reflectionsDelay,    0.0f,   0.3f);
+	settings.LateGain            = FMath::Clamp(EAX->lateReverbGain,      0.0f,  10.0f);
+	settings.LateDelay           = FMath::Clamp(EAX->lateReverbDelay,     0.0f,   0.1f);
+	settings.AirAbsorptionGainHF = FMath::Clamp(EAX->airAbsorptionGainHF, 0.0f,   1.0f);
+	settings.WetLevel            = FMath::Clamp(EAX->returnedPercent,    0.0f,    1.0f);
+	settings.DryLevel            = 0.0f;
+
+	ListenerReverbPreset->SetSettings(settings);
 }
 
 void AVAudioEmitter::ApplyAmbientFilter()
 {
-	VALowPassFilter* F = vaEmitterGetAmbientFilter(Emitter);
-	if (!F || !AmbientAudioComponent) return;
+	// TODO - why could these be null? Editing while in the editor? There is too much null propagation, need to clean it up
+	if (!AmbientAudioComponent)
+		return;
 
-	const float MinFreq = 200.0f;
-	const float MaxFreq = 20000.0f;
-	AmbientAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MinFreq, MaxFreq, FMath::Clamp(F->gainHF, 0.0f, 1.0f)));
-	AmbientAudioComponent->SetVolumeMultiplier(FMath::Clamp(F->gainLF, 0.0f, 1.0f));
+	VALowPassFilter* ambientFilter = vaEmitterGetAmbientFilter(Emitter);
+
+	// Has not raytraced yet
+	if (!ambientFilter)
+		return;
+
+	AmbientAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, ambientFilter->gainHF));
+	AmbientAudioComponent->SetVolumeMultiplier(ambientFilter->gainLF);
 }
 
 #if WITH_EDITOR
@@ -410,6 +446,7 @@ void AVAudioEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChang
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
+	// TODO - why could these be null? Editing while in the editor? There is too much null propagation, need to clean it up
 	if (!Emitter) return;
 
 	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
@@ -455,9 +492,12 @@ void AVAudioEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChang
 
 static void SetAudioComponentDryOutputEnabled(UAudioComponent* Comp, bool bEnabled)
 {
+	// TODO - why could these be null? There is too much null propagation, need to clean it up
 	if (!Comp) return;
 
 	FAudioDevice* AudioDevice = Comp->GetAudioDevice();
+
+	// TODO - why could these be null? There is too much null propagation, need to clean it up
 	if (!AudioDevice) return;
 
 	uint64 AudioComponentID = Comp->GetAudioComponentID();
