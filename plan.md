@@ -1,3 +1,10 @@
+# Overview
+
+The overall goal is:
+- Less null propagation: lots of places have "if (!something) return;" with no reasoning why it could be null. Rather than letting null checks permeate the codebase, fix them early. If it genuinely can be null, leave a comment explaining why
+- Logging cleanup: we have a mix of UE_LOG and VaRawLog calls. VaRawLog logs to UE_LOG anyway, so we should use VaRawLog. Also, logs should follow the pattern of VaRawLog(L"fileName: functionName(): worldOrEmitterName: message", *GetName());. Define a helper method in each file if possible, e.g. a VaWorldLog(const wchar_t* message) that automatically adds the file name, GetName() and function name using reflection? is that a thing? 
+
+
 # TODO: Delay source sound playback until raytracing completes
 
 Source: `Source/vaudio-unreal/Private/VAudioEmitter.cpp`, `AVAudioEmitter::TryInitializeEmitter()`

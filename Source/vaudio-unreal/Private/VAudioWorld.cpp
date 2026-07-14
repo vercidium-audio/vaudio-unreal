@@ -130,7 +130,7 @@ void AVAudioWorld::BeginPlay()
 		if (Sub)
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, Preset);
 		GroupedEAXPresets.Add(Preset);
-		UE_LOG(LogTemp, Log, TEXT("VA World: GroupedEAX[%d] submix=%s"), i, Sub ? *Sub->GetName() : TEXT("null"));
+		VALog(L"GroupedEAX[%d] submix=%s", i, Sub ? *Sub->GetName() : TEXT("null"));
 	}
 
 	ApplyChildMaterials();
@@ -167,7 +167,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 		if (doHeartbeat)
 		{
-			VaRawLog(L"AVAudioWorld '%s' RaytracingTime=%.3fms RegisteredEmitters=%d", *GetName(), vaWorldGetRaytracingTime(World), RegisteredEmitters.Num());
+			VALog(L"RaytracingTime=%.3fms RegisteredEmitters=%d", vaWorldGetRaytracingTime(World), RegisteredEmitters.Num());
 			TimeSinceHeartbeat = 0.0f;
 		}
 
@@ -253,7 +253,7 @@ void AVAudioWorld::ExportWorld()
 {
 	if (!World)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VA ExportWorld: world is null (press Play first)."));
+		VALog(L"world is null (press Play first).");
 		return;
 	}
 
@@ -321,7 +321,7 @@ void AVAudioWorld::BakeGeometry()
 
 	if (!UEWorld)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VA BakeGeometry: no world (open a level first)."));
+		VALog(L"no world (open a level first).");
 		return;
 	}
 
@@ -347,7 +347,7 @@ void AVAudioWorld::BakeGeometry()
 
 			if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
 			{
-				UE_LOG(LogTemp, Warning, TEXT("VA BakeGeometry: mesh '%s' on '%s' has no render data in-editor, skipping"), *Mesh->GetName(), *Actor->GetName());
+				VALog(L"mesh '%s' on '%s' has no render data in-editor, skipping", *Mesh->GetName(), *Actor->GetName());
 				continue;
 			}
 
@@ -369,12 +369,12 @@ void AVAudioWorld::BakeGeometry()
 
 			++BakedCount;
 
-			UE_LOG(LogTemp, Log, TEXT("VA BakeGeometry: baked '%s'.'%s' tris=%d"), *Actor->GetName(), *MeshComp->GetName(), Indices.Num() / 3);
+			VALog(L"baked '%s'.'%s' tris=%d", *Actor->GetName(), *MeshComp->GetName(), Indices.Num() / 3);
 		}
 	}
 
 	MarkPackageDirty();
-	UE_LOG(LogTemp, Log, TEXT("VA BakeGeometry: baked %d mesh component(s). Save the level to persist."), BakedCount);
+	VALog(L"baked %d mesh component(s). Save the level to persist.", BakedCount);
 }
 #endif
 
@@ -508,7 +508,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			{
 				if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
 				{
-					VaRawLog(L"VA: mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
+					VALog(L"mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
 					continue;
 				}
 
@@ -519,7 +519,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				LOD.IndexBuffer.GetCopy(Indices);
 				if (Indices.IsEmpty())
 				{
-					VaRawLog(L"VA: mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
+					VALog(L"mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
 					continue;
 				}
 
@@ -555,7 +555,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("VA: added %d simple + %d mesh primitives (%d actors skipped, no material)"), SimpleCount, MeshCount, SkippedCount);
+	VALog(L"added %d simple + %d mesh primitives (%d actors skipped, no material)", SimpleCount, MeshCount, SkippedCount);
 }
 
 void AVAudioWorld::DestroyPrimitives()

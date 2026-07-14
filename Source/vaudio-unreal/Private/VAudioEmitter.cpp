@@ -66,7 +66,7 @@ void AVAudioEmitter::BeginPlay()
 	// Display a warning if the user forgot to set the AudioWorld
 	if (!AudioWorld)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': AudioWorld is not assigned - this emitter will do nothing. Assign a VAudioWorld actor in the Details panel."), *GetName());
+		VALog(L"AudioWorld is not assigned - this emitter will do nothing. Assign a VAudioWorld actor in the Details panel.");
 		return;
 	}
 
@@ -188,16 +188,16 @@ bool AVAudioEmitter::TryInitializeEmitter()
 			SourceAudioComponent->SetSourceEffectChain(SourceEffectChain);
 
 			// Submix assignment is deferred to Tick once the SDK assigns a groupedEAXIndex.
-			VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Low pass filter created and sound played", *GetName());
+			VALog(L"Low pass filter created and sound played");
 		}
 		else
 		{
-			VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Failed to play sound", *GetName());
+			VALog(L"Failed to play sound");
 		}
 	}
 	else
 	{
-		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Emitter is neither main listener nor has a sound", *GetName());
+		VALog(L"Emitter is neither main listener nor has a sound");
 	}
 
 	VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
@@ -205,12 +205,12 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	// VA_INVALID_VALUE = already added to this world, VA_OUT_OF_RANGE = already added to another world
 	if (result != VA_SUCCESS)
 	{
-		VaRawLog(L"VAudioEmitter.cpp TryInitializeEmitter(): '%s': vaWorldAddEmitter() failed with result %d - this emitter may already be registered to a VAudioWorld.", *GetName(), result);
+		VALog(L"vaWorldAddEmitter() failed with result %d - this emitter may already be registered to a VAudioWorld.", result);
 	}
 
 	AudioWorld->RegisterEmitter(this);
 
-	VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: Complete. vaWorldAddEmitter() returned %d", *GetName(), result);
+	VALog(L"Complete. vaWorldAddEmitter() returned %d", result);
 	return true;
 }
 
@@ -223,7 +223,7 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		AmbientAudioComponent->Stop();
 		AmbientAudioComponent = nullptr;
 
-		VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Stopped ambient sound", *GetName());
+		VALog(L"Stopped ambient sound");
 	}
 
 	if (SourceAudioComponent)
@@ -231,7 +231,7 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		SourceAudioComponent->Stop();
 		SourceAudioComponent = nullptr;
 
-		VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Stopped source sound", *GetName());
+		VALog(L"Stopped source sound");
 	}
 
 	// No need to separately zero the submix send gain: Stop() above tears down the audio
@@ -248,18 +248,18 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		{
 			// AVAudioWorld::EndPlay() may run before this emitter's EndPlay (actor EndPlay order
 			// isn't guaranteed), destroying the VAWorld first - nothing to remove ourselves from in that case.
-			VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: vaWorld is null.", *GetName());
+			VALog(L"vaWorld is null.");
 		}
 		else if (!Emitter)
 		{
 			// TryInitializeEmitter() never got far enough to create Emitter (e.g. AudioWorld's
 			// VAWorld never became valid during this actor's lifetime) - nothing to remove.
-			VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Can't remove emitter from world as Emitter is null.", *GetName());
+			VALog(L"Can't remove emitter from world as Emitter is null.");
 		}
 		else
 		{
 			vaWorldRemoveEmitter(vaWorld, Emitter);
-			VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Emitter successfully removed from vaWorld.", *GetName());
+			VALog(L"Emitter successfully removed from vaWorld.");
 		}
 	}
 
@@ -271,7 +271,7 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	else
 	{
 		// Same as above: TryInitializeEmitter() never ran to completion during this actor's lifetime.
-		VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Can't destroy emitter as Emitter is null.", *GetName());
+		VALog(L"Can't destroy emitter as Emitter is null.");
 	}
 }
 
@@ -281,24 +281,24 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 	if (!Emitter)
 	{
-		VaRawLog(L"Emitter is null");
+		VALog(L"Emitter is null");
 
 		if (!TryInitializeEmitter())
 		{
-			VaRawLog(L"Emitter init failed");
+			VALog(L"Emitter init failed");
 
 			static float TimeSinceLastNullLog = 0.0f;
 			TimeSinceLastNullLog += DeltaTime;
 			if (TimeSinceLastNullLog >= 2.0f)
 			{
 				TimeSinceLastNullLog = 0.0f;
-				UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: '%s' Tick() - Emitter still NULL, waiting on AudioWorld"), *GetName());
+				VALog(L"Emitter still NULL, waiting on AudioWorld");
 			}
 
 			return;
 		}
 
-		VaRawLog(L"Emitter init succeeded");
+		VALog(L"Emitter init succeeded");
 	}
 
 	if (bIsMainListener && !bTargetsRegistered)
@@ -320,8 +320,7 @@ void AVAudioEmitter::Tick(float DeltaTime)
 				// isn't guaranteed). Don't latch bTargetsRegistered until every target
 				// has a VA emitter, otherwise stragglers are silently dropped forever.
 				bAllTargetsReady = false;
-				UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': target '%s' has no VA emitter yet - will retry"),
-					*GetName(), Target ? *Target->GetName() : TEXT("null"));
+				VALog(L"target '%s' has no VA emitter yet - will retry", Target ? *Target->GetName() : TEXT("null"));
 			}
 		}
 		bTargetsRegistered = bAllTargetsReady;
@@ -562,7 +561,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 
 	if (NewIndex != CurrentGroupedEAXIndex)
 	{
-		UE_LOG(LogTemp, Log, TEXT("VAudioEmitter.cpp: UpdateSourceSubmix(): '%s': groupedEAXIndex changed from %d to %d"), *GetName(), CurrentGroupedEAXIndex, NewIndex);
+		VALog(L"groupedEAXIndex changed from %d to %d", CurrentGroupedEAXIndex, NewIndex);
 
 		// Unlink from the old submix
 		if (CurrentGroupedEAXIndex >= 0)
@@ -587,7 +586,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 	// more entries to GroupedEAXSubmixes on the VAudioWorld actor.
 	if (!Submix)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': no submix configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2)."), *GetName(), CurrentGroupedEAXIndex);
+		VALog(L"no submix configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2).", CurrentGroupedEAXIndex);
 		return;
 	}
 
@@ -600,7 +599,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 
 	if (!vaWorld)
 	{
-		VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Unable to access grouped EAX data as vaWorld is null");
+		VALog(L"Unable to access grouped EAX data as vaWorld is null");
 	}
 	// Wait for raytracing to run at least once
 	else if (vaWorldGetReverbCalculated(vaWorld))
@@ -609,7 +608,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 
 		if (!ensureMsgf(GroupedEAX, TEXT("VAudioEmitter '%s': vaWorldGetGroupedEAX() returned null after reverb was calculated - vaWorldSetMaximumGroupedEAXCount() is always called with >= 2 (see AVAudioWorld::BeginPlay), so this shouldn't happen"), *GetName()))
 		{
-			VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Reverb is calculated but vaWorldGetGroupedEAX() returned null");
+			VALog(L"Reverb is calculated but vaWorldGetGroupedEAX() returned null");
 		}
 		else if (GroupedEAX[CurrentGroupedEAXIndex])
 		{
@@ -617,7 +616,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 
 			if (!Listener)
 			{
-				VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Unable to access relative EAX gain as Listener is null");
+				VALog(L"Unable to access relative EAX gain as Listener is null");
 			}
 			else
 			{
@@ -636,12 +635,12 @@ void AVAudioEmitter::UpdateSourceSubmix()
 		}
 		else
 		{
-			VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Reverb is calculated but GroupedEAX[CurrentGroupedEAXIndex] is null");
+			VALog(L"Reverb is calculated but GroupedEAX[CurrentGroupedEAXIndex] is null");
 		}
 	}
 	else
 	{
-		VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Unable to access grouped EAX data as vaWorldGetReverbCalculated() is false");
+		VALog(L"Unable to access grouped EAX data as vaWorldGetReverbCalculated() is false");
 	}
 
 	SourceAudioComponent->SetSubmixSend(Submix, SendLevel);
@@ -657,14 +656,14 @@ void AVAudioEmitter::ApplyGroupedEAXReverb()
 {
 	if (!AudioWorld)
 	{
-		VaRawLog(L"VaudioEmitter.cpp: ApplyGroupedEAXReverb(): AudioWorld is null");
+		VALog(L"AudioWorld is null");
 		return;
 	}
 
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 	if (!vaWorld)
 	{
-		VaRawLog(L"VaudioEmitter.cpp: ApplyGroupedEAXReverb(): vaWorld is null");
+		VALog(L"vaWorld is null");
 		return;
 	}
 
@@ -690,7 +689,7 @@ void AVAudioEmitter::ApplyGroupedEAXReverb()
 		// "no submix configured" warning in UpdateSourceSubmix().
 		if (!Preset)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': no reverb preset configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2)."), *GetName(), i);
+			VALog(L"no reverb preset configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2).", i);
 			continue;
 		}
 
