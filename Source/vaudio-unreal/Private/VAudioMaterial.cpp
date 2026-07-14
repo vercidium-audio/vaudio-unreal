@@ -46,6 +46,7 @@ static bool LabelToMaterialEnum(const FString& Label, EVAudioMaterial& Out)
 	return false;
 }
 
+// TODO - this is defined in VAudioMaterial.cpp and VAudioWorld.cpp. Move it to one material helper file
 static VAMaterialType EVAudioMaterialToVA(EVAudioMaterial M)
 {
 	switch (M)
@@ -91,9 +92,15 @@ bool AVAudioMaterial::ResolveMaterialType(EVAudioMaterial& OutMaterial) const
 VAWorld* AVAudioMaterial::GetOwningVAWorld() const
 {
 	AActor* Parent = GetAttachParentActor();
+
+	// TODO - why null? Too much null propagation and silent returns
 	if (!Parent) return nullptr;
+
 	AVAudioWorld* AudioWorld = Cast<AVAudioWorld>(Parent);
+
+	// TODO - why null? Too much null propagation and silent returns
 	if (!AudioWorld) return nullptr;
+
 	return AudioWorld->GetVAWorld();
 }
 
@@ -111,6 +118,7 @@ void AVAudioMaterial::LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId)
 void AVAudioMaterial::ApplyToWorld(VAWorld* World) const
 {
 	EVAudioMaterial MatEnum;
+
 	if (!ResolveMaterialType(MatEnum))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': MaterialName '%s' doesn't match any built-in material name - no changes applied."), *GetName(), *MaterialName);
@@ -126,15 +134,16 @@ void AVAudioMaterial::ApplyToWorld(VAWorld* World) const
 	vaWorldSetMaterialPlaneTransmissionLF(World, MaterialId, PlaneTransmissionLF);
 	vaWorldSetMaterialPlaneTransmissionHF(World, MaterialId, PlaneTransmissionHF);
 
-	UE_LOG(LogTemp, Log, TEXT("VA: applied custom material '%s' (id=%d) TransmissionLF=%.3f TransmissionHF=%.3f"),
-		*GetName(), MaterialId, TransmissionLF, TransmissionHF);
+	UE_LOG(LogTemp, Log, TEXT("VA: applied custom material '%s' (id=%d) TransmissionLF=%.3f TransmissionHF=%.3f"), *GetName(), MaterialId, TransmissionLF, TransmissionHF);
 }
 
 void AVAudioMaterial::ResetToDefaults()
 {
 	VAWorld* World = GetOwningVAWorld();
+
 	if (!World)
 	{
+		// TODO - can we raise an official warning somewhere? Show it in the editor?
 		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': not attached to a VAudioWorld or world hasn't started - can't read defaults."), *GetName());
 		return;
 	}
@@ -142,6 +151,7 @@ void AVAudioMaterial::ResetToDefaults()
 	EVAudioMaterial MatEnum;
 	if (!ResolveMaterialType(MatEnum))
 	{
+		// TODO - can we raise an official warning somewhere? Show it in the editor?
 		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': MaterialName '%s' doesn't match any built-in material name."), *GetName(), *MaterialName);
 		return;
 	}
@@ -160,7 +170,10 @@ void AVAudioMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	VAWorld* World = GetOwningVAWorld();
-	if (!World) return;
+
+	// TODO - can we raise an official warning somewhere? Show it in the editor?
+	if (!World)
+		return;
 
 	ApplyToWorld(World);
 }

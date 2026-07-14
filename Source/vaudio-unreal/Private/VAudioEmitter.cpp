@@ -62,9 +62,14 @@ void AVAudioEmitter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	// AudioWorld is a user-assigned reference (Details panel) - there's no code path that
+	// leaves it null other than the user forgetting to set it, so warn loudly rather than
+	// silently failing to play any sound.
 	if (!AudioWorld)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': AudioWorld is not assigned - this emitter will do nothing. Assign a VAudioWorld actor in the Details panel."), *GetName());
 		return;
+	}
 
 	// AVAudioWorld may not have run its own BeginPlay yet (actor BeginPlay order is
 	// not guaranteed), in which case GetVAWorld() is still null here. TryInitializeEmitter()
@@ -79,7 +84,8 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	if (Emitter)
 		return true;
 
-	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	// Unassigned AudioWorld is already reported once (as a warning) in BeginPlay - this is called
+	// again every Tick while uninitialised, so just no-op quietly here to avoid log spam.
 	if (!AudioWorld)
 	{
 		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: AudioWorld is null", *GetName());
@@ -88,7 +94,9 @@ bool AVAudioEmitter::TryInitializeEmitter()
 
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 
-	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	// AVAudioWorld's own BeginPlay hasn't run yet (actor BeginPlay order isn't guaranteed) -
+	// this resolves itself once AVAudioWorld::BeginPlay() creates its VAWorld, and Tick() retries
+	// every frame until then.
 	if (!vaWorld)
 	{
 		VaRawLog(L"VAudioEmitter.cpp: TryInitializeEmitter(): %s: vaWorld is null", *GetName());
@@ -177,7 +185,7 @@ bool AVAudioEmitter::TryInitializeEmitter()
 		LPFSettings.FilterCircuit    = ESourceEffectFilterCircuit::StateVariable;
 		LPFSettings.FilterType       = ESourceEffectFilterType::LowPass;
 		LPFSettings.CutoffFrequency  = MAX_LOW_PASS_CUTOFF_FREQUENCY;
-		LPFSettings.FilterQ          = 0.707f; // TODO - what is resonance?
+		LPFSettings.FilterQ          = 0.707f; // Butterworth Q - maximally flat passband, no resonant peak at the cutoff
 		SourceLPFPreset->SetSettings(LPFSettings);
 
 		SourceEffectChain = NewObject<USoundEffectSourcePresetChain>(this);
@@ -208,7 +216,14 @@ bool AVAudioEmitter::TryInitializeEmitter()
 
 	VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
 
-	// TODO - assert result is success. If not, add a warning message in the editor
+	// VA_INVALID_VALUE = already added to this world, VA_OUT_OF_RANGE = already added to another world
+	if (result != VA_SUCCESS)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': vaWorldAddEmitter() failed with result %d - this emitter may already be registered to a VAudioWorld."), *GetName(), result);
+
+		if (GEngine)
+			GEngine->AddOnScreenDebugMessage((uint64)this + 300, 5.0f, FColor::Red, FString::Printf(TEXT("VAudioEmitter '%s': failed to add to VAudioWorld (result %d)"), *GetName(), result));
+	}
 
 	AudioWorld->RegisterEmitter(this);
 
@@ -236,7 +251,8 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Stopped source sound", *GetName());
 	}
 
-	// TODO - also set submix send gain to 0.0f? If not needed, all good
+	// No need to separately zero the submix send gain: Stop() above tears down the audio
+	// components (SpawnSound* defaults to bAutoDestroy), which releases their submix sends too.
 	CurrentGroupedEAXIndex = -1;
 
 	if (AudioWorld)
@@ -247,12 +263,14 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 		if (!vaWorld)
 		{
-			// TODO - too much null propagation! Why is vaWorld null here?
+			// AVAudioWorld::EndPlay() may run before this emitter's EndPlay (actor EndPlay order
+			// isn't guaranteed), destroying the VAWorld first - nothing to remove ourselves from in that case.
 			VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: vaWorld is null.", *GetName());
 		}
 		else if (!Emitter)
 		{
-			// TODO - too much null propagation! Why is Emitter null here?
+			// TryInitializeEmitter() never got far enough to create Emitter (e.g. AudioWorld's
+			// VAWorld never became valid during this actor's lifetime) - nothing to remove.
 			VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Can't remove emitter from world as Emitter is null.", *GetName());
 		}
 		else
@@ -269,7 +287,7 @@ void AVAudioEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	else
 	{
-		// TODO - too much null propagation! Why is Emitter null here?
+		// Same as above: TryInitializeEmitter() never ran to completion during this actor's lifetime.
 		VaRawLog(L"VAudioEmitter.cpp: EndPlay(): %s: Can't destroy emitter as Emitter is null.", *GetName());
 	}
 }
@@ -326,14 +344,13 @@ void AVAudioEmitter::Tick(float DeltaTime)
 		bTargetsRegistered = bAllTargetsReady;
 	}
 
-	if (bIsMainListener)
+	if (bIsMainListener && bAutoFollowCamera)
 	{
-		// TODO - let the user set the main listener position manually via a script or blueprint or something
-		APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		APlayerController* playerController = GetWorld()->GetFirstPlayerController();
 
-		if (PC && PC->PlayerCameraManager)
+		if (playerController && playerController->PlayerCameraManager)
 		{
-			FVector CamPos = PC->PlayerCameraManager->GetCameraLocation();
+			FVector CamPos = playerController->PlayerCameraManager->GetCameraLocation();
 			vaEmitterSetPosition(Emitter, vaVectorCreate((float)CamPos.X, (float)CamPos.Y, (float)CamPos.Z));
 			SetActorLocation(CamPos);
 		}
@@ -370,7 +387,8 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 		for (AVAudioEmitter* Target : TargetEmitters)
 		{
-			// TODO - why could these be null? There is too much null propagation, need to clean it up
+			// Target may be an unset TArray entry (Target == null), or a target whose emitter
+			// hasn't been registered yet (see bTargetsRegistered above) - both resolve on a later Tick.
 			if (!Target || !Target->GetVAEmitter())
 				continue;
 
@@ -379,8 +397,9 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 			VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(Emitter, Target->GetVAEmitter());
 
-			// TODO - assert here, low pass filter should be defined if vaEmitterHasRaytracedTarget above returned true
-			if (!lowPassFilter)
+			// Per vaudio.h, vaEmitterGetTargetFilter() is only safe to call once
+			// vaEmitterHasRaytracedTarget() returns true, and should not return null after that.
+			if (!ensureMsgf(lowPassFilter, TEXT("VAudioEmitter '%s': vaEmitterGetTargetFilter() returned null for raytraced target '%s'"), *GetName(), *Target->GetName()))
 				continue;
 
 			if (GEngine)
@@ -395,7 +414,9 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 void AVAudioEmitter::ApplyListenerReverb()
 {
-	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	// ListenerReverbPreset is only created in TryInitializeEmitter() if ListenerReverbSubmix is
+	// assigned (it's an optional feature - see the property comment in VAudioEmitter.h) - listener
+	// reverb is simply disabled if the user hasn't assigned a submix.
 	if (!ListenerReverbPreset)
 		return;
 
@@ -427,7 +448,9 @@ void AVAudioEmitter::ApplyListenerReverb()
 
 void AVAudioEmitter::ApplyAmbientFilter()
 {
-	// TODO - why could these be null? Editing while in the editor? There is too much null propagation, need to clean it up
+	// AmbientAudioComponent is only spawned in TryInitializeEmitter() if AmbientSound is assigned
+	// (it's an optional feature - see the property comment in VAudioEmitter.h) - the ambient filter
+	// is simply skipped if the user hasn't assigned an ambient sound.
 	if (!AmbientAudioComponent)
 		return;
 
@@ -446,7 +469,8 @@ void AVAudioEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChang
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	// TODO - why could these be null? Editing while in the editor? There is too much null propagation, need to clean it up
+	// Emitter only exists while PIE/game is running and TryInitializeEmitter() has completed -
+	// editing properties on a placed actor in the editor (not PIE) hits this every time.
 	if (!Emitter) return;
 
 	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
@@ -492,12 +516,14 @@ void AVAudioEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChang
 
 static void SetAudioComponentDryOutputEnabled(UAudioComponent* Comp, bool bEnabled)
 {
-	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	// Comp is SourceAudioComponent or AmbientAudioComponent, both of which are only spawned if the
+	// corresponding SourceSound/AmbientSound is assigned (see AVAudioEmitter::SetDryOutputEnabled) -
+	// null here just means that optional sound isn't in use.
 	if (!Comp) return;
 
 	FAudioDevice* AudioDevice = Comp->GetAudioDevice();
 
-	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	// No active audio device (e.g. audio disabled, or the component's sound already stopped) - nothing to update.
 	if (!AudioDevice) return;
 
 	uint64 AudioComponentID = Comp->GetAudioComponentID();
@@ -520,9 +546,14 @@ void AVAudioEmitter::SetDryOutputEnabled(bool bEnabled)
 
 void AVAudioEmitter::ApplySourceFilter(float GainLF, float GainHF)
 {
-	// TODO - assert GainLF and GainHF is in range 0.0f to 1.0f (inclusive)
-	
-	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	// GainLF/GainHF come from VALowPassFilter, documented in vaudio.h as always in [0, 1] -
+	// this is a public entry point though (also reachable from Blueprints), so guard against misuse.
+	ensureMsgf(GainLF >= 0.0f && GainLF <= 1.0f, TEXT("VAudioEmitter::ApplySourceFilter: GainLF %f out of range [0,1]"), GainLF);
+	ensureMsgf(GainHF >= 0.0f && GainHF <= 1.0f, TEXT("VAudioEmitter::ApplySourceFilter: GainHF %f out of range [0,1]"), GainHF);
+
+	// SourceAudioComponent/SourceLPFPreset are only created in TryInitializeEmitter() when
+	// SourceSound is assigned (this emitter isn't the main listener) - null here just means
+	// this emitter has no source sound to filter.
 	if (!SourceAudioComponent || !SourceLPFPreset)
 		return;
 
@@ -530,7 +561,7 @@ void AVAudioEmitter::ApplySourceFilter(float GainLF, float GainHF)
 	settings.FilterCircuit   = ESourceEffectFilterCircuit::StateVariable;
 	settings.FilterType      = ESourceEffectFilterType::LowPass;
 	settings.CutoffFrequency = FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, GainHF);
-	settings.FilterQ         = 0.707f; // TODO - what is resonance?
+	settings.FilterQ         = 0.707f; // Butterworth Q - maximally flat passband, no resonant peak at the cutoff
 	SourceLPFPreset->SetSettings(settings);
 
 	SourceAudioComponent->SetVolumeMultiplier(GainLF);
@@ -538,7 +569,9 @@ void AVAudioEmitter::ApplySourceFilter(float GainLF, float GainHF)
 
 void AVAudioEmitter::UpdateSourceSubmix()
 {
-	// TODO - why could these be null? There is too much null propagation, need to clean it up
+	// SourceAudioComponent is only spawned when SourceSound is assigned; AudioWorld/Emitter are
+	// only null before TryInitializeEmitter() has completed (see BeginPlay/Tick) - all are normal
+	// transient states, not errors.
 	if (!SourceAudioComponent || !AudioWorld || !Emitter)
 		return;
 
@@ -565,9 +598,15 @@ void AVAudioEmitter::UpdateSourceSubmix()
 
 	USoundSubmix* Submix = AudioWorld->GetGroupedEAXSubmix(CurrentGroupedEAXIndex);
 
-	// TODO - assert or write a warning message somewhere that there aren't enough submixes allocated in the VAudioWorld actor
+	// AVAudioWorld always sets the SDK's maximumGroupedEAXCount to at least 2 (see
+	// AVAudioWorld::BeginPlay), even if GroupedEAXSubmixes has fewer than 2 entries - so the SDK
+	// can hand back an index for which there's no configured submix. Warn so the user knows to add
+	// more entries to GroupedEAXSubmixes on the VAudioWorld actor.
 	if (!Submix)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': no submix configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2)."), *GetName(), CurrentGroupedEAXIndex);
 		return;
+	}
 
 	// Default send level is overridden below if the listener has relative reverb data
 	float SendLevel = 1.0f;
@@ -585,9 +624,8 @@ void AVAudioEmitter::UpdateSourceSubmix()
 	{
 		const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(vaWorld);
 
-		if (!GroupedEAX)
+		if (!ensureMsgf(GroupedEAX, TEXT("VAudioEmitter '%s': vaWorldGetGroupedEAX() returned null after reverb was calculated - vaWorldSetMaximumGroupedEAXCount() is always called with >= 2 (see AVAudioWorld::BeginPlay), so this shouldn't happen"), *GetName()))
 		{
-			// TODO - if vaWorldGetReverbCalculated above is true, GroupedEAX shouldn't be null, because world.maximumGroupedEAXCount has to be >= 2. Check if this >= 2 range is defined in vaudio.h
 			VaRawLog(L"VaudioEmitter.cpp: UpdateSourceSubmix(): Reverb is calculated but vaWorldGetGroupedEAX() returned null");
 		}
 		else if (GroupedEAX[CurrentGroupedEAXIndex])
@@ -654,45 +692,40 @@ void AVAudioEmitter::ApplyGroupedEAXReverb()
 	if (!vaWorldGetReverbCalculated(vaWorld))
 		return;
 
-	if (!GroupedEAX)
-	{
-		// Assert here - if vaWorldGetReverbCalculated is true, vaWorldGetGroupedEAX() shouldn't return null
+	// Same guarantee as UpdateSourceSubmix(): maximumGroupedEAXCount is always >= 2
+	// (see AVAudioWorld::BeginPlay), so this shouldn't be null once reverb has been calculated.
+	if (!ensureMsgf(GroupedEAX, TEXT("VAudioEmitter '%s': vaWorldGetGroupedEAX() returned null after reverb was calculated"), *GetName()))
 		return;
-	}
 
 	for (int32 i = 0; i < Count; ++i)
 	{
 		USubmixEffectReverbPreset* Preset = AudioWorld->GetGroupedEAXPreset(i);
 
+		// GetGroupedEAXPreset(i) is only valid for i < GroupedEAXSubmixes.Num() on the VAudioWorld
+		// actor, but Count (the SDK's grouped EAX count) is always >= 2 - if fewer than 2 submixes
+		// are configured, indices in between have no preset. Same underlying cause as the
+		// "no submix configured" warning in UpdateSourceSubmix().
 		if (!Preset)
 		{
-			// Assert here - why is it null? Submixes should all be set up by now. Need less null propagation in this codebase
-			VaRawLog(L"VaudioEmitter.cpp: ApplyGroupedEAXReverb(): AudioWorld->GetGroupedEAXPreset[%d] is null", i);
+			UE_LOG(LogTemp, Warning, TEXT("VAudioEmitter '%s': no reverb preset configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2)."), *GetName(), i);
 			continue;
 		}
 
 		const VAEAXReverb* EAX = GroupedEAX[i];
 
-		if (!EAX)
-		{
-			// Assert here - why is it null? Submixes should all be set up by now. Need less null propagation in this codebase
-			VaRawLog(L"VaudioEmitter.cpp: ApplyGroupedEAXReverb(): GroupedEAX[%d] is null", i);
+		// EAX itself comes straight from the SDK's GroupedEAX array (sized to Count), so it
+		// should always be populated for i < Count once reverb has been calculated.
+		if (!ensureMsgf(EAX, TEXT("VAudioEmitter '%s': GroupedEAX[%d] is null after reverb was calculated"), *GetName(), i))
 			continue;
-		}
 
 		if (GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(3001 + i, 0.0f, FColor::White,
-				FString::Printf(TEXT("VA GroupedEAX[%d]: preset=%s eax=%s decayTime=%.3f wetLevel=%.3f gain=%.3f"),
-					i,
-					Preset ? TEXT("valid") : TEXT("null"),
-					EAX    ? TEXT("valid") : TEXT("null"),
-					EAX    ? EAX->decayTime        : 0.0f,
-					EAX    ? EAX->returnedPercent : 0.0f,
-					EAX    ? EAX->gain             : 0.0f));
+				FString::Printf(TEXT("VA GroupedEAX[%d]: decayTime=%.3f wetLevel=%.3f gain=%.3f"),
+					i, EAX->decayTime, EAX->returnedPercent, EAX->gain));
 		}
 
-		// TODO - do we need to clamp? EAX is already clamped to the constants in vaudio.h
+		// EAX is already clamped, but ensure its clamped again here in case UE EAX changes one day
 		FSubmixEffectReverbSettings settings;
 		settings.DecayTime           = FMath::Clamp(EAX->decayTime,           0.1f,  20.0f);
 		settings.DecayHFRatio        = FMath::Clamp(EAX->decayHFRatio,        0.1f,   2.0f);

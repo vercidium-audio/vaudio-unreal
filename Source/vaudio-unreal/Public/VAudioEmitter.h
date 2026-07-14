@@ -40,6 +40,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
 	bool bIsMainListener = false;
 
+	// Automatically move this emitter (and the VA listener position) to the first player controller's camera every frame
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener", meta = (EditCondition = "bIsMainListener"))
+	bool bAutoFollowCamera = true;
+
 	// This submix applies reverb to sounds created by this listener
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener", meta = (EditCondition = "bIsMainListener"))
 	USoundSubmix* ListenerReverbSubmix = nullptr;

@@ -72,8 +72,6 @@ static VAMatrix MakeRotTransMatrix(const FTransform& T)
 	);
 }
 
-// ---------------------------------------------------------------------------
-
 AVAudioWorld::AVAudioWorld()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -84,8 +82,6 @@ AVAudioWorld::AVAudioWorld()
 
 void AVAudioWorld::BeginPlay()
 {
-	VaRawLog(L"AVAudioWorld::BeginPlay ENTER '%s'", *GetName());
-
 	Super::BeginPlay();
 
 	World = vaWorldCreate();
@@ -107,8 +103,7 @@ void AVAudioWorld::BeginPlay()
 	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
 	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
 	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
-	if (bPendingShutdown)
-		vaWorldSetPendingShutdown(World, true);
+	vaWorldSetPendingShutdown(World, bPendingShutdown);
 	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
 	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
 	vaWorldSetAirAbsorptionHumidity(World, Humidity);
@@ -117,7 +112,6 @@ void AVAudioWorld::BeginPlay()
 
 	int32 GroupedEAXCount = FMath::Max(2, GroupedEAXSubmixes.Num());
 	vaWorldSetMaximumGroupedEAXCount(World, GroupedEAXCount);
-	UE_LOG(LogTemp, Log, TEXT("VA World: MaximumGroupedEAXCount=%d (submix slots=%d)"), GroupedEAXCount, GroupedEAXSubmixes.Num());
 
 	for (int32 i = 0; i < GroupedEAXSubmixes.Num(); ++i)
 	{
@@ -131,9 +125,6 @@ void AVAudioWorld::BeginPlay()
 
 	ApplyChildMaterials();
 	ScanAndAddPrimitives();
-
-	VaRawLog(L"AVAudioWorld '%s' BeginPlay COMPLETE, World=%s", *GetName(), World ? L"valid" : L"NULL");
-	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioWorld '%s' BeginPlay COMPLETE, World=%s"), *GetName(), World ? TEXT("valid") : TEXT("NULL"));
 }
 
 void AVAudioWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -155,65 +146,63 @@ void AVAudioWorld::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	static float TimeSinceHeartbeat = 0.0f;
-	TimeSinceHeartbeat += DeltaTime;
-
-	bool doHeartbeat = TimeSinceHeartbeat >= 1.0f;
-
-	if (doHeartbeat)
-	{
-		TimeSinceHeartbeat = 0.0f;
-		VaRawLog(L"AVAudioWorld '%s' Tick heartbeat - World=%s RegisteredEmitters=%d",
-			*GetName(), World ? L"valid" : L"NULL", RegisteredEmitters.Num());
-		UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioWorld '%s' Tick heartbeat - World=%s RegisteredEmitters=%d"),
-			*GetName(), World ? TEXT("valid") : TEXT("NULL"), RegisteredEmitters.Num());
-	}
-
 	if (World)
 	{
 		vaWorldUpdate(World);
 
+		static float TimeSinceHeartbeat = 0.0f;
+		TimeSinceHeartbeat += DeltaTime;
+
+		bool doHeartbeat = TimeSinceHeartbeat >= 1.0f;
+
 		if (doHeartbeat)
 		{
-			VaRawLog(L"AVAudioWorld '%s' RaytracingTime=%.3fms RegisteredEmitters=%d",
-				*GetName(), vaWorldGetRaytracingTime(World), RegisteredEmitters.Num());
+			VaRawLog(L"AVAudioWorld '%s' RaytracingTime=%.3fms RegisteredEmitters=%d", *GetName(), vaWorldGetRaytracingTime(World), RegisteredEmitters.Num());
+			TimeSinceHeartbeat = 0.0f;
 		}
 
 		bool bDryEnabled = !bReverbOnly;
-		for (AVAudioEmitter* E : RegisteredEmitters)
+
+		// TODO - Rather than doing this in a loop every tick, invoke SetDryOutputEnabled() whenever bReverbOnly actually changes
+		for (AVAudioEmitter* emitter : RegisteredEmitters)
 		{
-			if (E) E->SetDryOutputEnabled(bDryEnabled);
+			if (emitter)
+				emitter->SetDryOutputEnabled(bDryEnabled);
 		}
 
 		if (GEngine)
 		{
-			GEngine->AddOnScreenDebugMessage(1001, 0.0f, FColor::Cyan,
-				FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
+			// TODO - proper codes in an enum somewhere instead of 1001, 1002, etc.
+			GEngine->AddOnScreenDebugMessage(1001, 0.0f, FColor::Cyan, FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
 
-			for (AVAudioEmitter* E : RegisteredEmitters)
+			for (AVAudioEmitter* emitter : RegisteredEmitters)
 			{
-				if (!E || !E->bIsMainListener) continue;
+				// TODO - rather than looping, store the main listener on this world. There can only be one main listener, so throw a warning/error if a 2nd emitter tries to set bIsMainListener to true
+				if (!emitter || !emitter->bIsMainListener)
+					continue;
 
-				FVector P = E->GetActorLocation();
-				GEngine->AddOnScreenDebugMessage(1002, 0.0f, FColor::Green,
-					FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), P.X, P.Y, P.Z));
+				FVector actorPosition = emitter->GetActorLocation();
+				// TODO - proper codes in an enum somewhere instead of 1001, 1002, etc.
+				GEngine->AddOnScreenDebugMessage(1002, 0.0f, FColor::Green, FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), actorPosition.X, actorPosition.Y, actorPosition.Z));
 
-				VALowPassFilter* F = vaEmitterGetAmbientFilter(E->GetVAEmitter());
-				if (F)
+				VALowPassFilter* ambientFilter = vaEmitterGetAmbientFilter(emitter->GetVAEmitter());
+				if (ambientFilter)
 				{
-					GEngine->AddOnScreenDebugMessage(1003, 0.0f, FColor::Yellow,
-						FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), F->gainLF, F->gainHF));
+					// TODO - proper codes in an enum somewhere instead of 1001, 1002, etc.
+					GEngine->AddOnScreenDebugMessage(1003, 0.0f, FColor::Yellow, FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), ambientFilter->gainLF, ambientFilter->gainHF));
 				}
 				break;
 			}
 
+			// TODO - each emitter already has a vaEmitterWithinWorldBounds() call, use that here instead
 			// Per-emitter position and world-bounds check
 			const FVector BoundsMin = WorldPosition;
 			const FVector BoundsMax = WorldPosition + WorldSize;
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
 				AVAudioEmitter* E = RegisteredEmitters[i];
-				if (!E) continue;
+				if (!E)
+					continue;
 
 				FVector P = E->GetActorLocation();
 				bool bInBounds = P.X >= BoundsMin.X && P.X <= BoundsMax.X
@@ -243,28 +232,22 @@ USubmixEffectReverbPreset* AVAudioWorld::GetGroupedEAXPreset(int32 Index) const
 void AVAudioWorld::RegisterEmitter(AVAudioEmitter* Emitter)
 {
 	RegisteredEmitters.AddUnique(Emitter);
-	VaRawLog(L"AVAudioWorld '%s' RegisterEmitter('%s') - now %d registered",
-		*GetName(), Emitter ? *Emitter->GetName() : L"NULL", RegisteredEmitters.Num());
-	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioWorld '%s' RegisterEmitter('%s') - now %d registered"),
-		*GetName(), Emitter ? *Emitter->GetName() : TEXT("NULL"), RegisteredEmitters.Num());
 }
 
 void AVAudioWorld::UnregisterEmitter(AVAudioEmitter* Emitter)
 {
 	RegisteredEmitters.Remove(Emitter);
-	VaRawLog(L"AVAudioWorld '%s' UnregisterEmitter('%s') - now %d registered",
-		*GetName(), Emitter ? *Emitter->GetName() : L"NULL", RegisteredEmitters.Num());
-	UE_LOG(LogTemp, Warning, TEXT("VA DEBUG: AVAudioWorld '%s' UnregisterEmitter('%s') - now %d registered"),
-		*GetName(), Emitter ? *Emitter->GetName() : TEXT("NULL"), RegisteredEmitters.Num());
 }
 
 AVAudioEmitter* AVAudioWorld::GetMainListener() const
 {
+	// TODO - rather than looping, store the main listener on this world. There can only be one main listener, so throw a warning/error if a 2nd emitter tries to set bIsMainListener to true
 	for (AVAudioEmitter* E : RegisteredEmitters)
 	{
 		if (E && E->bIsMainListener)
 			return E;
 	}
+
 	return nullptr;
 }
 
@@ -276,9 +259,9 @@ void AVAudioWorld::ExportWorld()
 		UE_LOG(LogTemp, Warning, TEXT("VA ExportWorld: world is null (press Play first)."));
 		return;
 	}
+
 	FString Path = FPaths::ProjectDir() + TEXT("vaudio_export.va");
 	vaWorldExport(World, TCHAR_TO_UTF8(*Path));
-	UE_LOG(LogTemp, Log, TEXT("VA exported world to: %s"), *Path);
 }
 
 // ---------------------------------------------------------------------------
@@ -290,22 +273,18 @@ void AVAudioWorld::ApplyChildMaterials()
 	TArray<AActor*> AttachedActors;
 	GetAttachedActors(AttachedActors);
 
-	UE_LOG(LogTemp, Log, TEXT("VA: ApplyChildMaterials - %d directly attached actor(s) found on '%s'"),
-		AttachedActors.Num(), *GetName());
-
 	int32 AppliedCount = 0;
+
 	for (AActor* Child : AttachedActors)
 	{
 		AVAudioMaterial* Mat = Cast<AVAudioMaterial>(Child);
+
 		if (Mat)
 		{
-			UE_LOG(LogTemp, Log, TEXT("VA: registering custom material actor '%s' (MaterialName='%s'), transmissionLF: %f"), *Mat->GetName(), *Mat->MaterialName, Mat->TransmissionLF);
 			Mat->ApplyToWorld(World);
 			++AppliedCount;
 		}
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("VA: ApplyChildMaterials - applied %d custom material actor(s)"), AppliedCount);
 }
 
 // ---------------------------------------------------------------------------
@@ -315,16 +294,12 @@ void AVAudioWorld::ApplyChildMaterials()
 // Walk the attach-parent chain to find the nearest UVAudioMaterialComponent.
 static UVAudioMaterialComponent* FindMaterialInChain(AActor* Actor)
 {
-	for (AActor* A = Actor; A != nullptr; A = A->GetAttachParentActor())
+	for (AActor* actor = Actor; actor != nullptr; actor = actor->GetAttachParentActor())
 	{
-		UVAudioMaterialComponent* C = A->FindComponentByClass<UVAudioMaterialComponent>();
-		if (C)
-		{
-			if (A != Actor)
-				UE_LOG(LogTemp, Log, TEXT("VA:   '%s' inherits material from parent '%s'"),
-					*Actor->GetName(), *A->GetName());
-			return C;
-		}
+		UVAudioMaterialComponent* materialComponent = actor->FindComponentByClass<UVAudioMaterialComponent>();
+
+		if (materialComponent)
+			return materialComponent;
 	}
 	return nullptr;
 }
@@ -334,7 +309,9 @@ static UVAudioMaterialComponent* FindMaterialInChain(AActor* Actor)
 static bool HasSimpleCollision(UStaticMesh* Mesh)
 {
 	UBodySetup* BodySetup = Mesh ? Mesh->GetBodySetup() : nullptr;
-	if (!BodySetup) return false;
+
+	if (!BodySetup)
+		return false;
 
 	const FKAggregateGeom& Agg = BodySetup->AggGeom;
 	return !Agg.SphylElems.IsEmpty() || !Agg.SphereElems.IsEmpty() || !Agg.BoxElems.IsEmpty();
@@ -344,6 +321,7 @@ static bool HasSimpleCollision(UStaticMesh* Mesh)
 void AVAudioWorld::BakeGeometry()
 {
 	UWorld* UEWorld = GetWorld();
+
 	if (!UEWorld)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("VA BakeGeometry: no world (open a level first)."));
@@ -372,8 +350,7 @@ void AVAudioWorld::BakeGeometry()
 
 			if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
 			{
-				UE_LOG(LogTemp, Warning, TEXT("VA BakeGeometry: mesh '%s' on '%s' has no render data in-editor, skipping"),
-					*Mesh->GetName(), *Actor->GetName());
+				UE_LOG(LogTemp, Warning, TEXT("VA BakeGeometry: mesh '%s' on '%s' has no render data in-editor, skipping"), *Mesh->GetName(), *Actor->GetName());
 				continue;
 			}
 
@@ -586,8 +563,8 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 void AVAudioWorld::DestroyPrimitives()
 {
-	for (VAMeshPrimitive*    P : MeshPrimitives)    { vaWorldRemovePrimitive_(World, P); vaMeshPrimitiveDestroy(P); }
-	for (VACapsulePrimitive* P : CapsulePrimitives) { vaWorldRemovePrimitive_(World, P); vaCapsulePrimitiveDestroy(P); }
+	for (VAMeshPrimitive*    actorPosition : MeshPrimitives)    { vaWorldRemovePrimitive_(World, P); vaMeshPrimitiveDestroy(P); }
+	for (VACapsulePrimitive* actorPosition : CapsulePrimitives) { vaWorldRemovePrimitive_(World, P); vaCapsulePrimitiveDestroy(P); }
 	for (VASpherePrimitive*  P : SpherePrimitives)  { vaWorldRemovePrimitive_(World, P); vaSpherePrimitiveDestroy(P); }
 	for (VAPrismPrimitive*   P : PrismPrimitives)   { vaWorldRemovePrimitive_(World, P); vaPrismPrimitiveDestroy(P); }
 
