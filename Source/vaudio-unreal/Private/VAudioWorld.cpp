@@ -227,25 +227,36 @@ USubmixEffectReverbPreset* AVAudioWorld::GetGroupedEAXPreset(int32 Index) const
 
 void AVAudioWorld::RegisterEmitter(AVAudioEmitter* Emitter)
 {
-	if (Emitter)
-		RegisteredEmitters.AddUnique(Emitter);
+	if (!Emitter)
+		return;
+
+	RegisteredEmitters.AddUnique(Emitter);
+
+	if (Emitter->bIsMainListener)
+	{
+		if (MainListener.IsValid() && MainListener.Get() != Emitter)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("AVAudioWorld: '%s' registered as main listener, but '%s' is already the main listener - keeping the first one. Only one emitter should have bIsMainListener = true."),
+				*Emitter->GetName(), *MainListener->GetName());
+		}
+		else
+		{
+			MainListener = Emitter;
+		}
+	}
 }
 
 void AVAudioWorld::UnregisterEmitter(AVAudioEmitter* Emitter)
 {
 	RegisteredEmitters.Remove(Emitter);
+
+	if (MainListener.Get() == Emitter)
+		MainListener = nullptr;
 }
 
 AVAudioEmitter* AVAudioWorld::GetMainListener() const
 {
-	// See plan.md for caching this instead of scanning every call.
-	for (AVAudioEmitter* E : RegisteredEmitters)
-	{
-		if (E->bIsMainListener)
-			return E;
-	}
-
-	return nullptr;
+	return MainListener.Get();
 }
 
 

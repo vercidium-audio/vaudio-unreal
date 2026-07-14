@@ -179,6 +179,10 @@ private:
 
 	TArray<AVAudioEmitter*> RegisteredEmitters;
 
+	// Cached from RegisteredEmitters whenever an emitter with bIsMainListener == true is
+	// (un)registered, so GetMainListener() and Tick() don't need to scan every frame.
+	TWeakObjectPtr<AVAudioEmitter> MainListener;
+
 	// Mirrors bReverbOnly as of the last Tick(), so the dry-output loop over RegisteredEmitters
 	// only runs on the tick where it actually changes.
 	bool bWasReverbOnly = false;
