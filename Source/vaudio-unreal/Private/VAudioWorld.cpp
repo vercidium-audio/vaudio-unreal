@@ -182,15 +182,15 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 		if (GEngine)
 		{
-			GEngine->AddOnScreenDebugMessage(VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
+			GEngine->AddOnScreenDebugMessage((uint64)VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
 
-			if (AVAudioEmitter* MainListener = GetMainListener())
+			if (AVAudioEmitter* CurrentMainListener = GetMainListener())
 			{
-				FVector ListenerPos = MainListener->GetActorLocation();
-				GEngine->AddOnScreenDebugMessage(VAListenerPosMessage, 0.0f, FColor::Green, FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), ListenerPos.X, ListenerPos.Y, ListenerPos.Z));
+				FVector ListenerPos = CurrentMainListener->GetActorLocation();
+				GEngine->AddOnScreenDebugMessage((uint64)VAListenerPosMessage, 0.0f, FColor::Green, FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), ListenerPos.X, ListenerPos.Y, ListenerPos.Z));
 
-				if (VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(MainListener->GetVAEmitter()))
-					GEngine->AddOnScreenDebugMessage(VAAmbientFilterMessage, 0.0f, FColor::Yellow, FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), AmbientFilter->gainLF, AmbientFilter->gainHF));
+				if (VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(CurrentMainListener->GetVAEmitter()))
+					GEngine->AddOnScreenDebugMessage((uint64)VAAmbientFilterMessage, 0.0f, FColor::Yellow, FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), AmbientFilter->gainLF, AmbientFilter->gainHF));
 			}
 
 			// Per-emitter position and world-bounds check
@@ -206,7 +206,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				VAVector P = vaEmitterGetPosition(vaEmitter);
 
 				FColor Color = bInBounds ? FColor::Green : FColor::Red;
-				GEngine->AddOnScreenDebugMessage(VABoundsMessageBase + i, 0.0f, Color,
+				GEngine->AddOnScreenDebugMessage((uint64)VABoundsMessageBase + i, 0.0f, Color,
 					FString::Printf(TEXT("VA Emitter[%d] '%s': (%.1f, %.1f, %.1f) %s"),
 						i, *emitter->GetName(), P.x, P.y, P.z,
 						bInBounds ? TEXT("[in bounds]") : TEXT("[OUT OF BOUNDS]")));

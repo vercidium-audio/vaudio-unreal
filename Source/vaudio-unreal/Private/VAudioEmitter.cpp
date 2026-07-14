@@ -13,39 +13,8 @@ extern "C" {
 }
 
 #include "VaRawLog.h"
-#include <SubmixEffects/AudioMixerSubmixEffectReverb.h>
-#include <UObject/UnrealType.h>
-#include <UObject/UObjectGlobals.h>
-#include <Containers/UnrealString.h.inl>
-#include <Components/BillboardComponent.h>
 #include <Engine/Engine.h>
 #include <Engine/EngineTypes.h>
-#include <Sound/SoundSubmix.h>
-#include <SharedDefinitions.UnrealEd.Project.ValApi.ValExpApi.Cpp20.InclOrderUnreal5_4.h>
-#include <HAL/Platform.h>
-#include <Logging/LogMacros.h>
-#include <Math/Color.h>
-#include <Math/MathFwd.h>
-#include <Math/UnrealMathUtility.h>
-#include <Components/AudioComponent.h>
-#include <CoreGlobals.h>
-#include <HAL/Platform.h>
-#include <Logging/LogMacros.h>
-#include <SubmixEffects/AudioMixerSubmixEffectReverb.h>
-#include <UObject/UnrealType.h>
-#include <UObject/UObjectGlobals.h>
-#include <Containers/UnrealString.h.inl>
-#include <CoreGlobals.h>
-#include <Math/Color.h>
-#include <Math/MathFwd.h>
-#include <Math/UnrealMathUtility.h>
-#include <Components/AudioComponent.h>
-#include <Components/BillboardComponent.h>
-#include <Engine/Engine.h>
-#include <Engine/EngineTypes.h>
-#include <SharedDefinitions.UnrealEd.Project.ValApi.ValExpApi.Cpp20.InclOrderUnreal5_4.h>
-#include <Sound/SoundSubmix.h>
-#include <Containers/UnrealString.h.inl>
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
 const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
@@ -180,20 +149,10 @@ bool AVAudioEmitter::TryInitializeEmitter()
 		ChainEntry.bBypass = false;
 		SourceEffectChain->Chain.Add(ChainEntry);
 
-		// TODO - wait for raytracing to complete before playing the sound (else it starts clear then is instantly muffled)
-		SourceAudioComponent = UGameplayStatics::SpawnSoundAtLocation(GetWorld(), SourceSound, GetActorLocation(), FRotator::ZeroRotator, 1.0f, 1.0f, 0.0f, nullptr, nullptr, bLooping);
-
-		if (SourceAudioComponent)
-		{
-			SourceAudioComponent->SetSourceEffectChain(SourceEffectChain);
-
-			// Submix assignment is deferred to Tick once the SDK assigns a groupedEAXIndex.
-			VALog(L"Low pass filter created and sound played");
-		}
-		else
-		{
-			VALog(L"Failed to play sound");
-		}
+		// Spawn is deferred to Tick()/TrySpawnSourceSound() until the main listener has raytraced
+		// this emitter at least once - otherwise the sound starts clear (LPF fully open) and pops
+		// to muffled a few frames later once the first real filter result arrives.
+		bSourcePendingSpawn = true;
 	}
 	else
 	{
@@ -344,6 +303,11 @@ void AVAudioEmitter::Tick(float DeltaTime)
 	}
 
 
+	if (!bIsMainListener && bSourcePendingSpawn)
+	{
+		TrySpawnSourceSound();
+	}
+
 	if (!bIsMainListener && bAffectsGroupedEAX)
 	{
 		UpdateSourceSubmix();
@@ -444,6 +408,45 @@ void AVAudioEmitter::ApplyAmbientFilter()
 
 	AmbientAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, ambientFilter->gainHF));
 	AmbientAudioComponent->SetVolumeMultiplier(ambientFilter->gainLF);
+}
+
+void AVAudioEmitter::TrySpawnSourceSound()
+{
+	// This plugin currently assumes a single main listener - if that ever changes, spawn
+	// readiness would need to consider raytrace state from every listener targeting this emitter.
+	AVAudioEmitter* Listener = AudioWorld ? AudioWorld->GetMainListener() : nullptr;
+
+	// Listener may not have registered yet (actor init order isn't guaranteed) - retry next Tick.
+	if (!Listener || !Listener->GetVAEmitter())
+		return;
+
+	// Wait until the listener has raytraced this emitter at least once, so the LPF has a real
+	// gain value to start from instead of momentarily playing at full volume/unfiltered.
+	if (!vaEmitterHasRaytracedTarget(Listener->GetVAEmitter(), Emitter))
+		return;
+
+	bSourcePendingSpawn = false;
+
+	SourceAudioComponent = UGameplayStatics::SpawnSoundAtLocation(GetWorld(), SourceSound, GetActorLocation(), FRotator::ZeroRotator, 1.0f, 1.0f, 0.0f, nullptr, nullptr, bLooping);
+
+	if (SourceAudioComponent)
+	{
+		SourceAudioComponent->SetSourceEffectChain(SourceEffectChain);
+
+		// Prime the filter immediately so the very first played frame already reflects the
+		// raytraced result rather than the MAX_LOW_PASS_CUTOFF_FREQUENCY default.
+		VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(Listener->GetVAEmitter(), Emitter);
+
+		if (ensureMsgf(lowPassFilter, TEXT("VAudioEmitter '%s': vaEmitterGetTargetFilter() returned null despite vaEmitterHasRaytracedTarget() being true"), *GetName()))
+			ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
+
+		// Submix assignment is deferred to Tick once the SDK assigns a groupedEAXIndex.
+		VALog(L"Low pass filter created and sound played");
+	}
+	else
+	{
+		VALog(L"Failed to play sound");
+	}
 }
 
 #if WITH_EDITOR

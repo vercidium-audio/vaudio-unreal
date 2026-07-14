@@ -5,36 +5,6 @@ The overall goal is:
 - Logging cleanup: always use VALog() instead of directly calling VaRawLog or UE_LOG. VALog() automatically appends the name of the current object (emitter, world, etc), file name and function name
 
 
-# TODO: Delay source sound playback until raytracing completes
-
-Source: `Source/vaudio-unreal/Private/VAudioEmitter.cpp`, `AVAudioEmitter::TryInitializeEmitter()`
-(the `else if (SourceSound)` branch, around the `SpawnSoundAtLocation` call).
-
-## Problem
-
-When a source emitter starts playing, `SourceAudioComponent` is spawned immediately via
-`SpawnSoundAtLocation`, before the VA SDK has cast its first occlusion/permeation rays. The
-low-pass filter (`SourceLPFPreset`) starts at `MAX_LOW_PASS_CUTOFF_FREQUENCY` (fully open), so the
-sound briefly plays "clear" for the first frame(s) and is then abruptly muffled once
-`Tick()` -> `ApplySourceFilter()` receives the first real `VALowPassFilter` result from
-`vaEmitterGetTargetFilter()`. This is audible as a pop/jump in tone right at sound start,
-particularly noticeable if the source starts heavily occluded (e.g. behind a wall).
-
-## Solution
-
-**Delay spawn entirely** - don't call `SpawnSoundAtLocation` until the first raytrace completes.
-
-## Notes for implementation
-
-- Readiness signal: `vaEmitterHasRaytracedTarget(ListenerEmitter, ThisEmitter)` from the listener's
-  side (see the loop in `Tick()` that calls `ApplySourceFilter`), or track a local "have we ever
-  received a non-null filter" flag inside `AVAudioEmitter` itself.
-- Need to decide whether this only applies to the *listener's* view of *this* emitter, since
-  filtering is computed per (listener, target) pair - a source could have multiple listeners in
-  theory (though this plugin currently assumes one main listener).
-- Whatever is chosen, needs to interact correctly with `bLooping` sounds and with `SetDryOutputEnabled()`
-  (used for `bReverbOnly` mode in `AVAudioWorld::Tick`).
-
 # TODO: Fall back to collision shapes when a UStaticMeshComponent has no mesh assigned
 
 Source: `Source/vaudio-unreal/Private/VAudioWorld.cpp`, `AVAudioWorld::ScanAndAddPrimitives()`

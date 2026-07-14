@@ -224,6 +224,11 @@ private:
 	TSet<AVAudioEmitter*> RegisteredTargets;
 	bool bCurrentDryEnabled = true;
 
+	// True once TryInitializeEmitter() has built the LPF chain for SourceSound but hasn't spawned
+	// SourceAudioComponent yet - spawn is deferred until the main listener has raytraced this
+	// emitter at least once, so the source doesn't start clear and then pop to muffled (see Tick()).
+	bool bSourcePendingSpawn = false;
+
 	// Transient: created via NewObject()/SpawnSound* in BeginPlay/TryInitializeEmitter and
 	// torn down in EndPlay. Must never be serialized — saving the level while these are set
 	// (e.g. mid-PIE, or after a crash skips EndPlay) writes them as real exports that don't
@@ -247,6 +252,7 @@ private:
 	void ApplyGroupedEAXReverb();
 	void ApplyAmbientFilter();
 	void UpdateSourceSubmix();
+	void TrySpawnSourceSound();
 
 	// Creates the VA emitter and wires up audio components. Safe to call repeatedly:
 	// no-ops (returns true) if already initialized, returns false if AudioWorld's
