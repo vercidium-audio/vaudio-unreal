@@ -37,6 +37,8 @@ int32 UVAudioBakeCommandlet::Main(const FString& Params)
 			continue;
 		}
 
+		// Null if the package loaded but doesn't actually contain a UWorld (asset registry
+		// listed it as a world asset, but the loaded package disagrees) - nothing to bake.
 		UWorld* World = UWorld::FindWorldInPackage(WorldPackage);
 		if (!World) continue;
 

@@ -6,6 +6,8 @@ extern "C" {
 #include "vaudio.h"
 }
 
+#include "VaRawLog.h"
+
 // Maps actor label strings to EVAudioMaterial enum values.
 static bool LabelToMaterialEnum(const FString& Label, EVAudioMaterial& Out)
 {
@@ -93,14 +95,25 @@ VAWorld* AVAudioMaterial::GetOwningVAWorld() const
 {
 	AActor* Parent = GetAttachParentActor();
 
-	// TODO - why null? Too much null propagation and silent returns
-	if (!Parent) return nullptr;
+	// Null if this material actor isn't attached to anything - materials only take effect
+	// when attached (directly or via a chain) to a VAudioWorld actor.
+	if (!Parent)
+	{
+		VALog(L"not attached to a parent actor - attach this to a VAudioWorld (or an actor attached to one) for the material to take effect.");
+		return nullptr;
+	}
 
 	AVAudioWorld* AudioWorld = Cast<AVAudioWorld>(Parent);
 
-	// TODO - why null? Too much null propagation and silent returns
-	if (!AudioWorld) return nullptr;
+	// Null if the attach parent isn't a VAudioWorld (e.g. attached to an unrelated actor).
+	if (!AudioWorld)
+	{
+		VALog(L"attach parent '%s' is not a VAudioWorld.", *Parent->GetName());
+		return nullptr;
+	}
 
+	// May still be null if the VAudioWorld's own BeginPlay hasn't run yet (actor BeginPlay
+	// order isn't guaranteed) - callers already handle a null return for that case.
 	return AudioWorld->GetVAWorld();
 }
 
@@ -121,7 +134,7 @@ void AVAudioMaterial::ApplyToWorld(VAWorld* World) const
 
 	if (!ResolveMaterialType(MatEnum))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': MaterialName '%s' doesn't match any built-in material name - no changes applied."), *GetName(), *MaterialName);
+		VALog(L"MaterialName '%s' doesn't match any built-in material name - no changes applied.", *MaterialName);
 		return;
 	}
 
@@ -134,7 +147,7 @@ void AVAudioMaterial::ApplyToWorld(VAWorld* World) const
 	vaWorldSetMaterialPlaneTransmissionLF(World, MaterialId, PlaneTransmissionLF);
 	vaWorldSetMaterialPlaneTransmissionHF(World, MaterialId, PlaneTransmissionHF);
 
-	UE_LOG(LogTemp, Log, TEXT("VA: applied custom material '%s' (id=%d) TransmissionLF=%.3f TransmissionHF=%.3f"), *GetName(), MaterialId, TransmissionLF, TransmissionHF);
+	VALog(L"applied custom material (id=%d) TransmissionLF=%.3f TransmissionHF=%.3f", MaterialId, TransmissionLF, TransmissionHF);
 }
 
 void AVAudioMaterial::ResetToDefaults()
@@ -144,7 +157,7 @@ void AVAudioMaterial::ResetToDefaults()
 	if (!World)
 	{
 		// TODO - can we raise an official warning somewhere? Show it in the editor?
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': not attached to a VAudioWorld or world hasn't started - can't read defaults."), *GetName());
+		VALog(L"not attached to a VAudioWorld or world hasn't started - can't read defaults.");
 		return;
 	}
 
@@ -152,7 +165,7 @@ void AVAudioMaterial::ResetToDefaults()
 	if (!ResolveMaterialType(MatEnum))
 	{
 		// TODO - can we raise an official warning somewhere? Show it in the editor?
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': MaterialName '%s' doesn't match any built-in material name."), *GetName(), *MaterialName);
+		VALog(L"MaterialName '%s' doesn't match any built-in material name.", *MaterialName);
 		return;
 	}
 
@@ -171,7 +184,8 @@ void AVAudioMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 
 	VAWorld* World = GetOwningVAWorld();
 
-	// TODO - can we raise an official warning somewhere? Show it in the editor?
+	// Null if not attached to a VAudioWorld (see GetOwningVAWorld(), which already logs the
+	// reason) or that world's own BeginPlay hasn't run yet - nothing to apply the material to.
 	if (!World)
 		return;
 

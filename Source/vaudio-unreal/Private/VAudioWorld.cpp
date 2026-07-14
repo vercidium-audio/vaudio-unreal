@@ -203,6 +203,9 @@ void AVAudioWorld::Tick(float DeltaTime)
 				AVAudioEmitter* emitter = RegisteredEmitters[i];
 				VAEmitter* vaEmitter = emitter->GetVAEmitter();
 
+				// Registered emitters can still have a null VAEmitter* if TryInitializeEmitter()
+				// hasn't completed yet (e.g. this world's own BeginPlay ran after theirs) - skip
+				// until it catches up on a later Tick.
 				if (!vaEmitter)
 					continue;
 
@@ -231,16 +234,13 @@ USubmixEffectReverbPreset* AVAudioWorld::GetGroupedEAXPreset(int32 Index) const
 
 void AVAudioWorld::RegisterEmitter(AVAudioEmitter* Emitter)
 {
-	if (!Emitter)
-		return;
-
 	RegisteredEmitters.AddUnique(Emitter);
 
 	if (Emitter->bIsMainListener)
 	{
 		if (MainListener.IsValid() && MainListener.Get() != Emitter)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("AVAudioWorld: '%s' registered as main listener, but '%s' is already the main listener - keeping the first one. Only one emitter should have bIsMainListener = true."),
+			VALog(L"'%s' registered as main listener, but '%s' is already the main listener - keeping the first one. Only one emitter should have bIsMainListener = true.",
 				*Emitter->GetName(), *MainListener->GetName());
 		}
 		else
@@ -349,6 +349,8 @@ void AVAudioWorld::BakeGeometry()
 	{
 		AActor* Actor = *ActorIt;
 
+		// Null if this actor (or its attach-parent chain) has no UVAudioMaterialComponent, or has
+		// one that belongs to a different VAudioWorld - not baked geometry for this world.
 		UVAudioMaterialComponent* MatComp = FindMaterialInChain(Actor);
 		if (!MatComp || MatComp->AudioWorld != this) continue;
 
@@ -357,6 +359,9 @@ void AVAudioWorld::BakeGeometry()
 
 		for (UStaticMeshComponent* MeshComp : MeshComps)
 		{
+			// Null if the component has no mesh assigned. Simple-collision meshes are skipped
+			// here too - ScanAndAddPrimitives() already picks up their live collision shapes
+			// every run, so baking their triangle mesh as well would be redundant.
 			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
 			if (!Mesh || HasSimpleCollision(Mesh)) continue;
 
