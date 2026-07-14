@@ -359,7 +359,8 @@ void AVAudioWorld::BakeGeometry()
 
 			TArray<uint32> Indices;
 			LOD.IndexBuffer.GetCopy(Indices);
-			if (Indices.IsEmpty()) continue;
+			if (Indices.IsEmpty())
+				continue;
 
 			FVAudioBakedMesh& Baked = BakedMeshes.AddDefaulted_GetRef();
 			Baked.ActorName = Actor->GetName();
@@ -370,8 +371,8 @@ void AVAudioWorld::BakeGeometry()
 				Baked.Vertices.Add(PosBuffer.VertexPosition(Idx));
 
 			++BakedCount;
-			UE_LOG(LogTemp, Log, TEXT("VA BakeGeometry: baked '%s'.'%s' tris=%d"),
-				*Actor->GetName(), *MeshComp->GetName(), Indices.Num() / 3);
+
+			UE_LOG(LogTemp, Log, TEXT("VA BakeGeometry: baked '%s'.'%s' tris=%d"), *Actor->GetName(), *MeshComp->GetName(), Indices.Num() / 3);
 		}
 	}
 
@@ -383,7 +384,10 @@ void AVAudioWorld::BakeGeometry()
 void AVAudioWorld::ScanAndAddPrimitives()
 {
 	UWorld* UEWorld = GetWorld();
-	if (!UEWorld) return;
+
+	// TODO - why null? 
+	if (!UEWorld)
+		return;
 
 	int32 SimpleCount = 0;
 	int32 MeshCount = 0;
@@ -407,25 +411,24 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 		if (MeshComps.IsEmpty())
 		{
-			UE_LOG(LogTemp, Log, TEXT("VA: actor '%s' -> no static mesh components, skipping"),
-				*Actor->GetName());
 			continue;
 		}
-
-		UE_LOG(LogTemp, Log, TEXT("VA: actor '%s' -> material %d (%d mesh components)"),
-			*Actor->GetName(), (int32)Material, MeshComps.Num());
 
 		for (UStaticMeshComponent* MeshComp : MeshComps)
 		{
 			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
-			if (!Mesh) continue;
+
+			// TODO - why null? It could still have a capsule/sphere/box collision shape we can use
+			if (!Mesh)
+				continue;
 
 			FTransform CompTransform = MeshComp->GetComponentTransform();
 			FVector WorldPos = CompTransform.GetTranslation();
-			FVector Scale    = CompTransform.GetScale3D();
+			FVector Scale = CompTransform.GetScale3D();
 
 			bool bAddedSimple = false;
 			UBodySetup* BodySetup = Mesh->GetBodySetup();
+
 			if (BodySetup)
 			{
 				const FKAggregateGeom& Agg = BodySetup->AggGeom;
@@ -481,17 +484,19 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				}
 			}
 
-			if (bAddedSimple) continue;
+			if (bAddedSimple)
+				continue;
 
 			// Fall back to triangle mesh: prefer baked geometry (reliable in shipping builds
 			// regardless of bAllowCPUAccess/cook quirks), otherwise use the mesh's live render
 			// data (always up to date, but may be unavailable in cooked builds).
 			const FVAudioBakedMesh* Baked = nullptr;
-			for (const FVAudioBakedMesh& B : BakedMeshes)
+
+			for (const FVAudioBakedMesh& bakedMesh : BakedMeshes)
 			{
-				if (B.ComponentName == MeshComp->GetFName() && B.ActorName == Actor->GetName())
+				if (bakedMesh.ComponentName == MeshComp->GetFName() && bakedMesh.ActorName == Actor->GetName())
 				{
-					Baked = &B;
+					Baked = &bakedMesh;
 					break;
 				}
 			}
@@ -505,7 +510,6 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			{
 				if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
 				{
-					UE_LOG(LogTemp, Warning, TEXT("VA:   mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level."), *Mesh->GetName());
 					VaRawLog(L"VA: mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
 					continue;
 				}
@@ -517,7 +521,6 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				LOD.IndexBuffer.GetCopy(Indices);
 				if (Indices.IsEmpty())
 				{
-					UE_LOG(LogTemp, Warning, TEXT("VA:   mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level."), *Mesh->GetName());
 					VaRawLog(L"VA: mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
 					continue;
 				}
@@ -547,14 +550,10 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			);
 
 			vaMeshPrimitiveSetSupports3DPermeation(MeshPrim, MatComp->bSupports3DPermeation);
-			if (!MatComp->bSupports3DPermeation)
-				UE_LOG(LogTemp, Log, TEXT("VA:   mesh '%s' permeation disabled"), *Mesh->GetName());
 
 			vaWorldAddPrimitive_(World, MeshPrim);
 			MeshPrimitives.Add(MeshPrim);
 			++MeshCount;
-
-			UE_LOG(LogTemp, Log, TEXT("VA:   mesh '%s' tris=%d (%s)"), *Mesh->GetName(), LocalPositions.Num() / 3, Baked ? TEXT("baked") : TEXT("live"));
 		}
 	}
 
@@ -563,8 +562,8 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 void AVAudioWorld::DestroyPrimitives()
 {
-	for (VAMeshPrimitive*    actorPosition : MeshPrimitives)    { vaWorldRemovePrimitive_(World, P); vaMeshPrimitiveDestroy(P); }
-	for (VACapsulePrimitive* actorPosition : CapsulePrimitives) { vaWorldRemovePrimitive_(World, P); vaCapsulePrimitiveDestroy(P); }
+	for (VAMeshPrimitive*    P : MeshPrimitives)    { vaWorldRemovePrimitive_(World, P); vaMeshPrimitiveDestroy(P); }
+	for (VACapsulePrimitive* P : CapsulePrimitives) { vaWorldRemovePrimitive_(World, P); vaCapsulePrimitiveDestroy(P); }
 	for (VASpherePrimitive*  P : SpherePrimitives)  { vaWorldRemovePrimitive_(World, P); vaSpherePrimitiveDestroy(P); }
 	for (VAPrismPrimitive*   P : PrismPrimitives)   { vaWorldRemovePrimitive_(World, P); vaPrismPrimitiveDestroy(P); }
 
