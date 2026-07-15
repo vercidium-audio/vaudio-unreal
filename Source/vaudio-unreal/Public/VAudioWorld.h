@@ -90,6 +90,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0"))
 	float Pressure = 101325.0f;
 
+	// Whether air absorption is applied at all. When false, Humidity/Temperature/Pressure below are ignored.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption")
+	bool bAirAbsorptionEnabled = true;
+
 	// Low-frequency reference (Hz) for air absorption, reverb, and material scattering.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001"))
 	float ReferenceFrequencyLF = 300.0f;
@@ -121,6 +125,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading", meta = (ClampMin = "1"))
 	int32 MaximumConcurrencyLevel = 4;
 
+	// Runs raytracing on the main thread instead of background threads. Useful for debugging.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading")
+	bool bSingleThreaded = false;
+
 	// When true, stops submitting work to background threads. Safe to destroy the world once threads have drained.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading")
 	bool bPendingShutdown = false;
@@ -136,6 +144,11 @@ public:
 
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Export World"))
 	void ExportWorld();
+
+	// Imports world settings, materials, primitives, and emitters from vaudio_export.va into this world.
+	// Existing primitives and emitters are not removed before importing.
+	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Import World"))
+	void ImportWorld();
 
 	// --- Baked geometry (shipping fallback) ---
 

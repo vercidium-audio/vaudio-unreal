@@ -2,6 +2,7 @@
 #include "VAudioEmitter.h"
 #include "VAudioMaterial.h"
 #include "VAudioMaterialComponent.h"
+#include "VAudioMaterialConversion.h"
 #include "Components/BillboardComponent.h"
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
@@ -24,35 +25,6 @@ extern "C" {
 // ---------------------------------------------------------------------------
 // Helpers (identical coordinate remapping to the original BPLib)
 // ---------------------------------------------------------------------------
-
-static VAMaterialType EnumToVAMaterial(EVAudioMaterial M)
-{
-	switch (M)
-	{
-		case EVAudioMaterial::Brick:            return VAMaterialBrick;
-		case EVAudioMaterial::Cloth:            return VAMaterialCloth;
-		case EVAudioMaterial::ConcretePolished: return VAMaterialConcretePolished;
-		case EVAudioMaterial::Dirt:             return VAMaterialDirt;
-		case EVAudioMaterial::Glass:            return VAMaterialGlass;
-		case EVAudioMaterial::Grass:            return VAMaterialGrass;
-		case EVAudioMaterial::Gravel:           return VAMaterialGravel;
-		case EVAudioMaterial::Gyprock:          return VAMaterialGyprock;
-		case EVAudioMaterial::Ice:              return VAMaterialIce;
-		case EVAudioMaterial::Leaf:             return VAMaterialLeaf;
-		case EVAudioMaterial::Marble:           return VAMaterialMarble;
-		case EVAudioMaterial::Metal:            return VAMaterialMetal;
-		case EVAudioMaterial::Mud:              return VAMaterialMud;
-		case EVAudioMaterial::Rock:             return VAMaterialRock;
-		case EVAudioMaterial::Sand:             return VAMaterialSand;
-		case EVAudioMaterial::Snow:             return VAMaterialSnow;
-		case EVAudioMaterial::Tile:             return VAMaterialTile;
-		case EVAudioMaterial::Tree:             return VAMaterialTree;
-		case EVAudioMaterial::Water:            return VAMaterialWater;
-		case EVAudioMaterial::WoodIndoor:       return VAMaterialWoodIndoor;
-		case EVAudioMaterial::WoodOutdoor:      return VAMaterialWoodOutdoor;
-		default:                                return VAMaterialConcrete;
-	}
-}
 
 static VAMatrix MakeTranslationMatrix(const FVector& P)
 {
@@ -117,17 +89,26 @@ void AVAudioWorld::BeginPlay()
 	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
 	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
 	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
+	vaWorldSetSingleThreaded(World, bSingleThreaded);
 	vaWorldSetPendingShutdown(World, bPendingShutdown);
 	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
 	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
-	vaWorldSetAirAbsorptionHumidity(World, Humidity);
-	vaWorldSetAirAbsorptionTemperature(World, Temperature);
-	vaWorldSetAirAbsorptionPressure(World, Pressure);
 
-	int32 GroupedEAXCount = FMath::Max(2, GroupedEAXSubmixes.Num());
+	if (bAirAbsorptionEnabled)
+	{
+		vaWorldSetAirAbsorptionHumidity(World, Humidity);
+		vaWorldSetAirAbsorptionTemperature(World, Temperature);
+		vaWorldSetAirAbsorptionPressure(World, Pressure);
+	}
+	else
+	{
+		vaWorldSetAirAbsorption(World, nullptr);
+	}
+
+	int32 GroupedEAXCount = GroupedEAXSubmixes.Num();
 	vaWorldSetMaximumGroupedEAXCount(World, GroupedEAXCount);
 
-	for (int32 i = 0; i < GroupedEAXSubmixes.Num(); ++i)
+	for (int32 i = 0; i < GroupedEAXCount; i++)
 	{
 		USoundSubmix* Sub = GroupedEAXSubmixes[i];
 		USubmixEffectReverbPreset* Preset = NewObject<USubmixEffectReverbPreset>(this);
@@ -276,6 +257,30 @@ void AVAudioWorld::ExportWorld()
 	vaWorldExport(World, TCHAR_TO_UTF8(*Path));
 }
 
+void AVAudioWorld::ImportWorld()
+{
+	if (!World)
+	{
+		VALog(L"world is null (press Play first).");
+		return;
+	}
+
+	FString Path = FPaths::ProjectDir() + TEXT("vaudio_export.va");
+	VAEmitter** ImportedEmitters = nullptr;
+	int32 ImportedEmitterCount = 0;
+
+	VAResult Result = vaWorldImport(World, TCHAR_TO_UTF8(*Path), &ImportedEmitters, &ImportedEmitterCount);
+
+	if (Result != VA_SUCCESS)
+	{
+		VALog(L"import failed (result=%d) for '%s'.", Result, *Path);
+		return;
+	}
+
+	VALog(L"imported %d emitter(s) from '%s'.", ImportedEmitterCount, *Path);
+	free(ImportedEmitters);
+}
+
 // ---------------------------------------------------------------------------
 // Child material actors — AVAudioMaterial children of this world actor
 // ---------------------------------------------------------------------------
@@ -421,7 +426,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			continue;
 		}
 
-		VAMaterialType Material = EnumToVAMaterial(MatComp->Material);
+		VAMaterialType Material = EVAudioMaterialToVA(MatComp->Material);
 
 		TArray<UShapeComponent*> ShapeComps;
 		Actor->GetComponents<UShapeComponent>(ShapeComps);

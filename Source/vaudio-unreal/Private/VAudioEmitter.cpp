@@ -100,7 +100,6 @@ bool AVAudioEmitter::TryInitializeEmitter()
 	vaEmitterSetType(Emitter, EmitterType);
 	vaEmitterSetClampPosition(Emitter, bClampPosition);
 	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
-	vaEmitterSetReservedEmitterCount(Emitter, ReservedEmitterCount);
 	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
 	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
 	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
@@ -490,7 +489,6 @@ void AVAudioEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChang
 	vaEmitterSetType(Emitter, EmitterType);
 	vaEmitterSetClampPosition(Emitter, bClampPosition);
 	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
-	vaEmitterSetReservedEmitterCount(Emitter, ReservedEmitterCount);
 	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
 	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
 	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);

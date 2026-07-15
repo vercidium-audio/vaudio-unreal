@@ -203,10 +203,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced")
 	int32 ScatteringSeed = 0;
 
-	// If you know the maximum number of target emitters that this emitter will raytrace at any one time, set it here to prevent memory allocations at runtime
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced", meta = (ClampMin = "0"))
-	int32 ReservedEmitterCount = 0;
-
 	// --- Runtime access ---
 
 	VAEmitter* GetVAEmitter() const { return Emitter; }
