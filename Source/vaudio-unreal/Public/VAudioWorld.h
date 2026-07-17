@@ -123,11 +123,7 @@ public:
 
 	// Maximum number of background threads used for raytracing.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading", meta = (ClampMin = "1"))
-	int32 MaximumConcurrencyLevel = 4;
-
-	// Runs raytracing on the main thread instead of background threads. Useful for debugging.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading")
-	bool bSingleThreaded = false;
+	int32 MaximumConcurrencyLevel = 8;
 
 	// When true, stops submitting work to background threads. Safe to destroy the world once threads have drained.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading")

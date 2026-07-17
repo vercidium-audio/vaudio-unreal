@@ -603,7 +603,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 		VALog(L"Unable to access grouped EAX data as vaWorld is null");
 	}
 	// Wait for raytracing to run at least once
-	else if (vaWorldGetReverbCalculated(vaWorld))
+	else if (!vaWorldGetInitialising(vaWorld))
 	{
 		const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(vaWorld);
 
@@ -672,7 +672,7 @@ void AVAudioEmitter::ApplyGroupedEAXReverb()
 	int32 Count = vaWorldGetGroupedEAXCount(vaWorld);
 
 	// Wait for raytracing to run at least once
-	if (!vaWorldGetReverbCalculated(vaWorld))
+	if (vaWorldGetInitialising(vaWorld))
 		return;
 
 	// Same guarantee as UpdateSourceSubmix(): maximumGroupedEAXCount is always >= 2

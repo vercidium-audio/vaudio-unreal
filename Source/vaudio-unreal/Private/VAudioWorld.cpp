@@ -89,7 +89,6 @@ void AVAudioWorld::BeginPlay()
 	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
 	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
 	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
-	vaWorldSetSingleThreaded(World, bSingleThreaded);
 	vaWorldSetPendingShutdown(World, bPendingShutdown);
 	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
 	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
@@ -190,7 +189,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				if (!vaEmitter)
 					continue;
 
-				bool bInBounds = vaEmitterWithinWorldBounds(vaEmitter);
+				bool bInBounds = vaEmitterGetWithinWorldBounds(vaEmitter);
 				VAVector P = vaEmitterGetPosition(vaEmitter);
 
 				FColor Color = bInBounds ? FColor::Green : FColor::Red;
