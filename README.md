@@ -60,6 +60,9 @@ Download the SDK from [vercidium.com](https://vercidium.com) and copy the files 
 - Open the project in the Unreal Editor, go to **Edit → Plugins**, search for **Vercidium Audio**, and make sure it's enabled.
 - Restart the editor if prompted.
 
+> [!NOTE]
+> `vaudionative.dll` is delay-loaded, so it's only loaded the first time a plugin function is called (e.g. `AVAudioWorld::BeginPlay`), not at editor startup. If that first call fails with a "module not found" error, UBT likely hasn't copied `vaudionative.dll` into `YourProject/Binaries/Win64` yet (this copy only happens on a full build — incremental/hot-reload builds can skip it). Manually copy `vaudionative.dll` from `YourProject/Plugins/vaudio-unreal/Binaries/Win64/` into `YourProject/Binaries/Win64/` to fix this.
+
 ## Usage
 
 Once the plugin is enabled, three new actor/component types are available in the editor:

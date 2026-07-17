@@ -54,4 +54,14 @@ public:
 	// Whether sound rays can permeate (pass through) this surface. Disable for solid opaque surfaces like glass.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	bool bSupports3DPermeation = true;
+
+#if WITH_EDITOR
+	virtual void PostLoad() override;
+	virtual void OnRegister() override;
+
+private:
+	// Ensures sibling static meshes keep a CPU-readable copy of their vertex/index buffers
+	// in cooked builds, since AVAudioWorld's triangle-mesh fallback reads them at runtime.
+	void EnsureMeshesAllowCPUAccess() const;
+#endif
 };

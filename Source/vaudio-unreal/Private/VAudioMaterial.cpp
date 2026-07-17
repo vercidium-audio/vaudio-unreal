@@ -1,10 +1,9 @@
 #include "VAudioMaterial.h"
 #include "VAudioWorld.h"
+#include "VAudioMaterialConversion.h"
 #include "Components/SceneComponent.h"
 
-extern "C" {
-#include "vaudio.h"
-}
+#include "VaRawLog.h"
 
 // Maps actor label strings to EVAudioMaterial enum values.
 static bool LabelToMaterialEnum(const FString& Label, EVAudioMaterial& Out)
@@ -46,36 +45,6 @@ static bool LabelToMaterialEnum(const FString& Label, EVAudioMaterial& Out)
 	return false;
 }
 
-static VAMaterialType EVAudioMaterialToVA(EVAudioMaterial M)
-{
-	switch (M)
-	{
-	case EVAudioMaterial::Brick:            return VAMaterialBrick;
-	case EVAudioMaterial::Cloth:            return VAMaterialCloth;
-	case EVAudioMaterial::Concrete:         return VAMaterialConcrete;
-	case EVAudioMaterial::ConcretePolished: return VAMaterialConcretePolished;
-	case EVAudioMaterial::Dirt:             return VAMaterialDirt;
-	case EVAudioMaterial::Glass:            return VAMaterialGlass;
-	case EVAudioMaterial::Grass:            return VAMaterialGrass;
-	case EVAudioMaterial::Gravel:           return VAMaterialGravel;
-	case EVAudioMaterial::Gyprock:          return VAMaterialGyprock;
-	case EVAudioMaterial::Ice:              return VAMaterialIce;
-	case EVAudioMaterial::Leaf:             return VAMaterialLeaf;
-	case EVAudioMaterial::Marble:           return VAMaterialMarble;
-	case EVAudioMaterial::Metal:            return VAMaterialMetal;
-	case EVAudioMaterial::Mud:              return VAMaterialMud;
-	case EVAudioMaterial::Rock:             return VAMaterialRock;
-	case EVAudioMaterial::Sand:             return VAMaterialSand;
-	case EVAudioMaterial::Snow:             return VAMaterialSnow;
-	case EVAudioMaterial::Tile:             return VAMaterialTile;
-	case EVAudioMaterial::Tree:             return VAMaterialTree;
-	case EVAudioMaterial::Water:            return VAMaterialWater;
-	case EVAudioMaterial::WoodIndoor:       return VAMaterialWoodIndoor;
-	case EVAudioMaterial::WoodOutdoor:      return VAMaterialWoodOutdoor;
-	default:                                return VAMaterialConcrete;
-	}
-}
-
 AVAudioMaterial::AVAudioMaterial()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -85,15 +54,32 @@ AVAudioMaterial::AVAudioMaterial()
 
 bool AVAudioMaterial::ResolveMaterialType(EVAudioMaterial& OutMaterial) const
 {
-	return LabelToMaterialEnum(GetActorLabel(), OutMaterial);
+	return LabelToMaterialEnum(MaterialName, OutMaterial);
 }
 
 VAWorld* AVAudioMaterial::GetOwningVAWorld() const
 {
 	AActor* Parent = GetAttachParentActor();
-	if (!Parent) return nullptr;
+
+	// Null if this material actor isn't attached to anything - materials only take effect
+	// when attached (directly or via a chain) to a VAudioWorld actor.
+	if (!Parent)
+	{
+		VALog(L"not attached to a parent actor - attach this to a VAudioWorld (or an actor attached to one) for the material to take effect.");
+		return nullptr;
+	}
+
 	AVAudioWorld* AudioWorld = Cast<AVAudioWorld>(Parent);
-	if (!AudioWorld) return nullptr;
+
+	// Null if the attach parent isn't a VAudioWorld (e.g. attached to an unrelated actor).
+	if (!AudioWorld)
+	{
+		VALog(L"attach parent '%s' is not a VAudioWorld.", *Parent->GetName());
+		return nullptr;
+	}
+
+	// May still be null if the VAudioWorld's own BeginPlay hasn't run yet (actor BeginPlay
+	// order isn't guaranteed) - callers already handle a null return for that case.
 	return AudioWorld->GetVAWorld();
 }
 
@@ -111,9 +97,10 @@ void AVAudioMaterial::LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId)
 void AVAudioMaterial::ApplyToWorld(VAWorld* World) const
 {
 	EVAudioMaterial MatEnum;
+
 	if (!ResolveMaterialType(MatEnum))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': actor label doesn't match any built-in material name — no changes applied."), *GetActorLabel());
+		VALog(L"MaterialName '%s' doesn't match any built-in material name - no changes applied.", *MaterialName);
 		return;
 	}
 
@@ -125,21 +112,26 @@ void AVAudioMaterial::ApplyToWorld(VAWorld* World) const
 	vaWorldSetMaterialTransmissionHF(World,      MaterialId, TransmissionHF);
 	vaWorldSetMaterialPlaneTransmissionLF(World, MaterialId, PlaneTransmissionLF);
 	vaWorldSetMaterialPlaneTransmissionHF(World, MaterialId, PlaneTransmissionHF);
+
+	VALog(L"applied custom material (id=%d) TransmissionLF=%.3f TransmissionHF=%.3f", MaterialId, TransmissionLF, TransmissionHF);
 }
 
 void AVAudioMaterial::ResetToDefaults()
 {
 	VAWorld* World = GetOwningVAWorld();
+
 	if (!World)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': not attached to a VAudioWorld or world hasn't started — can't read defaults."), *GetActorLabel());
+		// TODO - can we raise an official warning somewhere? Show it in the editor?
+		VALog(L"not attached to a VAudioWorld or world hasn't started - can't read defaults.");
 		return;
 	}
 
 	EVAudioMaterial MatEnum;
 	if (!ResolveMaterialType(MatEnum))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VAudioMaterial '%s': actor label doesn't match any built-in material name."), *GetActorLabel());
+		// TODO - can we raise an official warning somewhere? Show it in the editor?
+		VALog(L"MaterialName '%s' doesn't match any built-in material name.", *MaterialName);
 		return;
 	}
 
@@ -157,7 +149,11 @@ void AVAudioMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	VAWorld* World = GetOwningVAWorld();
-	if (!World) return;
+
+	// Null if not attached to a VAudioWorld (see GetOwningVAWorld(), which already logs the
+	// reason) or that world's own BeginPlay hasn't run yet - nothing to apply the material to.
+	if (!World)
+		return;
 
 	ApplyToWorld(World);
 }

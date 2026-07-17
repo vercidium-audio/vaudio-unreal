@@ -8,7 +8,7 @@
 struct VAWorld;
 
 // Place this actor as a child of AVAudioWorld in the outliner.
-// Name it to match a built-in material (e.g. "Concrete", "Metal") to inherit
+// Set MaterialName to match a built-in material (e.g. "Concrete", "Metal") to inherit
 // that material's defaults, then override individual properties as needed.
 // Changes to properties during PIE are applied immediately.
 UCLASS(DisplayName = "VA Audio Material")
@@ -18,6 +18,11 @@ class VAUDIOUNREAL_API AVAudioMaterial : public AActor
 
 public:
 	AVAudioMaterial();
+
+	// Name of the built-in material to override (e.g. "Concrete", "Metal"). Must match one of the
+	// EVAudioMaterial names. This is used instead of the actor name/label to resolve the material type.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
+	FString MaterialName;
 
 	// Percentage of low-frequency energy lost when a ray bounces (0.0 to 1.0)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))

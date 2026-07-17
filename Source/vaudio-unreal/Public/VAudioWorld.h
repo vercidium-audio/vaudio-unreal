@@ -14,6 +14,28 @@ struct VAPrismPrimitive;
 class AVAudioEmitter;
 class AVAudioMaterial;
 
+// Baked local-space triangle mesh for one UStaticMeshComponent, captured in-editor via
+// AVAudioWorld::BakeGeometry so shipping builds don't depend on the mesh's CPU-accessible
+// render data (which UStaticMesh::bAllowCPUAccess does not reliably guarantee is retained
+// after cooking for every mesh type/pipeline).
+USTRUCT()
+struct FVAudioBakedMesh
+{
+	GENERATED_BODY()
+
+	// Owning actor + component name, used to match this entry back to its UStaticMeshComponent at runtime.
+	UPROPERTY()
+	FString ActorName;
+
+	UPROPERTY()
+	FName ComponentName;
+
+	// Local-space (component space) vertex positions, already expanded/duplicated per-index
+	// (i.e. Vertices[i] corresponds to triangle-list index i — no separate index array needed).
+	UPROPERTY()
+	TArray<FVector3f> Vertices;
+};
+
 // Place one of these in your level. It owns the VA raytracing world and scans
 // for UVAudioMaterialComponent on BeginPlay to populate the scene geometry.
 UCLASS(DisplayName = "VA Audio World")
@@ -68,6 +90,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0"))
 	float Pressure = 101325.0f;
 
+	// Whether air absorption is applied at all. When false, Humidity/Temperature/Pressure below are ignored.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption")
+	bool bAirAbsorptionEnabled = true;
+
 	// Low-frequency reference (Hz) for air absorption, reverb, and material scattering.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001"))
 	float ReferenceFrequencyLF = 300.0f;
@@ -97,7 +123,7 @@ public:
 
 	// Maximum number of background threads used for raytracing.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading", meta = (ClampMin = "1"))
-	int32 MaximumConcurrencyLevel = 4;
+	int32 MaximumConcurrencyLevel = 8;
 
 	// When true, stops submitting work to background threads. Safe to destroy the world once threads have drained.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading")
@@ -115,6 +141,27 @@ public:
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Export World"))
 	void ExportWorld();
 
+	// Imports world settings, materials, primitives, and emitters from vaudio_export.va into this world.
+	// Existing primitives and emitters are not removed before importing.
+	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Import World"))
+	void ImportWorld();
+
+	// --- Baked geometry (shipping fallback) ---
+
+#if WITH_EDITOR
+	// Captures the local-space triangle mesh of every UStaticMeshComponent reachable from a
+	// UVAudioMaterialComponent actor into BakedMeshes below, so ScanAndAddPrimitives can use it
+	// in shipping builds where the live mesh render data may not be CPU-accessible. Re-run this
+	// (and save the level) whenever affected meshes or actor placements change.
+	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Bake Geometry For Shipping"))
+	void BakeGeometry();
+#endif
+
+	// Populated by BakeGeometry and saved with the level. Used by ScanAndAddPrimitives as a
+	// fallback source of triangle data when the live mesh's render data is unavailable.
+	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio", AdvancedDisplay)
+	TArray<FVAudioBakedMesh> BakedMeshes;
+
 	// --- Internal API used by AVAudioEmitter ---
 
 	VAWorld* GetVAWorld() const { return World; }
@@ -129,7 +176,9 @@ public:
 private:
 	VAWorld* World = nullptr;
 
-	UPROPERTY()
+	// Transient: populated in BeginPlay from NewObject() and must never be saved into the level —
+	// saving these as real exports corrupts the package (they don't round-trip through a reload).
+	UPROPERTY(Transient)
 	TArray<USubmixEffectReverbPreset*> GroupedEAXPresets;
 
 	TArray<VAMeshPrimitive*>    MeshPrimitives;
@@ -138,6 +187,14 @@ private:
 	TArray<VAPrismPrimitive*>   PrismPrimitives;
 
 	TArray<AVAudioEmitter*> RegisteredEmitters;
+
+	// Cached from RegisteredEmitters whenever an emitter with bIsMainListener == true is
+	// (un)registered, so GetMainListener() and Tick() don't need to scan every frame.
+	TWeakObjectPtr<AVAudioEmitter> MainListener;
+
+	// Mirrors bReverbOnly as of the last Tick(), so the dry-output loop over RegisteredEmitters
+	// only runs on the tick where it actually changes.
+	bool bWasReverbOnly = false;
 
 	void ApplyChildMaterials();
 	void ScanAndAddPrimitives();

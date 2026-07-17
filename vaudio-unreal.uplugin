@@ -13,6 +13,17 @@
 			"Name": "VaudioUnreal",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "VaudioUnrealEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "Synthesis",
+			"Enabled": true
 		}
 	]
 }

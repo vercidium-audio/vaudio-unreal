@@ -2,10 +2,15 @@
 #include "VAudioEmitter.h"
 #include "VAudioMaterial.h"
 #include "VAudioMaterialComponent.h"
+#include "VAudioMaterialConversion.h"
 #include "Components/BillboardComponent.h"
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/ShapeComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SphereComponent.h"
+#include "Components/BoxComponent.h"
 #include "StaticMeshResources.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/AggregateGeom.h"
@@ -15,43 +20,26 @@ extern "C" {
 #include "vaudio.h"
 }
 
+#include "VaRawLog.h"
+
 // ---------------------------------------------------------------------------
 // Helpers (identical coordinate remapping to the original BPLib)
 // ---------------------------------------------------------------------------
 
-static VAMaterialType EnumToVAMaterial(EVAudioMaterial M)
-{
-	switch (M)
-	{
-	case EVAudioMaterial::Brick:            return VAMaterialBrick;
-	case EVAudioMaterial::Cloth:            return VAMaterialCloth;
-	case EVAudioMaterial::ConcretePolished: return VAMaterialConcretePolished;
-	case EVAudioMaterial::Dirt:             return VAMaterialDirt;
-	case EVAudioMaterial::Glass:            return VAMaterialGlass;
-	case EVAudioMaterial::Grass:            return VAMaterialGrass;
-	case EVAudioMaterial::Gravel:           return VAMaterialGravel;
-	case EVAudioMaterial::Gyprock:          return VAMaterialGyprock;
-	case EVAudioMaterial::Ice:              return VAMaterialIce;
-	case EVAudioMaterial::Leaf:             return VAMaterialLeaf;
-	case EVAudioMaterial::Marble:           return VAMaterialMarble;
-	case EVAudioMaterial::Metal:            return VAMaterialMetal;
-	case EVAudioMaterial::Mud:              return VAMaterialMud;
-	case EVAudioMaterial::Rock:             return VAMaterialRock;
-	case EVAudioMaterial::Sand:             return VAMaterialSand;
-	case EVAudioMaterial::Snow:             return VAMaterialSnow;
-	case EVAudioMaterial::Tile:             return VAMaterialTile;
-	case EVAudioMaterial::Tree:             return VAMaterialTree;
-	case EVAudioMaterial::Water:            return VAMaterialWater;
-	case EVAudioMaterial::WoodIndoor:       return VAMaterialWoodIndoor;
-	case EVAudioMaterial::WoodOutdoor:      return VAMaterialWoodOutdoor;
-	default:                                return VAMaterialConcrete;
-	}
-}
-
 static VAMatrix MakeTranslationMatrix(const FVector& P)
 {
-	return vaMatrixCreateTranslation((float)P.X, (float)P.Z, -(float)P.Y);
+	return vaMatrixCreateTranslation((float)P.X, (float)P.Y, (float)P.Z);
 }
+
+// On-screen debug message keys (AddOnScreenDebugMessage slots), grouped here so the
+// per-emitter bounds messages (VABoundsMessageBase + index) can't collide with them.
+enum EVADebugMessageKey : uint32
+{
+	VARaytracingTimeMessage = 1001,
+	VAListenerPosMessage    = 1002,
+	VAAmbientFilterMessage  = 1003,
+	VABoundsMessageBase     = 2000,
+};
 
 static VAMatrix MakeRotTransMatrix(const FTransform& T)
 {
@@ -62,20 +50,13 @@ static VAMatrix MakeRotTransMatrix(const FTransform& T)
 	FVector AxY = Q.GetAxisY();
 	FVector AxZ = Q.GetAxisZ();
 
-	// UE(X,Y,Z) → VA(X,Z,-Y)
-	float c0x =  (float)AxX.X, c0y =  (float)AxX.Z, c0z = -(float)AxX.Y;
-	float c1x =  (float)AxZ.X, c1y =  (float)AxZ.Z, c1z = -(float)AxZ.Y;
-	float c2x = -(float)AxY.X, c2y = -(float)AxY.Z, c2z =  (float)AxY.Y;
-
 	return vaMatrixCreate(
-		c0x, c0y, c0z, 0.f,
-		c1x, c1y, c1z, 0.f,
-		c2x, c2y, c2z, 0.f,
-		(float)P.X, (float)P.Z, -(float)P.Y, 1.f
+		(float)AxX.X, (float)AxX.Y, (float)AxX.Z, 0.f,
+		(float)AxY.X, (float)AxY.Y, (float)AxY.Z, 0.f,
+		(float)AxZ.X, (float)AxZ.Y, (float)AxZ.Z, 0.f,
+		(float)P.X,   (float)P.Y,   (float)P.Z,   1.f
 	);
 }
-
-// ---------------------------------------------------------------------------
 
 AVAudioWorld::AVAudioWorld()
 {
@@ -90,16 +71,17 @@ void AVAudioWorld::BeginPlay()
 	Super::BeginPlay();
 
 	World = vaWorldCreate();
-	// VA coord system: X=UE_X, Y=UE_Z, Z=-UE_Y
-	// The Z axis is negated, so the min corner's Z = -(UE_Y_max) = -(WorldPosition.Y + WorldSize.Y)
+	vaWorldSetLogMemoryAllocationWarnings(World, true);
+	vaWorldSetCoordinateSystem(World, VACoordinateSystemUnreal);
+	vaWorldSetLogCallback(World, &VaSdkLogCallback);
 	vaWorldSetPosition(World, vaVectorCreate(
 		(float)WorldPosition.X,
-		(float)WorldPosition.Z,
-		-(float)(WorldPosition.Y + WorldSize.Y)));
+		(float)WorldPosition.Y,
+		(float)WorldPosition.Z));
 	vaWorldSetSize(World, vaVectorCreate(
 		(float)WorldSize.X,
-		(float)WorldSize.Z,
-		(float)WorldSize.Y));
+		(float)WorldSize.Y,
+		(float)WorldSize.Z));
 	vaWorldSetInverseSpeedOfSound(World, 1.0f / SpeedOfSound);
 	vaWorldSetMetersPerUnit(World, MetersPerUnit);
 	vaWorldSetWorldIsIndoors(World, bIsIndoors);
@@ -107,26 +89,32 @@ void AVAudioWorld::BeginPlay()
 	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
 	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
 	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
-	if (bPendingShutdown)
-		vaWorldSetPendingShutdown(World, true);
+	vaWorldSetPendingShutdown(World, bPendingShutdown);
 	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
 	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
-	vaWorldSetAirAbsorptionHumidity(World, Humidity);
-	vaWorldSetAirAbsorptionTemperature(World, Temperature);
-	vaWorldSetAirAbsorptionPressure(World, Pressure);
 
-	int32 GroupedEAXCount = FMath::Max(2, GroupedEAXSubmixes.Num());
+	if (bAirAbsorptionEnabled)
+	{
+		vaWorldSetAirAbsorptionHumidity(World, Humidity);
+		vaWorldSetAirAbsorptionTemperature(World, Temperature);
+		vaWorldSetAirAbsorptionPressure(World, Pressure);
+	}
+	else
+	{
+		vaWorldSetAirAbsorption(World, nullptr);
+	}
+
+	int32 GroupedEAXCount = GroupedEAXSubmixes.Num();
 	vaWorldSetMaximumGroupedEAXCount(World, GroupedEAXCount);
-	UE_LOG(LogTemp, Log, TEXT("VA World: MaximumGroupedEAXCount=%d (submix slots=%d)"), GroupedEAXCount, GroupedEAXSubmixes.Num());
 
-	for (int32 i = 0; i < GroupedEAXSubmixes.Num(); ++i)
+	for (int32 i = 0; i < GroupedEAXCount; i++)
 	{
 		USoundSubmix* Sub = GroupedEAXSubmixes[i];
 		USubmixEffectReverbPreset* Preset = NewObject<USubmixEffectReverbPreset>(this);
 		if (Sub)
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, Preset);
 		GroupedEAXPresets.Add(Preset);
-		UE_LOG(LogTemp, Log, TEXT("VA World: GroupedEAX[%d] submix=%s"), i, Sub ? *Sub->GetName() : TEXT("null"));
+		VALog(L"GroupedEAX[%d] submix=%s", i, Sub ? *Sub->GetName() : TEXT("null"));
 	}
 
 	ApplyChildMaterials();
@@ -156,51 +144,58 @@ void AVAudioWorld::Tick(float DeltaTime)
 	{
 		vaWorldUpdate(World);
 
-		bool bDryEnabled = !bReverbOnly;
-		for (AVAudioEmitter* E : RegisteredEmitters)
+		static float TimeSinceHeartbeat = 0.0f;
+		TimeSinceHeartbeat += DeltaTime;
+
+		bool doHeartbeat = TimeSinceHeartbeat >= 1.0f;
+
+		if (doHeartbeat)
 		{
-			if (E) E->SetDryOutputEnabled(bDryEnabled);
+			VALog(L"RaytracingTime=%.3fms RegisteredEmitters=%d", vaWorldGetRaytracingTime(World), RegisteredEmitters.Num());
+			TimeSinceHeartbeat = 0.0f;
+		}
+
+		if (bReverbOnly != bWasReverbOnly)
+		{
+			bWasReverbOnly = bReverbOnly;
+			bool bDryEnabled = !bReverbOnly;
+
+			for (AVAudioEmitter* Emitter : RegisteredEmitters)
+				Emitter->SetDryOutputEnabled(bDryEnabled);
 		}
 
 		if (GEngine)
 		{
-			GEngine->AddOnScreenDebugMessage(1001, 0.0f, FColor::Cyan,
-				FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
+			GEngine->AddOnScreenDebugMessage((uint64)VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
 
-			for (AVAudioEmitter* E : RegisteredEmitters)
+			if (AVAudioEmitter* CurrentMainListener = GetMainListener())
 			{
-				if (!E || !E->bIsMainListener) continue;
+				FVector ListenerPos = CurrentMainListener->GetActorLocation();
+				GEngine->AddOnScreenDebugMessage((uint64)VAListenerPosMessage, 0.0f, FColor::Green, FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), ListenerPos.X, ListenerPos.Y, ListenerPos.Z));
 
-				FVector P = E->GetActorLocation();
-				GEngine->AddOnScreenDebugMessage(1002, 0.0f, FColor::Green,
-					FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), P.X, P.Y, P.Z));
-
-				VALowPassFilter* F = vaEmitterGetAmbientFilter(E->GetVAEmitter());
-				if (F)
-				{
-					GEngine->AddOnScreenDebugMessage(1003, 0.0f, FColor::Yellow,
-						FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), F->gainLF, F->gainHF));
-				}
-				break;
+				if (VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(CurrentMainListener->GetVAEmitter()))
+					GEngine->AddOnScreenDebugMessage((uint64)VAAmbientFilterMessage, 0.0f, FColor::Yellow, FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), AmbientFilter->gainLF, AmbientFilter->gainHF));
 			}
 
 			// Per-emitter position and world-bounds check
-			const FVector BoundsMin = WorldPosition;
-			const FVector BoundsMax = WorldPosition + WorldSize;
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
-				AVAudioEmitter* E = RegisteredEmitters[i];
-				if (!E) continue;
+				AVAudioEmitter* emitter = RegisteredEmitters[i];
+				VAEmitter* vaEmitter = emitter->GetVAEmitter();
 
-				FVector P = E->GetActorLocation();
-				bool bInBounds = P.X >= BoundsMin.X && P.X <= BoundsMax.X
-				              && P.Y >= BoundsMin.Y && P.Y <= BoundsMax.Y
-				              && P.Z >= BoundsMin.Z && P.Z <= BoundsMax.Z;
+				// Registered emitters can still have a null VAEmitter* if TryInitializeEmitter()
+				// hasn't completed yet (e.g. this world's own BeginPlay ran after theirs) - skip
+				// until it catches up on a later Tick.
+				if (!vaEmitter)
+					continue;
+
+				bool bInBounds = vaEmitterGetWithinWorldBounds(vaEmitter);
+				VAVector P = vaEmitterGetPosition(vaEmitter);
 
 				FColor Color = bInBounds ? FColor::Green : FColor::Red;
-				GEngine->AddOnScreenDebugMessage(2000 + i, 0.0f, Color,
+				GEngine->AddOnScreenDebugMessage((uint64)VABoundsMessageBase + i, 0.0f, Color,
 					FString::Printf(TEXT("VA Emitter[%d] '%s': (%.1f, %.1f, %.1f) %s"),
-						i, *E->GetActorLabel(), P.X, P.Y, P.Z,
+						i, *emitter->GetName(), P.x, P.y, P.z,
 						bInBounds ? TEXT("[in bounds]") : TEXT("[OUT OF BOUNDS]")));
 			}
 		}
@@ -220,21 +215,32 @@ USubmixEffectReverbPreset* AVAudioWorld::GetGroupedEAXPreset(int32 Index) const
 void AVAudioWorld::RegisterEmitter(AVAudioEmitter* Emitter)
 {
 	RegisteredEmitters.AddUnique(Emitter);
+
+	if (Emitter->bIsMainListener)
+	{
+		if (MainListener.IsValid() && MainListener.Get() != Emitter)
+		{
+			VALog(L"'%s' registered as main listener, but '%s' is already the main listener - keeping the first one. Only one emitter should have bIsMainListener = true.",
+				*Emitter->GetName(), *MainListener->GetName());
+		}
+		else
+		{
+			MainListener = Emitter;
+		}
+	}
 }
 
 void AVAudioWorld::UnregisterEmitter(AVAudioEmitter* Emitter)
 {
 	RegisteredEmitters.Remove(Emitter);
+
+	if (MainListener.Get() == Emitter)
+		MainListener = nullptr;
 }
 
 AVAudioEmitter* AVAudioWorld::GetMainListener() const
 {
-	for (AVAudioEmitter* E : RegisteredEmitters)
-	{
-		if (E && E->bIsMainListener)
-			return E;
-	}
-	return nullptr;
+	return MainListener.Get();
 }
 
 
@@ -242,12 +248,36 @@ void AVAudioWorld::ExportWorld()
 {
 	if (!World)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("VA ExportWorld: world is null (press Play first)."));
+		VALog(L"world is null (press Play first).");
 		return;
 	}
+
 	FString Path = FPaths::ProjectDir() + TEXT("vaudio_export.va");
 	vaWorldExport(World, TCHAR_TO_UTF8(*Path));
-	UE_LOG(LogTemp, Log, TEXT("VA exported world to: %s"), *Path);
+}
+
+void AVAudioWorld::ImportWorld()
+{
+	if (!World)
+	{
+		VALog(L"world is null (press Play first).");
+		return;
+	}
+
+	FString Path = FPaths::ProjectDir() + TEXT("vaudio_export.va");
+	VAEmitter** ImportedEmitters = nullptr;
+	int32 ImportedEmitterCount = 0;
+
+	VAResult Result = vaWorldImport(World, TCHAR_TO_UTF8(*Path), &ImportedEmitters, &ImportedEmitterCount);
+
+	if (Result != VA_SUCCESS)
+	{
+		VALog(L"import failed (result=%d) for '%s'.", Result, *Path);
+		return;
+	}
+
+	VALog(L"imported %d emitter(s) from '%s'.", ImportedEmitterCount, *Path);
+	free(ImportedEmitters);
 }
 
 // ---------------------------------------------------------------------------
@@ -259,11 +289,17 @@ void AVAudioWorld::ApplyChildMaterials()
 	TArray<AActor*> AttachedActors;
 	GetAttachedActors(AttachedActors);
 
+	int32 AppliedCount = 0;
+
 	for (AActor* Child : AttachedActors)
 	{
 		AVAudioMaterial* Mat = Cast<AVAudioMaterial>(Child);
+
 		if (Mat)
+		{
 			Mat->ApplyToWorld(World);
+			++AppliedCount;
+		}
 	}
 }
 
@@ -274,24 +310,105 @@ void AVAudioWorld::ApplyChildMaterials()
 // Walk the attach-parent chain to find the nearest UVAudioMaterialComponent.
 static UVAudioMaterialComponent* FindMaterialInChain(AActor* Actor)
 {
-	for (AActor* A = Actor; A != nullptr; A = A->GetAttachParentActor())
+	for (AActor* actor = Actor; actor != nullptr; actor = actor->GetAttachParentActor())
 	{
-		UVAudioMaterialComponent* C = A->FindComponentByClass<UVAudioMaterialComponent>();
-		if (C)
-		{
-			if (A != Actor)
-				UE_LOG(LogTemp, Log, TEXT("VA:   '%s' inherits material from parent '%s'"),
-					*Actor->GetActorLabel(), *A->GetActorLabel());
-			return C;
-		}
+		UVAudioMaterialComponent* materialComponent = actor->FindComponentByClass<UVAudioMaterialComponent>();
+
+		if (materialComponent)
+			return materialComponent;
 	}
 	return nullptr;
 }
 
+// True if this mesh would use its simple collision (sphyl/sphere/box) rather than the
+// triangle-mesh fallback, matching the bAddedSimple check in ScanAndAddPrimitives.
+static bool HasSimpleCollision(UStaticMesh* Mesh)
+{
+	UBodySetup* BodySetup = Mesh ? Mesh->GetBodySetup() : nullptr;
+
+	if (!BodySetup)
+		return false;
+
+	const FKAggregateGeom& Agg = BodySetup->AggGeom;
+	return !Agg.SphylElems.IsEmpty() || !Agg.SphereElems.IsEmpty() || !Agg.BoxElems.IsEmpty();
+}
+
+#if WITH_EDITOR
+void AVAudioWorld::BakeGeometry()
+{
+	UWorld* UEWorld = GetWorld();
+
+	if (!UEWorld)
+	{
+		VALog(L"no world (open a level first).");
+		return;
+	}
+
+	Modify();
+	BakedMeshes.Reset();
+
+	int32 BakedCount = 0;
+
+	for (TActorIterator<AActor> ActorIt(UEWorld); ActorIt; ++ActorIt)
+	{
+		AActor* Actor = *ActorIt;
+
+		// Null if this actor (or its attach-parent chain) has no UVAudioMaterialComponent, or has
+		// one that belongs to a different VAudioWorld - not baked geometry for this world.
+		UVAudioMaterialComponent* MatComp = FindMaterialInChain(Actor);
+		if (!MatComp || MatComp->AudioWorld != this) continue;
+
+		TArray<UStaticMeshComponent*> MeshComps;
+		Actor->GetComponents<UStaticMeshComponent>(MeshComps);
+
+		for (UStaticMeshComponent* MeshComp : MeshComps)
+		{
+			// Null if the component has no mesh assigned. Simple-collision meshes are skipped
+			// here too - ScanAndAddPrimitives() already picks up their live collision shapes
+			// every run, so baking their triangle mesh as well would be redundant.
+			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
+			if (!Mesh || HasSimpleCollision(Mesh)) continue;
+
+			if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
+			{
+				VALog(L"mesh '%s' on '%s' has no render data in-editor, skipping", *Mesh->GetName(), *Actor->GetName());
+				continue;
+			}
+
+			FStaticMeshLODResources& LOD = Mesh->GetRenderData()->LODResources[0];
+			FPositionVertexBuffer& PosBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+
+			TArray<uint32> Indices;
+			LOD.IndexBuffer.GetCopy(Indices);
+			if (Indices.IsEmpty())
+				continue;
+
+			FVAudioBakedMesh& Baked = BakedMeshes.AddDefaulted_GetRef();
+			Baked.ActorName = Actor->GetName();
+			Baked.ComponentName = MeshComp->GetFName();
+			Baked.Vertices.Reserve(Indices.Num());
+
+			for (uint32 Idx : Indices)
+				Baked.Vertices.Add(PosBuffer.VertexPosition(Idx));
+
+			++BakedCount;
+
+			VALog(L"baked '%s'.'%s' tris=%d", *Actor->GetName(), *MeshComp->GetName(), Indices.Num() / 3);
+		}
+	}
+
+	MarkPackageDirty();
+	VALog(L"baked %d mesh component(s). Save the level to persist.", BakedCount);
+}
+#endif
+
 void AVAudioWorld::ScanAndAddPrimitives()
 {
 	UWorld* UEWorld = GetWorld();
-	if (!UEWorld) return;
+
+	// Null if this actor isn't in a live level (e.g. called outside BeginPlay/PIE).
+	if (!UEWorld)
+		return;
 
 	int32 SimpleCount = 0;
 	int32 MeshCount = 0;
@@ -308,32 +425,79 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			continue;
 		}
 
-		VAMaterialType Material = EnumToVAMaterial(MatComp->Material);
+		VAMaterialType Material = EVAudioMaterialToVA(MatComp->Material);
+
+		TArray<UShapeComponent*> ShapeComps;
+		Actor->GetComponents<UShapeComponent>(ShapeComps);
+
+		for (UShapeComponent* ShapeComp : ShapeComps)
+		{
+			FTransform CompTransform = ShapeComp->GetComponentTransform();
+
+			if (UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(ShapeComp))
+			{
+				VAMatrix Mat = MakeRotTransMatrix(CompTransform);
+
+				VACapsulePrimitive* Cap = vaCapsulePrimitiveCreate();
+				vaCapsulePrimitiveSetRadius(Cap,   Capsule->GetScaledCapsuleRadius());
+				vaCapsulePrimitiveSetLength(Cap,   Capsule->GetScaledCapsuleHalfHeight_WithoutHemisphere() * 2.0f);
+				vaCapsulePrimitiveSetMaterial(Cap, Material);
+				vaCapsulePrimitiveSetTransform(Cap, &Mat);
+				vaWorldAddPrimitive_(World, Cap);
+				CapsulePrimitives.Add(Cap);
+				++SimpleCount;
+			}
+			else if (USphereComponent* Sphere = Cast<USphereComponent>(ShapeComp))
+			{
+				FVector Center = CompTransform.GetTranslation();
+
+				VASpherePrimitive* Sp = vaSpherePrimitiveCreate();
+				vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
+				vaSpherePrimitiveSetRadius(Sp,   Sphere->GetScaledSphereRadius());
+				vaSpherePrimitiveSetMaterial(Sp, Material);
+				vaWorldAddPrimitive_(World, Sp);
+				SpherePrimitives.Add(Sp);
+				++SimpleCount;
+			}
+			else if (UBoxComponent* Box = Cast<UBoxComponent>(ShapeComp))
+			{
+				VAMatrix Mat = MakeRotTransMatrix(CompTransform);
+				FVector Extent = Box->GetScaledBoxExtent();
+
+				VAPrismPrimitive* Prism = vaPrismPrimitiveCreate();
+				vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Extent.X * 2.0f, Extent.Y * 2.0f, Extent.Z * 2.0f));
+				vaPrismPrimitiveSetMaterial(Prism, Material);
+				vaPrismPrimitiveSetTransform(Prism, &Mat);
+				vaWorldAddPrimitive_(World, Prism);
+				PrismPrimitives.Add(Prism);
+				++SimpleCount;
+			}
+		}
 
 		TArray<UStaticMeshComponent*> MeshComps;
 		Actor->GetComponents<UStaticMeshComponent>(MeshComps);
 
 		if (MeshComps.IsEmpty())
 		{
-			UE_LOG(LogTemp, Log, TEXT("VA: actor '%s' -> no static mesh components, skipping"),
-				*Actor->GetActorLabel());
 			continue;
 		}
-
-		UE_LOG(LogTemp, Log, TEXT("VA: actor '%s' -> material %d (%d mesh components)"),
-			*Actor->GetActorLabel(), (int32)Material, MeshComps.Num());
 
 		for (UStaticMeshComponent* MeshComp : MeshComps)
 		{
 			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
-			if (!Mesh) continue;
+
+			// Null if the component has no mesh assigned; simple collision shapes on
+			// mesh-less actors are picked up separately via UShapeComponent above.
+			if (!Mesh)
+				continue;
 
 			FTransform CompTransform = MeshComp->GetComponentTransform();
 			FVector WorldPos = CompTransform.GetTranslation();
-			FVector Scale    = CompTransform.GetScale3D();
+			FVector Scale = CompTransform.GetScale3D();
 
 			bool bAddedSimple = false;
 			UBodySetup* BodySetup = Mesh->GetBodySetup();
+
 			if (BodySetup)
 			{
 				const FKAggregateGeom& Agg = BodySetup->AggGeom;
@@ -362,7 +526,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					float   Radius = Sphere.Radius * Scale.GetAbsMax();
 
 					VASpherePrimitive* Sp = vaSpherePrimitiveCreate();
-					vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Z, -(float)Center.Y));
+					vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
 					vaSpherePrimitiveSetRadius(Sp,   Radius);
 					vaSpherePrimitiveSetMaterial(Sp, Material);
 					vaWorldAddPrimitive_(World, Sp);
@@ -379,7 +543,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					VAMatrix Mat = MakeRotTransMatrix(WT);
 
 					VAPrismPrimitive* Prism = vaPrismPrimitiveCreate();
-					vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Box.X * Scale.X, Box.Z * Scale.Z, Box.Y * Scale.Y));
+					vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Box.X * Scale.X, Box.Y * Scale.Y, Box.Z * Scale.Z));
 					vaPrismPrimitiveSetMaterial(Prism, Material);
 					vaPrismPrimitiveSetTransform(Prism, &Mat);
 					vaWorldAddPrimitive_(World, Prism);
@@ -389,28 +553,61 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				}
 			}
 
-			if (bAddedSimple) continue;
+			if (bAddedSimple)
+				continue;
 
-			// Fall back to triangle mesh
-			if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty()) continue;
+			// Fall back to triangle mesh: prefer baked geometry (reliable in shipping builds
+			// regardless of bAllowCPUAccess/cook quirks), otherwise use the mesh's live render
+			// data (always up to date, but may be unavailable in cooked builds).
+			const FVAudioBakedMesh* Baked = nullptr;
 
-			FStaticMeshLODResources& LOD = Mesh->GetRenderData()->LODResources[0];
-			FPositionVertexBuffer& PosBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+			for (const FVAudioBakedMesh& bakedMesh : BakedMeshes)
+			{
+				if (bakedMesh.ComponentName == MeshComp->GetFName() && bakedMesh.ActorName == Actor->GetName())
+				{
+					Baked = &bakedMesh;
+					break;
+				}
+			}
 
-			TArray<uint32> Indices;
-			LOD.IndexBuffer.GetCopy(Indices);
-			if (Indices.IsEmpty()) continue;
+			TArray<FVector3f> LocalPositions;
+			if (Baked)
+			{
+				LocalPositions = Baked->Vertices;
+			}
+			else
+			{
+				if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
+				{
+					VALog(L"mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
+					continue;
+				}
+
+				FStaticMeshLODResources& LOD = Mesh->GetRenderData()->LODResources[0];
+				FPositionVertexBuffer& PosBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+
+				TArray<uint32> Indices;
+				LOD.IndexBuffer.GetCopy(Indices);
+				if (Indices.IsEmpty())
+				{
+					VALog(L"mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
+					continue;
+				}
+
+				LocalPositions.Reserve(Indices.Num());
+				for (uint32 Idx : Indices)
+					LocalPositions.Add(PosBuffer.VertexPosition(Idx));
+			}
 
 			TArray<VAVector> VAVerts;
-			VAVerts.Reserve(Indices.Num());
+			VAVerts.Reserve(LocalPositions.Num());
 			VAVector MinB = VECTOR_MAX;
 			VAVector MaxB = VECTOR_MIN;
 
-			for (uint32 Idx : Indices)
+			for (const FVector3f& LocalPos : LocalPositions)
 			{
-				FVector3f LocalPos = PosBuffer.VertexPosition(Idx);
-				FVector RotScaled  = CompTransform.GetRotation().RotateVector(Scale * FVector(LocalPos));
-				VAVector V = vaVectorCreate((float)RotScaled.X, (float)RotScaled.Z, -(float)RotScaled.Y);
+				FVector RotScaled = CompTransform.GetRotation().RotateVector(Scale * FVector(LocalPos));
+				VAVector V = vaVectorCreate((float)RotScaled.X, (float)RotScaled.Y, (float)RotScaled.Z);
 				VAVerts.Add(V);
 				MinB = vaVectorMin(MinB, V);
 				MaxB = vaVectorMax(MaxB, V);
@@ -422,18 +619,14 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			);
 
 			vaMeshPrimitiveSetSupports3DPermeation(MeshPrim, MatComp->bSupports3DPermeation);
-			if (!MatComp->bSupports3DPermeation)
-				UE_LOG(LogTemp, Log, TEXT("VA:   mesh '%s' permeation disabled"), *Mesh->GetName());
 
 			vaWorldAddPrimitive_(World, MeshPrim);
 			MeshPrimitives.Add(MeshPrim);
 			++MeshCount;
-
-			UE_LOG(LogTemp, Log, TEXT("VA:   mesh '%s' tris=%d"), *Mesh->GetName(), Indices.Num() / 3);
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("VA: added %d simple + %d mesh primitives (%d actors skipped, no material)"), SimpleCount, MeshCount, SkippedCount);
+	VALog(L"added %d simple + %d mesh primitives (%d actors skipped, no material)", SimpleCount, MeshCount, SkippedCount);
 }
 
 void AVAudioWorld::DestroyPrimitives()
