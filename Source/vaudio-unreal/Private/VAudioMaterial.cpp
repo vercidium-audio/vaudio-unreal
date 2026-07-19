@@ -74,7 +74,7 @@ VAWorld* AVAudioMaterial::GetOwningVAWorld() const
 	// Null if the attach parent isn't a VAudioWorld (e.g. attached to an unrelated actor).
 	if (!AudioWorld)
 	{
-		VALog(L"attach parent '%s' is not a VAudioWorld.", *Parent->GetName());
+		VALog(L"attach parent '%s' is not a VAudioWorld.", *Parent->GetActorNameOrLabel());
 		return nullptr;
 	}
 

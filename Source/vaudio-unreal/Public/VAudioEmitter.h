@@ -209,6 +209,9 @@ public:
 	void ApplySourceFilter(float GainLF, float GainHF);
 	void SetDryOutputEnabled(bool bEnabled);
 
+	UPROPERTY(Transient)
+	UAudioComponent* SourceAudioComponent = nullptr;
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
@@ -231,9 +234,6 @@ private:
 	// round-trip through a reload and corrupt the package (see FLinkerLoad::CreateExport crash).
 	UPROPERTY(Transient)
 	UAudioComponent* AmbientAudioComponent = nullptr;
-
-	UPROPERTY(Transient)
-	UAudioComponent* SourceAudioComponent = nullptr;
 
 	UPROPERTY(Transient)
 	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;

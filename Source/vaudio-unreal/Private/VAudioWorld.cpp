@@ -35,10 +35,11 @@ static VAMatrix MakeTranslationMatrix(const FVector& P)
 // per-emitter bounds messages (VABoundsMessageBase + index) can't collide with them.
 enum EVADebugMessageKey : uint32
 {
-	VARaytracingTimeMessage = 1001,
-	VAListenerPosMessage    = 1002,
-	VAAmbientFilterMessage  = 1003,
-	VABoundsMessageBase     = 2000,
+	VARaytracingTimeMessage	  = 1001,
+	VAListenerStatusMessage	  = 1002,
+	VAAmbientFilterMessage	  = 1003,
+	VANoMainListenerMessage	  = 1004,
+	VAEmitterStatus		      = 2000,
 };
 
 static VAMatrix MakeRotTransMatrix(const FTransform& T)
@@ -166,17 +167,25 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 		if (GEngine)
 		{
-			GEngine->AddOnScreenDebugMessage((uint64)VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("VA Raytracing: %.3f ms"), vaWorldGetRaytracingTime(World)));
+			GEngine->AddOnScreenDebugMessage((uint64)VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.3f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
 
 			if (AVAudioEmitter* CurrentMainListener = GetMainListener())
 			{
 				FVector ListenerPos = CurrentMainListener->GetActorLocation();
-				GEngine->AddOnScreenDebugMessage((uint64)VAListenerPosMessage, 0.0f, FColor::Green, FString::Printf(TEXT("VA Listener pos: (%.1f, %.1f, %.1f)"), ListenerPos.X, ListenerPos.Y, ListenerPos.Z));
 
-				if (VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(CurrentMainListener->GetVAEmitter()))
-					GEngine->AddOnScreenDebugMessage((uint64)VAAmbientFilterMessage, 0.0f, FColor::Yellow, FString::Printf(TEXT("VA Ambient LPF: gainLF=%.3f  gainHF=%.3f"), AmbientFilter->gainLF, AmbientFilter->gainHF));
+				int targetCount = CurrentMainListener->TargetEmitters.Num();
+				FColor color = targetCount == 0 ? FColor::Orange : FColor::Green;
+
+				GEngine->AddOnScreenDebugMessage((uint64)VAListenerStatusMessage, 0.0f, color, FString::Printf(TEXT("Listener '%s' has %d targets"), *GetActorNameOrLabel(), targetCount));
+
+				if (VALowPassFilter* ambientFilter = vaEmitterGetAmbientFilter(CurrentMainListener->GetVAEmitter()))
+				{
+					GEngine->AddOnScreenDebugMessage((uint64)VAAmbientFilterMessage, 0.0f, FColor::Green, FString::Printf(TEXT("[VA] Ambient LPF: gainLF=%.3f  gainHF=%.3f"), ambientFilter->gainLF, ambientFilter->gainHF));
+				}
 			}
-
+			else
+				GEngine->AddOnScreenDebugMessage((uint64)VAListenerStatusMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] There is no main listener. Ensure one emitter has Listener > Is Main Listener enabled, and is assigned to a World")));
+			
 			// Per-emitter position and world-bounds check
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
@@ -192,11 +201,41 @@ void AVAudioWorld::Tick(float DeltaTime)
 				bool bInBounds = vaEmitterGetWithinWorldBounds(vaEmitter);
 				VAVector P = vaEmitterGetPosition(vaEmitter);
 
-				FColor Color = bInBounds ? FColor::Green : FColor::Red;
-				GEngine->AddOnScreenDebugMessage((uint64)VABoundsMessageBase + i, 0.0f, Color,
-					FString::Printf(TEXT("VA Emitter[%d] '%s': (%.1f, %.1f, %.1f) %s"),
-						i, *emitter->GetName(), P.x, P.y, P.z,
-						bInBounds ? TEXT("[in bounds]") : TEXT("[OUT OF BOUNDS]")));
+				const wchar_t* boundsStatus = bInBounds ? TEXT("[in bounds]") : TEXT("[out of bounds]");
+
+				uint64 messageID = (uint64)VAEmitterStatus + i;
+
+				if (emitter->bIsMainListener)
+				{
+					FColor color = bInBounds ? FColor::Green : FColor::Orange;
+
+					GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
+						FString::Printf(TEXT("[VA] Main Listener Emitter %d '%s': (%.1f, %.1f, %.1f) %s"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
+				}
+				else
+				{
+					const wchar_t* sourceStatus = emitter->SourceAudioComponent ? TEXT("valid") : TEXT("null");
+
+					if (emitter->bAffectsGroupedEAX)
+					{
+						int32 groupedEAXIndex = vaEmitterGetGroupedEAXIndex(vaEmitter);
+						USoundSubmix* Submix = GetGroupedEAXSubmix(groupedEAXIndex);
+
+						FColor color = bInBounds && Submix != NULL && emitter->SourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
+
+						const wchar_t* submixStatus = Submix ? TEXT("valid") : TEXT("null");
+
+						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
+							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s, source=%s groupedEAXIndex=%d, submix=%s"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, sourceStatus, groupedEAXIndex, submixStatus));
+					}
+					else
+					{
+						FColor color = bInBounds && emitter->SourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
+
+						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
+							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s, source=%s [No EAX]"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, sourceStatus));
+					}
+				}
 			}
 		}
 	}
@@ -221,7 +260,7 @@ void AVAudioWorld::RegisterEmitter(AVAudioEmitter* Emitter)
 		if (MainListener.IsValid() && MainListener.Get() != Emitter)
 		{
 			VALog(L"'%s' registered as main listener, but '%s' is already the main listener - keeping the first one. Only one emitter should have bIsMainListener = true.",
-				*Emitter->GetName(), *MainListener->GetName());
+				*Emitter->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
 		}
 		else
 		{
@@ -371,7 +410,7 @@ void AVAudioWorld::BakeGeometry()
 
 			if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
 			{
-				VALog(L"mesh '%s' on '%s' has no render data in-editor, skipping", *Mesh->GetName(), *Actor->GetName());
+				VALog(L"mesh '%s' on '%s' has no render data in-editor, skipping", *Mesh->GetName(), *Actor->GetActorNameOrLabel());
 				continue;
 			}
 
@@ -393,7 +432,7 @@ void AVAudioWorld::BakeGeometry()
 
 			++BakedCount;
 
-			VALog(L"baked '%s'.'%s' tris=%d", *Actor->GetName(), *MeshComp->GetName(), Indices.Num() / 3);
+			VALog(L"baked '%s'.'%s' tris=%d", *Actor->GetActorNameOrLabel(), *MeshComp->GetName(), Indices.Num() / 3);
 		}
 	}
 
