@@ -13,7 +13,6 @@ extern "C" {
 }
 
 #include "VaRawLog.h"
-#include <Engine/Engine.h>
 #include <Engine/EngineTypes.h>
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
@@ -320,38 +319,17 @@ void AVAudioEmitter::Tick(float DeltaTime)
 
 		for (AVAudioEmitter* Target : TargetEmitters)
 		{
-			// Target may be an unset TArray entry (Target == null), or a target whose emitter
-			// hasn't been registered yet (see bTargetsRegistered above) - both resolve on a later Tick.
-			if (!Target)
-			{
-				GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange, FString::Printf(TEXT("Listener '%s' has a null target"), *GetActorNameOrLabel()));
+			// Target may be an unset TArray entry (Target == null), a target whose emitter hasn't
+			// been registered yet (see bTargetsRegistered above), one not yet raytraced, or one
+			// with an invalid filter - all resolve on a later Tick. See AVAudioWorld::Tick() for
+			// the on-screen diagnostic covering these same cases.
+			if (!Target || !Target->GetVAEmitter() || !vaEmitterHasRaytracedTarget(Emitter, Target->GetVAEmitter()))
 				continue;
-			}
-
-			if (!Target->GetVAEmitter())
-			{
-				GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange, FString::Printf(TEXT("Listener '%s' target '%s' has no emitter. Ensure the target emitter is assigned to the same World"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
-				continue;
-			}
-
-			if (!vaEmitterHasRaytracedTarget(Emitter, Target->GetVAEmitter()))
-			{
-				GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange, FString::Printf(TEXT("Listener '%s' has not raytraced the '%s' emitter yet"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
-				continue;
-			}
 
 			VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(Emitter, Target->GetVAEmitter());
 
 			if (!lowPassFilter)
-			{
-				GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Orange, FString::Printf(TEXT("Listener '%s' has raytraced the '%s' emitter, but has an invalid low pass filter (LPF)"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
 				continue;
-			}
-
-			if (GEngine)
-			{
-				GEngine->AddOnScreenDebugMessage((uint64)Target, 0.0f, FColor::Green, FString::Printf(TEXT("VA Source '%s' LPF: gainLF=%.2f  gainHF=%.2f"), *Target->GetActorNameOrLabel(), lowPassFilter->gainLF, lowPassFilter->gainHF));
-			}
 
 			Target->ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 		}
@@ -646,12 +624,6 @@ void AVAudioEmitter::UpdateSourceSubmix()
 	}
 
 	SourceAudioComponent->SetSubmixSend(Submix, SendLevel);
-
-	if (GEngine)
-	{
-		FString RelStr = FString::Printf(TEXT("Submix gain is %.3f"), SendLevel);
-		GEngine->AddOnScreenDebugMessage((uint64)this + 200, 0.0f, FColor::Green, FString::Printf(TEXT("VAudioEmitter.cpp: UpdateSourceSubmix(): '%s': %s"), *GetActorNameOrLabel(), *RelStr));
-	}
 }
 
 void AVAudioEmitter::ApplyGroupedEAXReverb()
@@ -701,13 +673,6 @@ void AVAudioEmitter::ApplyGroupedEAXReverb()
 		// should always be populated for i < Count once reverb has been calculated.
 		if (!ensureMsgf(EAX, TEXT("VAudioEmitter '%s': GroupedEAX[%d] is null after reverb was calculated"), *GetActorNameOrLabel(), i))
 			continue;
-
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(3001 + i, 0.0f, FColor::Cyan,
-				FString::Printf(TEXT("VA GroupedEAX[%d]: decayTime=%.3f wetLevel=%.3f gain=%.3f"),
-					i, EAX->decayTime, EAX->returnedPercent, EAX->gain));
-		}
 
 		// EAX is already clamped, but ensure its clamped again here in case UE EAX changes one day
 		FSubmixEffectReverbSettings settings;

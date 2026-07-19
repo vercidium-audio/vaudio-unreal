@@ -137,7 +137,7 @@ public:
 
 	// Energy threshold below which permeation rays are cancelled to prevent unnecessary traversal
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float MinimumPermeationEnergy = 0.0f;
+	float MinimumPermeationEnergy = 0.01f;
 
 	// --- Ambient ---
 
@@ -209,6 +209,12 @@ public:
 	void ApplySourceFilter(float GainLF, float GainHF);
 	void SetDryOutputEnabled(bool bEnabled);
 
+	// This emitter's index within its AVAudioWorld's RegisteredEmitters, assigned by
+	// AVAudioWorld::RegisterEmitter/UnregisterEmitter. Used to build collision-free
+	// GEngine->AddOnScreenDebugMessage keys - see VADebugMessageKeys.h.
+	int32 GetEmitterIndex() const { return EmitterIndex; }
+	void SetEmitterIndex(int32 Index) { EmitterIndex = Index; }
+
 	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;
 
@@ -219,6 +225,9 @@ public:
 private:
 	VAEmitter* Emitter = nullptr;
 	int32 CurrentGroupedEAXIndex = -1;
+
+	// Set by AVAudioWorld::RegisterEmitter/UnregisterEmitter - see GetEmitterIndex() above.
+	int32 EmitterIndex = -1;
 	bool bTargetsRegistered = false;
 	TSet<AVAudioEmitter*> RegisteredTargets;
 	bool bCurrentDryEnabled = true;
