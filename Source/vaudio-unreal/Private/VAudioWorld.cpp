@@ -239,15 +239,24 @@ void AVAudioWorld::Tick(float DeltaTime)
 				{
 					AVAudioSource* source = Cast<AVAudioSource>(continuousEmitter);
 
-					if (!source || !source->SourceAudioComponent || !source->SourceAudioComponent->Sound)
+					// If it's a source (not continuous), ensure its audio component is configured correctly
+					if (source)
 					{
-						uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
-						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Source and will play no sound"), i, *continuousEmitter->GetActorNameOrLabel()));
-					}
-					else if (!source->SourceAudioComponent->Sound->AttenuationSettings)
-					{
-						uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterAttenuationStatus;
-						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *continuousEmitter->GetActorNameOrLabel()));
+						if (!source->SourceSound)
+						{
+							uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
+							GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no sound file assigned"), i, *continuousEmitter->GetActorNameOrLabel()));
+						}
+						else if (!source->SourceSound->AttenuationSettings)
+						{
+							uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterAttenuationStatus;
+							GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *continuousEmitter->GetActorNameOrLabel()));
+						}
+						else if (!source->SourceAudioComponent) // SourceAudioComponent is set when it actually plays
+						{
+							uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
+							GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' cannot play its sound as it is not a target of the listener emitter"), i, *continuousEmitter->GetActorNameOrLabel()));
+						}
 					}
 
 					UAudioComponent* sourceAudioComponent = source ? source->SourceAudioComponent : nullptr;

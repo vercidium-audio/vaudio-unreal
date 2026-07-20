@@ -2,6 +2,7 @@
 #include "VAudioWorld.h"
 #include "VAudioSource.h"
 #include "VADebugMessageKeys.h"
+#include "VAudioReverbConversion.h"
 #include "GameFramework/PlayerController.h"
 #include "AudioMixerBlueprintLibrary.h"
 
@@ -146,22 +147,7 @@ void AVAudioListener::ApplyListenerReverb()
 	if (!EAX)
 		return;
 
-	FSubmixEffectReverbSettings settings;
-
-	// EAX is already clamped, but ensure its clamped again here in case UE EAX changes one day
-	settings.DecayTime           = FMath::Clamp(EAX->decayTime,           0.1f,  20.0f);
-	settings.DecayHFRatio        = FMath::Clamp(EAX->decayHFRatio,        0.1f,   2.0f);
-	settings.Density             = FMath::Clamp(EAX->density,             0.0f,   1.0f);
-	settings.Diffusion           = FMath::Clamp(EAX->diffusion,           0.0f,   1.0f);
-	settings.Gain                = FMath::Clamp(EAX->gain,                0.0f,   1.0f);
-	settings.GainHF              = FMath::Clamp(EAX->gainHF,              0.0f,   1.0f);
-	settings.ReflectionsGain     = FMath::Clamp(EAX->reflectionsGain,     0.0f,  3.16f);
-	settings.ReflectionsDelay    = FMath::Clamp(EAX->reflectionsDelay,    0.0f,   0.3f);
-	settings.LateGain            = FMath::Clamp(EAX->lateReverbGain,      0.0f,  10.0f);
-	settings.LateDelay           = FMath::Clamp(EAX->lateReverbDelay,     0.0f,   0.1f);
-	settings.AirAbsorptionGainHF = FMath::Clamp(EAX->airAbsorptionGainHF, 0.0f,   1.0f);
-	settings.WetLevel            = FMath::Clamp(EAX->returnedPercent,    0.0f,    1.0f);
-	settings.DryLevel            = 0.0f;
+	FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
 
 	ListenerReverbPreset->SetSettings(settings);
 
@@ -217,21 +203,7 @@ void AVAudioListener::ApplyGroupedEAXReverb()
 		if (!ensureMsgf(EAX, TEXT("VAudioListener '%s': GroupedEAX[%d] is null after reverb was calculated"), *GetActorNameOrLabel(), i))
 			continue;
 
-		// EAX is already clamped, but ensure its clamped again here in case UE EAX changes one day
-		FSubmixEffectReverbSettings settings;
-		settings.DecayTime           = FMath::Clamp(EAX->decayTime,           0.1f,  20.0f);
-		settings.DecayHFRatio        = FMath::Clamp(EAX->decayHFRatio,        0.1f,   2.0f);
-		settings.Density             = FMath::Clamp(EAX->density,             0.0f,   1.0f);
-		settings.Diffusion           = FMath::Clamp(EAX->diffusion,           0.0f,   1.0f);
-		settings.Gain                = FMath::Clamp(EAX->gain,                0.0f,   1.0f);
-		settings.GainHF              = FMath::Clamp(EAX->gainHF,              0.0f,   1.0f);
-		settings.ReflectionsGain     = FMath::Clamp(EAX->reflectionsGain,     0.0f,   3.16f);
-		settings.ReflectionsDelay    = FMath::Clamp(EAX->reflectionsDelay,    0.0f,   0.3f);
-		settings.LateGain            = FMath::Clamp(EAX->lateReverbGain,      0.0f,  10.0f);
-		settings.LateDelay           = FMath::Clamp(EAX->lateReverbDelay,     0.0f,   0.1f);
-		settings.AirAbsorptionGainHF = FMath::Clamp(EAX->airAbsorptionGainHF, 0.0f,   1.0f);
-		settings.WetLevel            = FMath::Clamp(EAX->returnedPercent,     0.0f,   1.0f);
-		settings.DryLevel            = 0.0f;
+		FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
 		Preset->SetSettings(settings);
 	}
 }
