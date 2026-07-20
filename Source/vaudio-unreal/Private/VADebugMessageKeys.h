@@ -45,6 +45,8 @@ enum EVADebugMessageKey : uint64
 // expected to stay well under VAEmitterMessageStride entries).
 enum EVAEmitterMessageOffset : uint32
 {
-	VAEmitterSubmixStatus = 0,
-	VAEmitterTargetStatus = 1,
+	VAEmitterSubmixStatus      = 0,
+	VAEmitterTargetStatus      = 1,
+	VAEmitterAttenuationStatus = 2,
+	VAEmitterSourceStatus      = 3,
 };

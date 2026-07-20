@@ -13,6 +13,7 @@ extern "C" {
 }
 
 #include "VaRawLog.h"
+#include "VADebugMessageKeys.h"
 #include <Engine/EngineTypes.h>
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
@@ -410,6 +411,12 @@ void AVAudioEmitter::TrySpawnSourceSound()
 	if (SourceAudioComponent)
 	{
 		SourceAudioComponent->SetSourceEffectChain(SourceEffectChain);
+
+		if (!SourceAudioComponent->AttenuationSettings)
+		{
+			uint64 messageID = VAEmitterMessageBase + GetEmitterIndex() * VAEmitterMessageStride + VAEmitterAttenuationStatus;
+			GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source '%s' has no Sound Attenuation - it will not fall off with distance"), *GetActorNameOrLabel()));
+		}
 
 		// Prime the filter immediately so the very first played frame already reflects the
 		// raytraced result rather than the MAX_LOW_PASS_CUTOFF_FREQUENCY default.

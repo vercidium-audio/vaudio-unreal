@@ -199,10 +199,25 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 					GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
 						FString::Printf(TEXT("[VA] Main Listener Emitter %d '%s': (%.1f, %.1f, %.1f) %s"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
+
+					if (emitter->SourceAudioComponent)
+					{
+						uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
+						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Main Listener Emitter %d '%s' has a Source - remove it and use VASourceRelative actors instead"), i, *emitter->GetActorNameOrLabel()));
+					}
 				}
 				else
 				{
-					const wchar_t* sourceStatus = emitter->SourceAudioComponent ? TEXT("valid") : TEXT("null");
+					if (!emitter->SourceAudioComponent || !emitter->SourceAudioComponent->Sound)
+					{
+						uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
+						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Source and will play no sound"), i, *emitter->GetActorNameOrLabel()));
+					}
+					else if (!emitter->SourceAudioComponent->Sound->AttenuationSettings)
+					{
+						uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterAttenuationStatus;
+						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *emitter->GetActorNameOrLabel()));
+					}
 
 					if (emitter->bAffectsGroupedEAX)
 					{
@@ -214,14 +229,14 @@ void AVAudioWorld::Tick(float DeltaTime)
 						const wchar_t* submixStatus = Submix ? TEXT("valid") : TEXT("null");
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s, source=%s groupedEAXIndex=%d, submix=%s"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, sourceStatus, groupedEAXIndex, submixStatus));
+							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [groupedEAXIndex=%d] [submix=%s]"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, groupedEAXIndex, submixStatus));
 					}
 					else
 					{
 						FColor color = bInBounds && emitter->SourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s, source=%s [No EAX]"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, sourceStatus));
+							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [No EAX]"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
 					}
 				}
 			}
@@ -258,7 +273,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 				uint64 messageID = VAEmitterMessageBase + emitter->GetEmitterIndex() * VAEmitterMessageStride + VAEmitterSubmixStatus;
 				GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-					FString::Printf(TEXT("VA Submix '%s': gain is %.3f"), *emitter->GetActorNameOrLabel(), SendLevel));
+					FString::Printf(TEXT("VA Submix '%s': gain=%.2f"), *emitter->GetActorNameOrLabel(), SendLevel));
 			}
 
 			// Per-target LPF applied by the main listener (mirrors the filter AVAudioEmitter::Tick()
@@ -323,20 +338,20 @@ void AVAudioWorld::Tick(float DeltaTime)
 						if (!EAX)
 						{
 							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange,
-								FString::Printf(TEXT("VA GroupedEAX[%d]: invalid"), i));
+								FString::Printf(TEXT("[VA] GroupedEAX[%d]: invalid"), i));
 
 							continue;
 						}
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-							FString::Printf(TEXT("VA GroupedEAX[%d]: decayTime=%.3f wetLevel=%.3f gain=%.3f"), i, EAX->decayTime, EAX->returnedPercent, EAX->gain));
+							FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f wetLevel=%.2f gain=%.2f"), i, EAX->decayTime, EAX->returnedPercent, EAX->gain));
 					}
 				}
 			}
 
 			if (GroupedEAXSubmixes.Num() == 0)
 			{
-				GEngine->AddOnScreenDebugMessage(VAGroupedEAXStatusMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("World '%s' has no Grouped EAX Submixes. Ensure at least one is added"), *GetActorNameOrLabel()));
+				GEngine->AddOnScreenDebugMessage(VAGroupedEAXStatusMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] World '%s' has no Grouped EAX Submixes. Ensure at least one is added"), *GetActorNameOrLabel()));
 			}
 
 
@@ -349,7 +364,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 				const wchar_t* plural = targetCount == 1 ? TEXT("target") : TEXT("targets");
 
-				GEngine->AddOnScreenDebugMessage(VAListenerStatusMessage, 0.0f, color, FString::Printf(TEXT("Listener '%s' has %d %s"), *CurrentMainListener->GetActorNameOrLabel(), targetCount, plural));
+				GEngine->AddOnScreenDebugMessage(VAListenerStatusMessage, 0.0f, color, FString::Printf(TEXT("[VA] Listener '%s' has %d %s"), *CurrentMainListener->GetActorNameOrLabel(), targetCount, plural));
 
 				VAEmitter* emitter = CurrentMainListener->GetVAEmitter();
 
@@ -358,7 +373,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 					// Wait for raytracing to complete at least once
 					if (VALowPassFilter* ambientFilter = vaEmitterGetAmbientFilter(emitter))
 					{
-						GEngine->AddOnScreenDebugMessage(VAAmbientFilterMessage, 0.0f, FColor::Green, FString::Printf(TEXT("[VA] Ambient LPF: gainLF=%.3f  gainHF=%.3f"), ambientFilter->gainLF, ambientFilter->gainHF));
+						GEngine->AddOnScreenDebugMessage(VAAmbientFilterMessage, 0.0f, FColor::Green, FString::Printf(TEXT("[VA] Ambient LPF: gainLF=%.2f  gainHF=%.2f"), ambientFilter->gainLF, ambientFilter->gainHF));
 					}
 				}
 			}
@@ -366,7 +381,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				GEngine->AddOnScreenDebugMessage(VAListenerStatusMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] There is no main listener. Ensure one emitter has Listener > Is Main Listener enabled, and is assigned to a World")));
 
 			GEngine->AddOnScreenDebugMessage(VAPrimitiveStatusMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Primitives: prisms=%d spheres=%d capsules=%d meshes=%d"), PrismPrimitives.Num(), SpherePrimitives.Num(), CapsulePrimitives.Num(), MeshPrimitives.Num()));
-			GEngine->AddOnScreenDebugMessage(VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.3f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
+			GEngine->AddOnScreenDebugMessage(VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.2f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
 		}
 	}
 }
