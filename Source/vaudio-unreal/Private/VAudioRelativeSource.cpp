@@ -26,9 +26,9 @@ void AVAudioRelativeSource::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!SourceSound)
+	if (SourceSounds.Num() == 0)
 	{
-		VALog(L"RelativeSource has no SourceSound assigned - it will do nothing");
+		VALog(L"RelativeSource has no SourceSounds assigned - it will do nothing");
 		return;
 	}
 
@@ -58,6 +58,14 @@ void AVAudioRelativeSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AVAudioRelativeSource::TrySpawnSourceSound()
 {
+	USoundBase* ChosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
+
+	if (!ChosenSound)
+	{
+		VALog(L"Failed to play sound - SourceSounds contains a null entry at the chosen index");
+		return;
+	}
+
 	if (bAttachToSelf)
 	{
 		if (!GetRootComponent())
@@ -66,11 +74,11 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 			return;
 		}
 
-		SourceAudioComponent = UGameplayStatics::SpawnSoundAttached(SourceSound, GetRootComponent(), NAME_None, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.0f, 1.0f, 0.0f, nullptr, nullptr, true);
+		SourceAudioComponent = UGameplayStatics::SpawnSoundAttached(ChosenSound, GetRootComponent(), NAME_None, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.0f, 1.0f, 0.0f, nullptr, nullptr, true);
 	}
 	else
 	{
-		SourceAudioComponent = UGameplayStatics::SpawnSound2D(GetWorld(), SourceSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
+		SourceAudioComponent = UGameplayStatics::SpawnSound2D(GetWorld(), ChosenSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
 	}
 
 	if (SourceAudioComponent)
@@ -79,7 +87,7 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 	}
 	else
 	{
-		VALog(L"Failed to play sound - %s returned null for SourceSound '%s' (invalid/empty sound asset?)", bAttachToSelf ? L"SpawnSoundAttached" : L"SpawnSound2D", *GetNameSafe(SourceSound));
+		VALog(L"Failed to play sound - %s returned null for SourceSound '%s' (invalid/empty sound asset?)", bAttachToSelf ? L"SpawnSoundAttached" : L"SpawnSound2D", *GetNameSafe(ChosenSound));
 	}
 }
 

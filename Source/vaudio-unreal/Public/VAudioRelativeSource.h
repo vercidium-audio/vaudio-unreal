@@ -41,9 +41,10 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
-	// The sound file to play
+	// The sound(s) to play - one is chosen at random each time this actor spawns its sound, so
+	// e.g. footsteps can cycle through variations instead of repeating the same clip.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
-	USoundBase* SourceSound = nullptr;
+	TArray<USoundBase*> SourceSounds;
 
 	// Whether the sound is spawned attached to this actor (following its position) or as a plain
 	// 2D sound. Attached playback still has no directionality/attenuation of its own - VA-driven
