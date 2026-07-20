@@ -2,7 +2,6 @@
 #include "VAudioWorld.h"
 #include "VAudioSource.h"
 #include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
 #include "AudioMixerBlueprintLibrary.h"
 
 extern "C" {
@@ -10,9 +9,6 @@ extern "C" {
 }
 
 #include "VaRawLog.h"
-
-const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
-const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
 
 AVAudioListener::AVAudioListener()
 {
@@ -57,37 +53,12 @@ void AVAudioListener::InitializeTypeSpecific()
 
 	// This actor's existence as an AVAudioListener IS the "is main listener" flag - always true.
 	vaEmitterSetHasRelativeReverb(Emitter, true);
+	vaEmitterSetAffectsGroupedEAX(Emitter, false);
 
 	if (ListenerReverbSubmix)
 	{
 		ListenerReverbPreset = NewObject<USubmixEffectReverbPreset>(this);
 		UAudioMixerBlueprintLibrary::AddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
-	}
-
-	if (AmbientSound)
-	{
-		AmbientAudioComponent = UGameplayStatics::SpawnSound2D(GetWorld(), AmbientSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
-
-		if (AmbientAudioComponent)
-		{
-			AmbientAudioComponent->SetLowPassFilterEnabled(true);
-
-			if (bAmbientThroughReverb && ListenerReverbSubmix)
-			{
-				AmbientAudioComponent->SetSubmixSend(ListenerReverbSubmix, 1.0f);
-			}
-		}
-	}
-}
-
-void AVAudioListener::DeinitializeTypeSpecific()
-{
-	if (AmbientAudioComponent)
-	{
-		AmbientAudioComponent->Stop();
-		AmbientAudioComponent = nullptr;
-
-		VALog(L"Stopped ambient sound");
 	}
 }
 
@@ -124,10 +95,13 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 	if (bAutoFollowCamera)
 	{
 		APlayerController* playerController = GetWorld()->GetFirstPlayerController();
+		APlayerCameraManager* cameraManager = playerController ? playerController->PlayerCameraManager : nullptr;
 
-		if (playerController && playerController->PlayerCameraManager)
+		// GetCameraCacheTime() is 0 until the camera manager has run its first UpdateCamera(). Before that, CamPos will
+		// always be (0, 0, 0), teleporting the listener to the world origin for one frame, causing filters to spike.
+		if (cameraManager && cameraManager->GetCameraCacheTime() > 0.0f)
 		{
-			FVector CamPos = playerController->PlayerCameraManager->GetCameraLocation();
+			FVector CamPos = cameraManager->GetCameraLocation();
 			vaEmitterSetPosition(Emitter, vaVectorCreate((float)CamPos.X, (float)CamPos.Y, (float)CamPos.Z));
 			SetActorLocation(CamPos);
 		}
@@ -135,7 +109,6 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 
 	ApplyListenerReverb();
 	ApplyGroupedEAXReverb();
-	ApplyAmbientFilter();
 
 	for (AVAudioEmitterBase* Target : TargetEmitters)
 	{
@@ -190,24 +163,6 @@ void AVAudioListener::ApplyListenerReverb()
 	settings.DryLevel            = 0.0f;
 
 	ListenerReverbPreset->SetSettings(settings);
-}
-
-void AVAudioListener::ApplyAmbientFilter()
-{
-	// AmbientAudioComponent is only spawned in InitializeTypeSpecific() if AmbientSound is assigned
-	// (it's an optional feature - see the property comment in VAudioListener.h) - the ambient filter
-	// is simply skipped if the user hasn't assigned an ambient sound.
-	if (!AmbientAudioComponent)
-		return;
-
-	VALowPassFilter* ambientFilter = vaEmitterGetAmbientFilter(Emitter);
-
-	// Has not raytraced yet
-	if (!ambientFilter)
-		return;
-
-	AmbientAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, ambientFilter->gainHF));
-	AmbientAudioComponent->SetVolumeMultiplier(ambientFilter->gainLF);
 }
 
 void AVAudioListener::ApplyGroupedEAXReverb()

@@ -31,8 +31,6 @@ void AVAudioAmbientSource::BeginPlay()
 	{
 		VALog(L"AudioWorld is not assigned - this ambient source will play with no filtering. Assign AudioWorld in the Details panel.");
 	}
-
-	TrySpawnSourceSound();
 }
 
 void AVAudioAmbientSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -48,13 +46,17 @@ void AVAudioAmbientSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 }
 
-void AVAudioAmbientSource::TrySpawnSourceSound()
+void AVAudioAmbientSource::TrySpawnSourceSound(const VALowPassFilter* AmbientFilter)
 {
-	SourceAudioComponent = UGameplayStatics::SpawnSound2D(GetWorld(), SourceSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
+	// CreateSound2D() builds the component without starting playback, so we can configure the low pass filter before playing any sound
+	SourceAudioComponent = UGameplayStatics::CreateSound2D(GetWorld(), SourceSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
 
 	if (SourceAudioComponent)
 	{
 		SourceAudioComponent->SetLowPassFilterEnabled(true);
+		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, AmbientFilter->gainHF));
+		SourceAudioComponent->SetVolumeMultiplier(AmbientFilter->gainLF);
+		SourceAudioComponent->Play();
 	}
 	else
 	{
@@ -71,7 +73,7 @@ void AVAudioAmbientSource::Tick(float DeltaTime)
 
 void AVAudioAmbientSource::ApplyAmbientFilter()
 {
-	if (!SourceAudioComponent || !AudioWorld)
+	if (!AudioWorld)
 		return;
 
 	AVAudioListener* Listener = AudioWorld->GetMainListener();
@@ -81,9 +83,18 @@ void AVAudioAmbientSource::ApplyAmbientFilter()
 
 	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(Listener->GetVAEmitter());
 
-	// Raytracing has not completed at least once yet
+	// Raytracing has not completed at least once yet - don't spawn until there's a real filter to
+	// start from, otherwise the sound would be briefly audible unfiltered/at full volume.
 	if (!AmbientFilter)
 		return;
+
+	if (!SourceAudioComponent)
+	{
+		// Applies AmbientFilter and starts playback itself, so the very first sample is already
+		// filtered - see TrySpawnSourceSound()'s comment.
+		TrySpawnSourceSound(AmbientFilter);
+		return;
+	}
 
 	SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, AmbientFilter->gainHF));
 	SourceAudioComponent->SetVolumeMultiplier(AmbientFilter->gainLF);

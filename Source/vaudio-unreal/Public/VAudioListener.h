@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "VAudioEmitterBase.h"
-#include "Components/AudioComponent.h"
 #include "SubmixEffects/AudioMixerSubmixEffectReverb.h"
 #include "Sound/SoundSubmix.h"
 #include "VAudioListener.generated.h"
@@ -20,7 +19,6 @@ public:
 
 protected:
 	virtual void InitializeTypeSpecific() override;
-	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 
 public:
@@ -31,14 +29,6 @@ public:
 	// This submix applies reverb to sounds created by this listener
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
 	USoundSubmix* ListenerReverbSubmix = nullptr;
-
-	// WIP - this will likely be replaced in future, as it only supports one ambient sound.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	USoundBase* AmbientSound = nullptr;
-
-	// Whether the ambient sound has reverb
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	bool bAmbientThroughReverb = true;
 
 	// Target emitters that this listener will cast occlusion and permeation rays towards.
 	// Holds both AVAudioSource and AVAudioContinuous actors - both are raytracing targets.
@@ -177,17 +167,13 @@ private:
 	bool bTargetsRegistered = false;
 	TSet<AVAudioEmitterBase*> RegisteredTargets;
 
-	// Transient: created via NewObject()/SpawnSound* in BeginPlay/TryInitializeEmitter and
-	// torn down in EndPlay. Must never be serialized - saving the level while these are set
-	// (e.g. mid-PIE, or after a crash skips EndPlay) writes them as real exports that don't
-	// round-trip through a reload and corrupt the package (see FLinkerLoad::CreateExport crash).
-	UPROPERTY(Transient)
-	UAudioComponent* AmbientAudioComponent = nullptr;
-
+	// Transient: created via NewObject() in BeginPlay/TryInitializeEmitter and torn down in
+	// EndPlay. Must never be serialized - saving the level while this is set (e.g. mid-PIE, or
+	// after a crash skips EndPlay) writes it as a real export that doesn't round-trip through a
+	// reload and corrupts the package (see FLinkerLoad::CreateExport crash).
 	UPROPERTY(Transient)
 	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;
 
 	void ApplyListenerReverb();
 	void ApplyGroupedEAXReverb();
-	void ApplyAmbientFilter();
 };

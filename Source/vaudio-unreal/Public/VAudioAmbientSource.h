@@ -6,6 +6,7 @@
 #include "VAudioAmbientSource.generated.h"
 
 class AVAudioWorld;
+struct VALowPassFilter;
 
 // For rain/wind/room-tone sounds. NOT raytraced, NO reverb - plays SourceSound in 2D and applies
 // a low-pass filter driven by the main listener's ambient filter (vaEmitterGetAmbientFilter()),
@@ -43,6 +44,6 @@ public:
 	UAudioComponent* SourceAudioComponent = nullptr;
 
 private:
-	void TrySpawnSourceSound();
+	void TrySpawnSourceSound(const VALowPassFilter* AmbientFilter);
 	void ApplyAmbientFilter();
 };
