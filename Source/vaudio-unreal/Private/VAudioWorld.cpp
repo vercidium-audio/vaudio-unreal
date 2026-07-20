@@ -48,6 +48,21 @@ static VAMatrix MakeRotTransMatrix(const FTransform& T)
 	);
 }
 
+// vaudio.h defines VAResult codes as plain #defines (not an enum), so there's no reflection -
+// only the codes vaWorldAddPrimitive_ can actually return are named here.
+static const TCHAR* VAResultToString(VAResult Result)
+{
+	switch (Result)
+	{
+	case VA_SUCCESS:                  return TEXT("VA_SUCCESS");
+	case VA_INVALID_MATERIAL:         return TEXT("VA_INVALID_MATERIAL (primitive's material is VAMaterialAir)");
+	case VA_MATERIAL_DOES_NOT_EXIST:  return TEXT("VA_MATERIAL_DOES_NOT_EXIST (primitive's material does not exist)");
+	case VA_ALREADY_EXISTS:           return TEXT("VA_ALREADY_EXISTS (primitive already added to this or another world)");
+	case VA_WORLD_CONFLICT:           return TEXT("VA_WORLD_CONFLICT (mesh already in use by a different world)");
+	default:                          return TEXT("unknown VAResult");
+	}
+}
+
 TArray<TWeakObjectPtr<AVAudioWorld>> AVAudioWorld::RunningWorlds;
 
 AVAudioWorld::AVAudioWorld()
@@ -278,7 +293,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 				uint64 messageID = VAEmitterMessageBase + emitter->GetEmitterIndex() * VAEmitterMessageStride + VAEmitterSubmixStatus;
 				GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-					FString::Printf(TEXT("VA Submix '%s': gain=%.2f"), *emitter->GetActorNameOrLabel(), SendLevel));
+					FString::Printf(TEXT("[VA] Submix '%s': gain=%.2f"), *emitter->GetActorNameOrLabel(), SendLevel));
 			}
 
 			// Per-target LPF applied by the main listener (mirrors the filter AVAudioEmitter::Tick()
@@ -387,6 +402,16 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 			GEngine->AddOnScreenDebugMessage(VAPrimitiveStatusMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Primitives: prisms=%d spheres=%d capsules=%d meshes=%d"), PrismPrimitives.Num(), SpherePrimitives.Num(), CapsulePrimitives.Num(), MeshPrimitives.Num()));
 			GEngine->AddOnScreenDebugMessage(VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.2f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
+
+			// Called last (renders at the top) since these actors are silently missing from
+			// raytracing entirely - the most likely warning to be missed otherwise. See
+			// ScanAndAddPrimitives()/TryAddPrimitive(), which log the specific reason per actor.
+			if (ActorsWithInvalidMaterials.Num() > 0)
+			{
+				GEngine->AddOnScreenDebugMessage(VAInvalidMaterialsMessage, 0.0f, FColor::Orange,
+					FString::Printf(TEXT("[VA] %d actor(s) were not added to the world: %s. See Output Log for details."),
+						ActorsWithInvalidMaterials.Num(), *FString::Join(ActorsWithInvalidMaterials, TEXT(", "))));
+			}
 		}
 	}
 }
@@ -596,6 +621,18 @@ void AVAudioWorld::BakeGeometry()
 }
 #endif
 
+bool AVAudioWorld::TryAddPrimitive(void* Primitive, const TCHAR* PrimitiveTypeName, const FString& ActorName)
+{
+	VAResult Result = vaWorldAddPrimitive_(World, Primitive);
+
+	if (Result == VA_SUCCESS)
+		return true;
+
+	VALog(L"'%s': failed to add %s primitive to raytracing - %s.", *ActorName, PrimitiveTypeName, VAResultToString(Result));
+	ActorsWithInvalidMaterials.AddUnique(ActorName);
+	return false;
+}
+
 void AVAudioWorld::ScanAndAddPrimitives()
 {
 	UWorld* UEWorld = GetWorld();
@@ -608,12 +645,32 @@ void AVAudioWorld::ScanAndAddPrimitives()
 	int32 MeshCount = 0;
 	int32 SkippedCount = 0;
 
+	ActorsWithInvalidMaterials.Empty();
+
 	for (TActorIterator<AActor> ActorIt(UEWorld); ActorIt; ++ActorIt)
 	{
 		AActor* Actor = *ActorIt;
 
 		UVAudioMaterialComponent* MatComp = FindMaterialInChain(Actor);
-		if (!MatComp || MatComp->AudioWorld != this)
+		if (!MatComp)
+		{
+			++SkippedCount;
+			continue;
+		}
+
+		FString ActorName = Actor->GetActorNameOrLabel();
+
+		// Unassigned AudioWorld is a config problem worth its own warning, same as a wrong-world
+		// assignment below - both mean this actor's geometry won't be added to raytracing.
+		if (!MatComp->AudioWorld)
+		{
+			VALog(L"'%s' has a VAudioMaterialComponent with no AudioWorld assigned - its geometry will not be added to raytracing until one is set.", *ActorName);
+			ActorsWithInvalidMaterials.AddUnique(ActorName);
+			++SkippedCount;
+			continue;
+		}
+
+		if (MatComp->AudioWorld != this)
 		{
 			++SkippedCount;
 			continue;
@@ -622,6 +679,10 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		int32 MaterialId;
 		if (!MatComp->GetMaterialId(MaterialId))
 		{
+			// GetMaterialId() already logged the specific reason (e.g. MaterialAsset isn't in
+			// this world's Materials array) - this actor is a config problem, not a normal
+			// "no material component" skip, so it gets its own on-screen warning (see Tick()).
+			ActorsWithInvalidMaterials.AddUnique(ActorName);
 			++SkippedCount;
 			continue;
 		}
@@ -644,7 +705,13 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				vaCapsulePrimitiveSetLength(Cap,   Capsule->GetScaledCapsuleHalfHeight_WithoutHemisphere() * 2.0f);
 				vaCapsulePrimitiveSetMaterial(Cap, Material);
 				vaCapsulePrimitiveSetTransform(Cap, &Mat);
-				vaWorldAddPrimitive_(World, Cap);
+
+				if (!TryAddPrimitive(Cap, TEXT("capsule"), ActorName))
+				{
+					vaCapsulePrimitiveDestroy(Cap);
+					continue;
+				}
+
 				CapsulePrimitives.Add(Cap);
 				++SimpleCount;
 			}
@@ -656,7 +723,13 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
 				vaSpherePrimitiveSetRadius(Sp,   Sphere->GetScaledSphereRadius());
 				vaSpherePrimitiveSetMaterial(Sp, Material);
-				vaWorldAddPrimitive_(World, Sp);
+
+				if (!TryAddPrimitive(Sp, TEXT("sphere"), ActorName))
+				{
+					vaSpherePrimitiveDestroy(Sp);
+					continue;
+				}
+
 				SpherePrimitives.Add(Sp);
 				++SimpleCount;
 			}
@@ -669,7 +742,13 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Extent.X * 2.0f, Extent.Y * 2.0f, Extent.Z * 2.0f));
 				vaPrismPrimitiveSetMaterial(Prism, Material);
 				vaPrismPrimitiveSetTransform(Prism, &Mat);
-				vaWorldAddPrimitive_(World, Prism);
+
+				if (!TryAddPrimitive(Prism, TEXT("box"), ActorName))
+				{
+					vaPrismPrimitiveDestroy(Prism);
+					continue;
+				}
+
 				PrismPrimitives.Add(Prism);
 				++SimpleCount;
 			}
@@ -715,7 +794,13 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					vaCapsulePrimitiveSetLength(Cap,   Sphyl.Length * Scale.Z);
 					vaCapsulePrimitiveSetMaterial(Cap, Material);
 					vaCapsulePrimitiveSetTransform(Cap, &Mat);
-					vaWorldAddPrimitive_(World, Cap);
+
+					if (!TryAddPrimitive(Cap, TEXT("capsule"), ActorName))
+					{
+						vaCapsulePrimitiveDestroy(Cap);
+						continue;
+					}
+
 					CapsulePrimitives.Add(Cap);
 					bAddedSimple = true;
 					++SimpleCount;
@@ -730,7 +815,13 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
 					vaSpherePrimitiveSetRadius(Sp,   Radius);
 					vaSpherePrimitiveSetMaterial(Sp, Material);
-					vaWorldAddPrimitive_(World, Sp);
+
+					if (!TryAddPrimitive(Sp, TEXT("sphere"), ActorName))
+					{
+						vaSpherePrimitiveDestroy(Sp);
+						continue;
+					}
+
 					SpherePrimitives.Add(Sp);
 					bAddedSimple = true;
 					++SimpleCount;
@@ -747,7 +838,13 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Box.X * Scale.X, Box.Y * Scale.Y, Box.Z * Scale.Z));
 					vaPrismPrimitiveSetMaterial(Prism, Material);
 					vaPrismPrimitiveSetTransform(Prism, &Mat);
-					vaWorldAddPrimitive_(World, Prism);
+
+					if (!TryAddPrimitive(Prism, TEXT("box"), ActorName))
+					{
+						vaPrismPrimitiveDestroy(Prism);
+						continue;
+					}
+
 					PrismPrimitives.Add(Prism);
 					bAddedSimple = true;
 					++SimpleCount;
@@ -821,7 +918,12 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 			vaMeshPrimitiveSetSupports3DPermeation(MeshPrim, MatComp->bSupports3DPermeation);
 
-			vaWorldAddPrimitive_(World, MeshPrim);
+			if (!TryAddPrimitive(MeshPrim, TEXT("mesh"), ActorName))
+			{
+				vaMeshPrimitiveDestroy(MeshPrim);
+				continue;
+			}
+
 			MeshPrimitives.Add(MeshPrim);
 			++MeshCount;
 		}

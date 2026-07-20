@@ -68,10 +68,12 @@ Download the SDK from [vercidium.com](https://vercidium.com) and copy the files 
 Once the plugin is enabled, three new actor/component types are available in the editor:
 
 - **VA Audio World** (`AVAudioWorld`) — place one of these in your level. It owns the raytracing world and scans the level on `BeginPlay` for any actor with a **VA Audio Material** component to build the acoustic scene geometry. Configure world bounds, air absorption, threading and reverb submixes on this actor.
-- **VA Audio Material** component (`UVAudioMaterialComponent`) — add this component to any actor whose mesh should participate in raytracing (walls, floors, props, etc). Choose a built-in material (concrete, wood, glass, ...) and assign the `AudioWorld` reference.
+- **VA Audio Material** component (`UVAudioMaterialComponent`) — add this component to any actor whose mesh should participate in raytracing (walls, floors, props, etc). Choose a built-in material (concrete, wood, glass, ...) from the `Material` dropdown, or assign a material asset to `MaterialAsset` (see below) to override it. Assign the `AudioWorld` reference either way.
 - **VA Audio Emitter** (`AVAudioEmitter`) — place one per sound source, and one for the listener (player camera) with `bIsMainListener` enabled. Assign the `AudioWorld` reference and the sound to play; the emitter drives occlusion, permeation and reverb automatically as the scene changes.
 
-You can also place a **VA Audio Material** actor (`AVAudioMaterial`) as a child of the `AVAudioWorld` in the World Outliner to override the default properties (absorption, scattering, transmission) of a built-in material — name it to match the material (e.g. "Concrete") and use **Reset To Defaults** to pull in the SDK's base values, then tweak as needed.
+You can also create material assets in the Content Browser and add them to the `AVAudioWorld`'s `Materials` array:
+- **VA Audio Material** (`UVAudioMaterialAsset`) — overrides the default properties (absorption, scattering, transmission) of one of the 23 built-in materials. Pick its name from the `MaterialType` dropdown and use **Reset To Defaults** to pull in the SDK's base values, then tweak as needed.
+- **VA Audio Custom Material** (`UVAudioCustomMaterialAsset`) — defines a brand new material with its own free-form (unique) `MaterialName` and an SDK-assigned ID. Assign it to a `UVAudioMaterialComponent`'s `MaterialAsset` field to use it on geometry.
 
 ## References
 - [Vercidium Audio documentation](https://vercidium.com/docs)

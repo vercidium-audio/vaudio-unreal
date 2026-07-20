@@ -40,6 +40,11 @@ void UVAudioMaterialComponent::OnRegister()
 {
 	Super::OnRegister();
 	EnsureMeshesAllowCPUAccess();
+
+	// Owner is null in CDO/archetype contexts (see EnsureMeshesAllowCPUAccess above) - nothing to warn about yet.
+	AActor* Owner = GetOwner();
+	if (Owner && !AudioWorld)
+		VALogObj(L"'%s' has no AudioWorld assigned - its geometry will not be added to raytracing until one is set.", *Owner->GetActorNameOrLabel());
 }
 
 
