@@ -1,4 +1,5 @@
 #include "VAudioWorld.h"
+#include "VAudioEmitterBase.h"
 #include "VAudioEmitter.h"
 #include "VAudioMaterial.h"
 #include "VAudioMaterialComponent.h"
@@ -178,8 +179,11 @@ void AVAudioWorld::Tick(float DeltaTime)
 			bWasReverbOnly = bReverbOnly;
 			bool bDryEnabled = !bReverbOnly;
 
-			for (AVAudioEmitter* Emitter : RegisteredEmitters)
-				Emitter->SetDryOutputEnabled(bDryEnabled);
+			// SetDryOutputEnabled() is currently only implemented on AVAudioEmitter - other
+			// AVAudioEmitterBase subclasses (once they exist) don't have dry output to toggle here.
+			for (AVAudioEmitterBase* Emitter : RegisteredEmitters)
+				if (AVAudioEmitter* ConcreteEmitter = Cast<AVAudioEmitter>(Emitter))
+					ConcreteEmitter->SetDryOutputEnabled(bDryEnabled);
 		}
 
 		if (GEngine)
@@ -191,7 +195,13 @@ void AVAudioWorld::Tick(float DeltaTime)
 			// Per-emitter position and world-bounds check
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
-				AVAudioEmitter* emitter = RegisteredEmitters[i];
+				// This display logic (bIsMainListener/SourceAudioComponent/bAffectsGroupedEAX) is
+				// currently only meaningful for AVAudioEmitter - other AVAudioEmitterBase subclasses
+				// (once they exist) will get their own status lines rather than being folded in here.
+				AVAudioEmitter* emitter = Cast<AVAudioEmitter>(RegisteredEmitters[i]);
+				if (!emitter)
+					continue;
+
 				VAEmitter* vaEmitter = emitter->GetVAEmitter();
 
 				uint64 messageID = VAEmitterStatus + emitter->GetEmitterIndex();
@@ -265,7 +275,10 @@ void AVAudioWorld::Tick(float DeltaTime)
 			// the grouped EAX submix - recomputed here purely for display, doesn't affect audio).
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
-				AVAudioEmitter* emitter = RegisteredEmitters[i];
+				AVAudioEmitter* emitter = Cast<AVAudioEmitter>(RegisteredEmitters[i]);
+				if (!emitter)
+					continue;
+
 				VAEmitter* vaEmitter = emitter->GetVAEmitter();
 
 				if (!vaEmitter || emitter->bIsMainListener || !emitter->bAffectsGroupedEAX)
@@ -426,26 +439,30 @@ USubmixEffectReverbPreset* AVAudioWorld::GetGroupedEAXPreset(int32 Index) const
 	return GroupedEAXPresets.IsValidIndex(Index) ? GroupedEAXPresets[Index] : nullptr;
 }
 
-void AVAudioWorld::RegisterEmitter(AVAudioEmitter* Emitter)
+void AVAudioWorld::RegisterEmitter(AVAudioEmitterBase* Emitter)
 {
 	RegisteredEmitters.AddUnique(Emitter);
 	Emitter->SetEmitterIndex(RegisteredEmitters.Find(Emitter));
 
-	if (Emitter->bIsMainListener)
+	// bIsMainListener only exists on AVAudioEmitter today - once AVAudioListener exists (see
+	// actor_plan.md item 2), this check becomes "is Emitter an AVAudioListener" instead.
+	AVAudioEmitter* ConcreteEmitter = Cast<AVAudioEmitter>(Emitter);
+
+	if (ConcreteEmitter && ConcreteEmitter->bIsMainListener)
 	{
-		if (MainListener.IsValid() && MainListener.Get() != Emitter)
+		if (MainListener.IsValid() && MainListener.Get() != ConcreteEmitter)
 		{
 			VALog(L"'%s' registered as main listener, but '%s' is already the main listener - keeping the first one. Only one emitter should have bIsMainListener = true.",
 				*Emitter->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
 		}
 		else
 		{
-			MainListener = Emitter;
+			MainListener = ConcreteEmitter;
 		}
 	}
 }
 
-void AVAudioWorld::UnregisterEmitter(AVAudioEmitter* Emitter)
+void AVAudioWorld::UnregisterEmitter(AVAudioEmitterBase* Emitter)
 {
 	RegisteredEmitters.Remove(Emitter);
 	Emitter->SetEmitterIndex(-1);

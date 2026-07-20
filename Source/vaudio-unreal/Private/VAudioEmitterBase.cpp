@@ -1,0 +1,147 @@
+#include "VAudioEmitterBase.h"
+#include "VAudioWorld.h"
+
+extern "C" {
+#include "vaudio.h"
+}
+
+#include "VaRawLog.h"
+
+AVAudioEmitterBase::AVAudioEmitterBase()
+{
+	PrimaryActorTick.bCanEverTick = true;
+
+	UBillboardComponent* Root = CreateDefaultSubobject<UBillboardComponent>(TEXT("Root"));
+	SetRootComponent(Root);
+}
+
+void AVAudioEmitterBase::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Display a warning if the user forgot to set the AudioWorld
+	if (!AudioWorld)
+	{
+		VALog(L"AudioWorld is not assigned - this emitter will do nothing. Assign a VAudioWorld actor in the Details panel.");
+		return;
+	}
+
+	// AVAudioWorld may not have run its own BeginPlay yet (actor BeginPlay order is not guaranteed), in which case GetVAWorld() is still null here.
+	// TryInitializeEmitter() is safe to call repeatedly - it no-ops if Emitter is already set - so Tick() retries it every frame until AudioWorld's VAWorld becomes valid.
+	TryInitializeEmitter();
+}
+
+bool AVAudioEmitterBase::TryInitializeEmitter()
+{
+	// Already initialised, all is good
+	if (Emitter)
+		return true;
+
+	// The user forgot to set the AudioWorld
+	if (!AudioWorld)
+		return false;
+
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+
+	// AVAudioWorld's own BeginPlay hasn't run yet (actor BeginPlay order isn't guaranteed)
+	if (!vaWorld)
+		return false;
+
+	Emitter = vaEmitterCreate();
+
+	vaEmitterSetLogCallback(Emitter, &VaSdkLogCallback);
+	vaEmitterSetLogErrorCallback(Emitter, &VaSdkLogCallback);
+
+	FVector Pos = GetActorLocation();
+	vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Y, (float)Pos.Z));
+
+	InitializeTypeSpecific();
+
+	VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
+
+	// VA_INVALID_VALUE = already added to this world, VA_OUT_OF_RANGE = already added to another world
+	if (result != VA_SUCCESS)
+	{
+		VALog(L"vaWorldAddEmitter() failed with result %d - this emitter may already be registered to a VAudioWorld.", result);
+	}
+
+	AudioWorld->RegisterEmitter(this);
+
+	VALog(L"Complete. vaWorldAddEmitter() returned %d", result);
+	return true;
+}
+
+void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+
+	DeinitializeTypeSpecific();
+
+	if (AudioWorld)
+	{
+		AudioWorld->UnregisterEmitter(this);
+
+		VAWorld* vaWorld = AudioWorld->GetVAWorld();
+
+		if (!vaWorld)
+		{
+			// AVAudioWorld::EndPlay() may run before this emitter's EndPlay (actor EndPlay order
+			// isn't guaranteed), destroying the VAWorld first - nothing to remove ourselves from in that case.
+			VALog(L"vaWorld is null.");
+		}
+		else if (!Emitter)
+		{
+			// TryInitializeEmitter() never got far enough to create Emitter (e.g. AudioWorld's
+			// VAWorld never became valid during this actor's lifetime) - nothing to remove.
+			VALog(L"Can't remove emitter from world as Emitter is null.");
+		}
+		else
+		{
+			vaWorldRemoveEmitter(vaWorld, Emitter);
+			VALog(L"Emitter successfully removed from vaWorld.");
+		}
+	}
+
+	if (Emitter)
+	{
+		vaEmitterDestroy(Emitter);
+		Emitter = nullptr;
+	}
+	else
+	{
+		// Same as above: TryInitializeEmitter() never ran to completion during this actor's lifetime.
+		VALog(L"Can't destroy emitter as Emitter is null.");
+	}
+}
+
+void AVAudioEmitterBase::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (!Emitter)
+	{
+		VALog(L"Emitter is null");
+
+		if (!TryInitializeEmitter())
+		{
+			VALog(L"Emitter init failed");
+
+			static float TimeSinceLastNullLog = 0.0f;
+			TimeSinceLastNullLog += DeltaTime;
+			if (TimeSinceLastNullLog >= 2.0f)
+			{
+				TimeSinceLastNullLog = 0.0f;
+				VALog(L"Emitter still NULL, waiting on AudioWorld");
+			}
+
+			return;
+		}
+
+		VALog(L"Emitter init succeeded");
+	}
+
+	FVector Pos = GetActorLocation();
+	vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Y, (float)Pos.Z));
+
+	TickTypeSpecific(DeltaTime);
+}

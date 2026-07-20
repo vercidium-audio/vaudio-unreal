@@ -12,6 +12,7 @@ struct VACapsulePrimitive;
 struct VASpherePrimitive;
 struct VAPrismPrimitive;
 class AVAudioEmitter;
+class AVAudioEmitterBase;
 class UVAudioMaterialAssetBase;
 
 // Baked local-space triangle mesh for one UStaticMeshComponent, captured in-editor via
@@ -181,8 +182,12 @@ public:
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
 	int32 GetGroupedEAXPresetCount() const { return GroupedEAXPresets.Num(); }
 	int32 GetMaximumGroupedEAXCount() const { return GroupedEAXSubmixes.Num(); }
-	void RegisterEmitter(AVAudioEmitter* Emitter);
-	void UnregisterEmitter(AVAudioEmitter* Emitter);
+	void RegisterEmitter(AVAudioEmitterBase* Emitter);
+	void UnregisterEmitter(AVAudioEmitterBase* Emitter);
+
+	// Returns the first registered AVAudioEmitter with bIsMainListener == true. Temporary: once
+	// AVAudioListener exists (see actor_plan.md item 2), this will return AVAudioListener* instead
+	// and no longer need to filter RegisteredEmitters by class/flag.
 	AVAudioEmitter* GetMainListener() const;
 
 private:
@@ -198,7 +203,7 @@ private:
 	TArray<VASpherePrimitive*>  SpherePrimitives;
 	TArray<VAPrismPrimitive*>   PrismPrimitives;
 
-	TArray<AVAudioEmitter*> RegisteredEmitters;
+	TArray<AVAudioEmitterBase*> RegisteredEmitters;
 
 	// Cached from RegisteredEmitters whenever an emitter with bIsMainListener == true is
 	// (un)registered, so GetMainListener() and Tick() don't need to scan every frame.

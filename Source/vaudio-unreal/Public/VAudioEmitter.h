@@ -1,22 +1,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "VAudioEmitterBase.h"
 #include "Components/AudioComponent.h"
-#include "Components/BillboardComponent.h"
 #include "SubmixEffects/AudioMixerSubmixEffectReverb.h"
 #include "Sound/SoundSubmix.h"
 #include "Sound/SoundEffectSource.h"
 #include "SourceEffects/SourceEffectFilter.h"
 #include "VAudioEmitter.generated.h"
 
-struct VAEmitter;
-class AVAudioWorld;
-
 // Place this actor in the level for each audio source (or the player listener).
 // Assign the VAudioWorld reference and tune per-emitter ray settings in the Details panel.
 UCLASS(DisplayName = "VAudio Emitter")
-class VAUDIOUNREAL_API AVAudioEmitter : public AActor
+class VAUDIOUNREAL_API AVAudioEmitter : public AVAudioEmitterBase
 {
 	GENERATED_BODY()
 
@@ -24,16 +20,11 @@ public:
 	AVAudioEmitter();
 
 protected:
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void InitializeTypeSpecific() override;
+	virtual void DeinitializeTypeSpecific() override;
+	virtual void TickTypeSpecific(float DeltaTime) override;
 
 public:
-	virtual void Tick(float DeltaTime) override;
-
-	// The world that this emitter belongs to
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	AVAudioWorld* AudioWorld = nullptr;
-
 	// --- Listener ---
 	
 	// Every world must have a main listener emitter. Directional reverb and ambience volume are relative to this emitter
@@ -205,15 +196,8 @@ public:
 
 	// --- Runtime access ---
 
-	VAEmitter* GetVAEmitter() const { return Emitter; }
 	void ApplySourceFilter(float GainLF, float GainHF);
 	void SetDryOutputEnabled(bool bEnabled);
-
-	// This emitter's index within its AVAudioWorld's RegisteredEmitters, assigned by
-	// AVAudioWorld::RegisterEmitter/UnregisterEmitter. Used to build collision-free
-	// GEngine->AddOnScreenDebugMessage keys - see VADebugMessageKeys.h.
-	int32 GetEmitterIndex() const { return EmitterIndex; }
-	void SetEmitterIndex(int32 Index) { EmitterIndex = Index; }
 
 	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;
@@ -223,11 +207,8 @@ public:
 #endif
 
 private:
-	VAEmitter* Emitter = nullptr;
 	int32 CurrentGroupedEAXIndex = -1;
 
-	// Set by AVAudioWorld::RegisterEmitter/UnregisterEmitter - see GetEmitterIndex() above.
-	int32 EmitterIndex = -1;
 	bool bTargetsRegistered = false;
 	TSet<AVAudioEmitter*> RegisteredTargets;
 	bool bCurrentDryEnabled = true;
@@ -258,9 +239,4 @@ private:
 	void ApplyAmbientFilter();
 	void UpdateSourceSubmix();
 	void TrySpawnSourceSound();
-
-	// Creates the VA emitter and wires up audio components. Safe to call repeatedly:
-	// no-ops (returns true) if already initialized, returns false if AudioWorld's
-	// VAWorld isn't ready yet (actor BeginPlay order isn't guaranteed).
-	bool TryInitializeEmitter();
 };

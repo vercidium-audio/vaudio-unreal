@@ -1,6 +1,6 @@
 # Overview
 
-~\vaudiodemo\ThirdParty\vaudio\include\vaudio.h is the public header for Vercidium Audio.
+~\vaudiofps2\ThirdParty\vaudio\include is the public header for Vercidium Audio.
 
 Coding guidelines:
 - Don't write "if (!something) return;" with no reasoning why 'something' could be null. Rather than letting null checks permeate the codebase, fix them early. If it genuinely can be null, leave a comment explaining why
