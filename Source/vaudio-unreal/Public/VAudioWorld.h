@@ -204,6 +204,12 @@ private:
 	// (un)registered, so GetMainListener() and Tick() don't need to scan every frame.
 	TWeakObjectPtr<AVAudioEmitter> MainListener;
 
+	// Actors whose geometry failed to make it into raytracing - either a material configuration
+	// problem (e.g. MaterialAsset isn't in this world's Materials array) or vaWorldAddPrimitive_
+	// itself rejected a primitive (e.g. VA_ALREADY_EXISTS). Populated by ScanAndAddPrimitives,
+	// surfaced as a persistent on-screen warning every Tick() so it isn't missed in the log.
+	TArray<FString> ActorsWithInvalidMaterials;
+
 	// Mirrors bReverbOnly as of the last Tick(), so the dry-output loop over RegisteredEmitters
 	// only runs on the tick where it actually changes.
 	bool bWasReverbOnly = false;
@@ -211,4 +217,9 @@ private:
 	void ApplyMaterials();
 	void ScanAndAddPrimitives();
 	void DestroyPrimitives();
+
+	// Calls vaWorldAddPrimitive_ and checks the result. On failure, logs the actor/primitive/error
+	// code and adds ActorName to ActorsWithInvalidMaterials (see Tick()'s on-screen warning) so a
+	// rejected primitive is as visible as a material configuration problem. Returns true on success.
+	bool TryAddPrimitive(void* Primitive, const TCHAR* PrimitiveTypeName, const FString& ActorName);
 };

@@ -49,14 +49,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	AVAudioWorld* AudioWorld = nullptr;
 
-	// Used when MaterialAsset is unset (the common case) - one of the 23 built-in materials.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	EVAudioMaterial Material = EVAudioMaterial::Concrete;
-
-	// Optional - if set, overrides Material above with a UVAudioMaterialAsset or
+	// Optional - if set, overrides Material below with a UVAudioMaterialAsset or
 	// UVAudioCustomMaterialAsset from AudioWorld's Materials array.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	UVAudioMaterialAssetBase* MaterialAsset = nullptr;
+
+	// Used when MaterialAsset above is unset (the common case) - one of the 23 built-in materials.
+	// Hidden while MaterialAsset is set, since it would otherwise be ignored.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (EditCondition = "MaterialAsset == nullptr", EditConditionHides))
+	EVAudioMaterial Material = EVAudioMaterial::Concrete;
 
 	// Whether sound rays can permeate (pass through) this surface. Disable for solid opaque surfaces like glass.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
