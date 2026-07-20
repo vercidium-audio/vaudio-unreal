@@ -1,6 +1,6 @@
 #include "VAudioListener.h"
 #include "VAudioWorld.h"
-#include "VAudioEmitter.h"
+#include "VAudioSource.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "AudioMixerBlueprintLibrary.h"
@@ -152,10 +152,9 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 		if (!lowPassFilter)
 			continue;
 
-		// ApplySourceFilter() only exists on AVAudioEmitter today - once AVAudioSource/
-		// AVAudioContinuous exist (actor_plan.md item 3), TargetEmitters will hold those types
-		// and this cast goes away in favour of a shared AVAudioEmitterBase-level accessor.
-		if (AVAudioEmitter* ConcreteTarget = Cast<AVAudioEmitter>(Target))
+		// ApplySourceFilter() only exists on AVAudioSource (it's the only TargetEmitters member
+		// that plays a sound needing an LPF) - AVAudioContinuous targets have no filter to apply to.
+		if (AVAudioSource* ConcreteTarget = Cast<AVAudioSource>(Target))
 			ConcreteTarget->ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 	}
 }

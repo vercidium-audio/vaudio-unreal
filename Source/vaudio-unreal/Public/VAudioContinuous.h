@@ -2,21 +2,28 @@
 
 #include "CoreMinimal.h"
 #include "VAudioEmitterBase.h"
-#include "Components/AudioComponent.h"
-#include "SubmixEffects/AudioMixerSubmixEffectReverb.h"
-#include "Sound/SoundSubmix.h"
-#include "VAudioListener.generated.h"
+#include "VAudioContinuous.generated.h"
 
-// Place exactly one of these in the level - the world's single reference point for directional
-// reverb and ambience. Every other raytracing-target actor (AVAudioSource, AVAudioContinuous)
-// is added to TargetEmitters so this listener raytraces towards it.
-UCLASS(DisplayName = "VAudio Listener")
-class VAUDIOUNREAL_API AVAudioListener : public AVAudioEmitterBase
+struct VALowPassFilter;
+
+// A raytracing target that plays no sound of its own - the listener casts occlusion/permeation
+// rays towards it every frame, producing an up-to-date muffle/EAX result. Attach this to an actor
+// (e.g. an enemy) so that many one-shot AVAudioRelativeSources on that actor (footsteps, barks)
+// can reuse a single raytrace via GetGroupedEAXIndex()/ApplySourceFilter() instead of each one
+// raytracing independently.
+//
+// AVAudioSource is-a AVAudioContinuous that also plays a sound: it's the direct equivalent of
+// today's AVAudioEmitter with bIsMainListener = false. Modelling it as a subclass (rather than a
+// sibling sharing some intermediate base) means the raytracing-target plumbing - occlusion/
+// permeation UPROPERTYs, grouped-EAX submix routing, target-filter application - is written once
+// here and AVAudioSource only adds what's unique to owning a SourceSound.
+UCLASS(DisplayName = "VAudio Continuous")
+class VAUDIOUNREAL_API AVAudioContinuous : public AVAudioEmitterBase
 {
 	GENERATED_BODY()
 
 public:
-	AVAudioListener();
+	AVAudioContinuous();
 
 protected:
 	virtual void InitializeTypeSpecific() override;
@@ -24,26 +31,14 @@ protected:
 	virtual void TickTypeSpecific(float DeltaTime) override;
 
 public:
-	// Automatically move this emitter (and the VA listener position) to the first player controller's camera every frame
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	bool bAutoFollowCamera = true;
+	// When true, this emitter's EAX reverb is blended into the world's grouped EAX submixes.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	bool bAffectsGroupedEAX = true;
 
-	// This submix applies reverb to sounds created by this listener
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	USoundSubmix* ListenerReverbSubmix = nullptr;
-
-	// WIP - this will likely be replaced in future, as it only supports one ambient sound.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	USoundBase* AmbientSound = nullptr;
-
-	// Whether the ambient sound has reverb
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	bool bAmbientThroughReverb = true;
-
-	// Target emitters that this listener will cast occlusion and permeation rays towards.
-	// Holds both AVAudioSource and AVAudioContinuous actors - both are raytracing targets.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	TArray<AVAudioEmitterBase*> TargetEmitters;
+	// The loudest linear volume (0-1) this emitter's dry source will ever be played at by the consuming application.
+	// Used to estimate how long the emitter's reverb tail stays audible - a quieter source's reverb tail finishes sooner.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (EditCondition = "bAffectsGroupedEAX", ClampMin = "0.0", ClampMax = "1.0"))
+	float MaxVolume = 1.0f;
 
 	// --- Reverb ---
 
@@ -66,14 +61,6 @@ public:
 	// The length (in milliseconds) of each entry in the echogram
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "1"))
 	int32 EchogramGranularity = 200;
-
-	// The lower bound of the relative reverb blend range. This affects the directional reverb that is heard by this listener
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RelativeReverbInnerThreshold = 0.6f;
-
-	// The upper bound of the relative reverb blend range. This affects the directional reverb that is heard by this listener
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float RelativeReverbOuterThreshold = 0.8f;
 
 	// --- Muffling ---
 
@@ -169,25 +156,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced")
 	int32 ScatteringSeed = 0;
 
+	// --- Runtime access ---
+
+	// The world's grouped-EAX submix slot this emitter is currently blended into, or -1 if not
+	// yet assigned/AffectsGroupedEAX is false. Used by AVAudioRelativeSource (item 4) to route
+	// footsteps/barks attached to this emitter through the same submix.
+	int32 GetGroupedEAXIndex() const { return CurrentGroupedEAXIndex; }
+
+	// The listener's most recently raytraced muffling result for this emitter, or nullptr if the
+	// listener hasn't raytraced it yet. Used by AVAudioRelativeSource (item 4) to reuse this
+	// emitter's muffling instead of raytracing again for every attached one-shot sound.
+	VALowPassFilter* GetMufflingResult() const;
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
-private:
-	bool bTargetsRegistered = false;
-	TSet<AVAudioEmitterBase*> RegisteredTargets;
+protected:
+	int32 CurrentGroupedEAXIndex = -1;
 
-	// Transient: created via NewObject()/SpawnSound* in BeginPlay/TryInitializeEmitter and
-	// torn down in EndPlay. Must never be serialized - saving the level while these are set
-	// (e.g. mid-PIE, or after a crash skips EndPlay) writes them as real exports that don't
-	// round-trip through a reload and corrupt the package (see FLinkerLoad::CreateExport crash).
-	UPROPERTY(Transient)
-	UAudioComponent* AmbientAudioComponent = nullptr;
-
-	UPROPERTY(Transient)
-	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;
-
-	void ApplyListenerReverb();
-	void ApplyGroupedEAXReverb();
-	void ApplyAmbientFilter();
+	void ApplyRayPropertiesToEmitter();
+	void UpdateGroupedEAXIndex();
 };
