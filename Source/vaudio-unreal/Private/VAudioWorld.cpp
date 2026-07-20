@@ -2,7 +2,6 @@
 #include "VAudioEmitter.h"
 #include "VAudioMaterial.h"
 #include "VAudioMaterialComponent.h"
-#include "VAudioMaterialConversion.h"
 #include "Components/BillboardComponent.h"
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
@@ -49,6 +48,8 @@ static VAMatrix MakeRotTransMatrix(const FTransform& T)
 	);
 }
 
+TArray<TWeakObjectPtr<AVAudioWorld>> AVAudioWorld::RunningWorlds;
+
 AVAudioWorld::AVAudioWorld()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -60,6 +61,8 @@ AVAudioWorld::AVAudioWorld()
 void AVAudioWorld::BeginPlay()
 {
 	Super::BeginPlay();
+
+	RunningWorlds.Add(this);
 
 	// On-screen debug messages otherwise persist from the previous PIE/game session (GEngine
 	// outlives individual play sessions), so stale entries from actors that no longer exist would
@@ -114,13 +117,15 @@ void AVAudioWorld::BeginPlay()
 		VALog(L"GroupedEAX[%d] submix=%s", i, Sub ? *Sub->GetName() : TEXT("null"));
 	}
 
-	ApplyChildMaterials();
+	ApplyMaterials();
 	ScanAndAddPrimitives();
 }
 
 void AVAudioWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
+
+	RunningWorlds.RemoveSingleSwap(this);
 
 	GroupedEAXPresets.Empty();
 
@@ -473,26 +478,23 @@ void AVAudioWorld::ImportWorld()
 }
 
 // ---------------------------------------------------------------------------
-// Child material actors — AVAudioMaterial children of this world actor
+// Materials — UVAudioMaterialAssetBase entries in this world's Materials array
 // ---------------------------------------------------------------------------
 
-void AVAudioWorld::ApplyChildMaterials()
+void AVAudioWorld::ApplyMaterials()
 {
-	TArray<AActor*> AttachedActors;
-	GetAttachedActors(AttachedActors);
-
 	int32 AppliedCount = 0;
 
-	for (AActor* Child : AttachedActors)
+	for (UVAudioMaterialAssetBase* Mat : Materials)
 	{
-		AVAudioMaterial* Mat = Cast<AVAudioMaterial>(Child);
-
 		if (Mat)
 		{
-			Mat->ApplyToWorld(World);
+			Mat->ApplyToWorld(this);
 			++AppliedCount;
 		}
 	}
+
+	VALog(L"applied %d material(s).", AppliedCount);
 }
 
 // ---------------------------------------------------------------------------
@@ -617,7 +619,14 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			continue;
 		}
 
-		VAMaterialType Material = EVAudioMaterialToVA(MatComp->Material);
+		int32 MaterialId;
+		if (!MatComp->GetMaterialId(MaterialId))
+		{
+			++SkippedCount;
+			continue;
+		}
+
+		VAMaterialType Material = (VAMaterialType)MaterialId;
 
 		TArray<UShapeComponent*> ShapeComps;
 		Actor->GetComponents<UShapeComponent>(ShapeComps);
@@ -771,7 +780,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			{
 				if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
 				{
-					VALog(L"mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
+					VALog(L"mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *Mesh->GetName());
 					continue;
 				}
 
@@ -782,7 +791,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				LOD.IndexBuffer.GetCopy(Indices);
 				if (Indices.IsEmpty())
 				{
-					VALog(L"mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA Audio World and save the level.", *Mesh->GetName());
+					VALog(L"mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *Mesh->GetName());
 					continue;
 				}
 

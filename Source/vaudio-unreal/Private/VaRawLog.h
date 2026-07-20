@@ -45,6 +45,10 @@ inline const wchar_t* VaFileNameOnly(const wchar_t* Path)
 // "VAudioEmitter_UAID_...") so log output matches what's shown in the World Outliner.
 #define VALog(Message, ...) VaRawLog(L"%s: %hs(): %s: " Message, VaFileNameOnly(__FILEW__), __FUNCTION__, *GetActorNameOrLabel(), ##__VA_ARGS__)
 
+// Same as VALog, but for plain UObjects (e.g. UDataAsset) that have no GetActorNameOrLabel().
+// Uses GetName() instead - the object's asset/instance name rather than an actor's outliner label.
+#define VALogObj(Message, ...) VaRawLog(L"%s: %hs(): %s: " Message, VaFileNameOnly(__FILEW__), __FUNCTION__, *GetName(), ##__VA_ARGS__)
+
 // Matches VALogCallback = void(*)(const char*). Pass directly to vaWorldSetLogCallback,
 // vaEmitterSetLogCallback, vaEmitterSetLogErrorCallback etc so SDK-internal diagnostics
 // land in the same raw log file.

@@ -5,6 +5,7 @@
 #include "VAudioMaterialComponent.generated.h"
 
 class AVAudioWorld;
+class UVAudioMaterialAssetBase;
 
 UENUM(BlueprintType)
 enum class EVAudioMaterial : uint8
@@ -48,12 +49,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	AVAudioWorld* AudioWorld = nullptr;
 
+	// Used when MaterialAsset is unset (the common case) - one of the 23 built-in materials.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	EVAudioMaterial Material = EVAudioMaterial::Concrete;
+
+	// Optional - if set, overrides Material above with a UVAudioMaterialAsset or
+	// UVAudioCustomMaterialAsset from AudioWorld's Materials array.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
+	UVAudioMaterialAssetBase* MaterialAsset = nullptr;
 
 	// Whether sound rays can permeate (pass through) this surface. Disable for solid opaque surfaces like glass.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	bool bSupports3DPermeation = true;
+
+	// Resolves this component's effective SDK material ID: MaterialAsset if set, otherwise the
+	// built-in Material enum. Returns false (logs why) if resolution fails - e.g. MaterialAsset
+	// isn't in AudioWorld's Materials array.
+	bool GetMaterialId(int32& OutMaterialId);
 
 #if WITH_EDITOR
 	virtual void PostLoad() override;

@@ -12,7 +12,7 @@ struct VACapsulePrimitive;
 struct VASpherePrimitive;
 struct VAPrismPrimitive;
 class AVAudioEmitter;
-class AVAudioMaterial;
+class UVAudioMaterialAssetBase;
 
 // Baked local-space triangle mesh for one UStaticMeshComponent, captured in-editor via
 // AVAudioWorld::BakeGeometry so shipping builds don't depend on the mesh's CPU-accessible
@@ -162,6 +162,18 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio", AdvancedDisplay)
 	TArray<FVAudioBakedMesh> BakedMeshes;
 
+	// --- Materials ---
+
+	// Material assets applied to this world on BeginPlay. Each asset is only ever used by one
+	// world - not shared across worlds/levels.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
+	TArray<UVAudioMaterialAssetBase*> Materials;
+
+	// Every AVAudioWorld currently in play, so a UVAudioMaterialAssetBase's PostEditChangeProperty
+	// can find the world(s) referencing it and re-apply live. Populated in BeginPlay, cleared in
+	// EndPlay.
+	static TArray<TWeakObjectPtr<AVAudioWorld>> RunningWorlds;
+
 	// --- Internal API used by AVAudioEmitter ---
 
 	VAWorld* GetVAWorld() const { return World; }
@@ -196,7 +208,7 @@ private:
 	// only runs on the tick where it actually changes.
 	bool bWasReverbOnly = false;
 
-	void ApplyChildMaterials();
+	void ApplyMaterials();
 	void ScanAndAddPrimitives();
 	void DestroyPrimitives();
 };
