@@ -37,7 +37,7 @@ inline const wchar_t* VaFileNameOnly(const wchar_t* Path)
 
 // Logs "fileName: functionName(): actorName: message", prepending call-site context via
 // __FILEW__/__FUNCTION__ (C++ has no runtime reflection for this - these are compile-time
-// macros expanded by the preprocessor at the call site, e.g. in VAudioEmitter.cpp, not here -
+// macros expanded by the preprocessor at the call site, e.g. in VAudioSource.cpp, not here -
 // so the file/function reported is always the caller's, never VaRawLog.h). Must be a macro
 // rather than a function since __FUNCTION__ needs to expand at the call site, and
 // GetActorNameOrLabel() must resolve against the caller's `this` (an AActor). Uses the actor

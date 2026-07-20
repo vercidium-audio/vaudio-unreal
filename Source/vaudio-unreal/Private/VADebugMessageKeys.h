@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 
 // On-screen debug message keys (GEngine->AddOnScreenDebugMessage slots), shared between
-// VAudioWorld.cpp and VAudioEmitter.cpp so their messages can't collide.
+// VAudioWorld.cpp and the AVAudioEmitterBase subclasses' .cpp files so their messages can't collide.
 //
 // AddOnScreenDebugMessage's key is a plain uint64 with no cross-plugin namespacing - any other
 // plugin/game code using small numbers (e.g. 1-10, 1001-1004) could collide with ours and cause
@@ -15,14 +15,15 @@
 // it (see UnrealEngine.cpp), and the messages are drawn by iterating a TMap in insertion order,
 // not sorted by key. So key VALUES here don't control on-screen top-to-bottom order at all - only
 // the ORDER we call AddOnScreenDebugMessage() each tick does (newest call renders at the top).
-// See VAudioWorld::Tick()/AVAudioEmitter::Tick() - calls are sequenced there so the last call each
-// tick is the one meant to appear at the top. Keys only need to stay distinct per message slot.
+// See VAudioWorld::Tick()/AVAudioEmitterBase subclasses' Tick() - calls are sequenced there so the
+// last call each tick is the one meant to appear at the top. Keys only need to stay distinct per
+// message slot.
 //
 // Singleton keys (VARaytracingTimeMessage..VANoMainListenerMessage) are used once per world/tick.
 // VAEmitterStatus is the base for VAudioWorld's own per-emitter status line (VAEmitterStatus + EmitterIndex).
 // VAGroupedEAXMessageBase is the base for the world's per-zone grouped EAX status lines
 // (VAGroupedEAXMessageBase + zone index), which aren't tied to any one emitter.
-// VAEmitterMessageBase is the base of a per-emitter band used by AVAudioEmitter-related messages
+// VAEmitterMessageBase is the base of a per-emitter band used by raytracing-target-related messages
 // (see EVAEmitterMessageOffset below), sized so no two registered emitters can collide:
 // key = VAEmitterMessageBase + EmitterIndex * VAEmitterMessageStride + offset.
 enum EVADebugMessageKey : uint64

@@ -12,9 +12,8 @@ struct VALowPassFilter;
 // can reuse a single raytrace via GetGroupedEAXIndex()/ApplySourceFilter() instead of each one
 // raytracing independently.
 //
-// AVAudioSource is-a AVAudioContinuous that also plays a sound: it's the direct equivalent of
-// today's AVAudioEmitter with bIsMainListener = false. Modelling it as a subclass (rather than a
-// sibling sharing some intermediate base) means the raytracing-target plumbing - occlusion/
+// AVAudioSource is-a AVAudioContinuous that also plays a sound. Modelling it as a subclass (rather
+// than a sibling sharing some intermediate base) means the raytracing-target plumbing - occlusion/
 // permeation UPROPERTYs, grouped-EAX submix routing, target-filter application - is written once
 // here and AVAudioSource only adds what's unique to owning a SourceSound.
 UCLASS(DisplayName = "VAudio Continuous")

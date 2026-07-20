@@ -55,8 +55,7 @@ void AVAudioListener::InitializeTypeSpecific()
 	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
 	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
 
-	// Unlike AVAudioEmitter (where this was conditional on bIsMainListener), this actor's
-	// existence as an AVAudioListener IS the "is main listener" flag - always true.
+	// This actor's existence as an AVAudioListener IS the "is main listener" flag - always true.
 	vaEmitterSetHasRelativeReverb(Emitter, true);
 
 	if (ListenerReverbSubmix)
@@ -233,7 +232,7 @@ void AVAudioListener::ApplyGroupedEAXReverb()
 	if (vaWorldGetInitialising(vaWorld))
 		return;
 
-	// Same guarantee as AVAudioEmitter::UpdateSourceSubmix(): maximumGroupedEAXCount is always >= 2
+	// Same guarantee as AVAudioSource::UpdateSourceSubmix(): maximumGroupedEAXCount is always >= 2
 	// (see AVAudioWorld::BeginPlay), so this shouldn't be null once reverb has been calculated.
 	if (!ensureMsgf(GroupedEAX, TEXT("VAudioListener '%s': vaWorldGetGroupedEAX() returned null after reverb was calculated"), *GetActorNameOrLabel()))
 		return;

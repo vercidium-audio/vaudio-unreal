@@ -65,11 +65,15 @@ Download the SDK from [vercidium.com](https://vercidium.com) and copy the files 
 
 ## Usage
 
-Once the plugin is enabled, three new actor/component types are available in the editor:
+Once the plugin is enabled, several new actor/component types are available in the editor:
 
 - **VA Audio World** (`AVAudioWorld`) — place one of these in your level. It owns the raytracing world and scans the level on `BeginPlay` for any actor with a **VA Audio Material** component to build the acoustic scene geometry. Configure world bounds, air absorption, threading and reverb submixes on this actor.
 - **VA Audio Material** component (`UVAudioMaterialComponent`) — add this component to any actor whose mesh should participate in raytracing (walls, floors, props, etc). Choose a built-in material (concrete, wood, glass, ...) from the `Material` dropdown, or assign a material asset to `MaterialAsset` (see below) to override it. Assign the `AudioWorld` reference either way.
-- **VA Audio Emitter** (`AVAudioEmitter`) — place one per sound source, and one for the listener (player camera) with `bIsMainListener` enabled. Assign the `AudioWorld` reference and the sound to play; the emitter drives occlusion, permeation and reverb automatically as the scene changes.
+- **VA Audio Listener** (`AVAudioListener`) — place exactly one per world (e.g. on the player camera). It's the world's reference point for reverb and ambient filtering; every other emitter is raytraced against it. Assign the `AudioWorld` reference and its `TargetEmitters`.
+- **VA Audio Source** (`AVAudioSource`) — place one per 3D sound source that should be raytraced (occlusion/permeation) against the listener. Assign the `AudioWorld` reference and the sound to play; it drives occlusion, permeation and reverb automatically as the scene changes.
+- **VA Audio Continuous** (`AVAudioContinuous`) — a raytracing target that plays no sound of its own, for actors (e.g. an enemy) that need an up-to-date muffle/occlusion value every frame so multiple attached `AVAudioRelativeSource`s can reuse it instead of each raytracing independently.
+- **VA Audio Relative Source** (`AVAudioRelativeSource`) — for sounds relative to the listener or an `AVAudioContinuous` (footsteps, gunshots) that reuse that emitter's reverb/muffling without raytracing themselves.
+- **VA Audio Ambient Source** (`AVAudioAmbientSource`) — for ambient rain/wind/room-tone sounds that reuse the listener's ambient filter without raytracing or reverb.
 
 You can also create material assets in the Content Browser and add them to the `AVAudioWorld`'s `Materials` array:
 - **VA Audio Material** (`UVAudioMaterialAsset`) — overrides the default properties (absorption, scattering, transmission) of one of the 23 built-in materials. Pick its name from the `MaterialType` dropdown and use **Reset To Defaults** to pull in the SDK's base values, then tweak as needed.

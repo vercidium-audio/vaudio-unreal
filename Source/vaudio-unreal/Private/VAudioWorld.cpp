@@ -1,6 +1,7 @@
 #include "VAudioWorld.h"
 #include "VAudioEmitterBase.h"
-#include "VAudioEmitter.h"
+#include "VAudioSource.h"
+#include "VAudioContinuous.h"
 #include "VAudioListener.h"
 #include "VAudioMaterial.h"
 #include "VAudioMaterialComponent.h"
@@ -180,10 +181,10 @@ void AVAudioWorld::Tick(float DeltaTime)
 			bWasReverbOnly = bReverbOnly;
 			bool bDryEnabled = !bReverbOnly;
 
-			// SetDryOutputEnabled() is currently only implemented on AVAudioEmitter - other
-			// AVAudioEmitterBase subclasses (once they exist) don't have dry output to toggle here.
+			// SetDryOutputEnabled() is only implemented on AVAudioSource - other AVAudioEmitterBase
+			// subclasses don't have dry output to toggle here.
 			for (AVAudioEmitterBase* Emitter : RegisteredEmitters)
-				if (AVAudioEmitter* ConcreteEmitter = Cast<AVAudioEmitter>(Emitter))
+				if (AVAudioSource* ConcreteEmitter = Cast<AVAudioSource>(Emitter))
 					ConcreteEmitter->SetDryOutputEnabled(bDryEnabled);
 		}
 
@@ -196,16 +197,19 @@ void AVAudioWorld::Tick(float DeltaTime)
 			// Per-emitter position and world-bounds check
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
-				// This display logic (bIsMainListener/SourceAudioComponent/bAffectsGroupedEAX) is
-				// currently only meaningful for AVAudioEmitter - other AVAudioEmitterBase subclasses
-				// (once they exist) will get their own status lines rather than being folded in here.
-				AVAudioEmitter* emitter = Cast<AVAudioEmitter>(RegisteredEmitters[i]);
-				if (!emitter)
+				// This display logic (AVAudioListener vs. AVAudioContinuous/AVAudioSource) is only
+				// meaningful for raytracing-target emitters - AVAudioRelativeSource/AVAudioAmbientSource
+				// don't raytrace and get no status line here.
+				AVAudioEmitterBase* baseEmitter = RegisteredEmitters[i];
+				AVAudioListener* listener = Cast<AVAudioListener>(baseEmitter);
+				AVAudioContinuous* continuousEmitter = listener ? nullptr : Cast<AVAudioContinuous>(baseEmitter);
+
+				if (!listener && !continuousEmitter)
 					continue;
 
-				VAEmitter* vaEmitter = emitter->GetVAEmitter();
+				VAEmitter* vaEmitter = baseEmitter->GetVAEmitter();
 
-				uint64 messageID = VAEmitterStatus + emitter->GetEmitterIndex();
+				uint64 messageID = VAEmitterStatus + baseEmitter->GetEmitterIndex();
 
 				// Registered emitters can still have a null VAEmitter* if TryInitializeEmitter()
 				// hasn't completed yet (e.g. this world's own BeginPlay ran after theirs) - skip
@@ -213,7 +217,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				if (!vaEmitter)
 				{
 					GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange,
-						FString::Printf(TEXT("[VA] Emitter %d '%s': initialising"), i, *emitter->GetActorNameOrLabel()));
+						FString::Printf(TEXT("[VA] Emitter %d '%s': initialising"), i, *baseEmitter->GetActorNameOrLabel()));
 
 					continue;
 				}
@@ -224,50 +228,48 @@ void AVAudioWorld::Tick(float DeltaTime)
 				const wchar_t* boundsStatus = bInBounds ? TEXT("[in bounds]") : TEXT("[out of bounds]");
 
 
-				if (emitter->bIsMainListener)
+				if (listener)
 				{
 					FColor color = bInBounds ? FColor::Green : FColor::Orange;
 
 					GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-						FString::Printf(TEXT("[VA] Main Listener Emitter %d '%s': (%.1f, %.1f, %.1f) %s"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
-
-					if (emitter->SourceAudioComponent)
-					{
-						uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
-						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Main Listener Emitter %d '%s' has a Source - remove it and use VASourceRelative actors instead"), i, *emitter->GetActorNameOrLabel()));
-					}
+						FString::Printf(TEXT("[VA] Main Listener Emitter %d '%s': (%.1f, %.1f, %.1f) %s"), i, *listener->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
 				}
 				else
 				{
-					if (!emitter->SourceAudioComponent || !emitter->SourceAudioComponent->Sound)
+					AVAudioSource* source = Cast<AVAudioSource>(continuousEmitter);
+
+					if (!source || !source->SourceAudioComponent || !source->SourceAudioComponent->Sound)
 					{
 						uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
-						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Source and will play no sound"), i, *emitter->GetActorNameOrLabel()));
+						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Source and will play no sound"), i, *continuousEmitter->GetActorNameOrLabel()));
 					}
-					else if (!emitter->SourceAudioComponent->Sound->AttenuationSettings)
+					else if (!source->SourceAudioComponent->Sound->AttenuationSettings)
 					{
 						uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterAttenuationStatus;
-						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *emitter->GetActorNameOrLabel()));
+						GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *continuousEmitter->GetActorNameOrLabel()));
 					}
 
-					if (emitter->bAffectsGroupedEAX)
+					UAudioComponent* sourceAudioComponent = source ? source->SourceAudioComponent : nullptr;
+
+					if (continuousEmitter->bAffectsGroupedEAX)
 					{
 						int32 groupedEAXIndex = vaEmitterGetGroupedEAXIndex(vaEmitter);
 						USoundSubmix* Submix = GetGroupedEAXSubmix(groupedEAXIndex);
 
-						FColor color = bInBounds && Submix != NULL && emitter->SourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
+						FColor color = bInBounds && Submix != NULL && sourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
 
 						const wchar_t* submixStatus = Submix ? TEXT("valid") : TEXT("null");
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [groupedEAXIndex=%d] [submix=%s]"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, groupedEAXIndex, submixStatus));
+							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [groupedEAXIndex=%d] [submix=%s]"), i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, groupedEAXIndex, submixStatus));
 					}
 					else
 					{
-						FColor color = bInBounds && emitter->SourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
+						FColor color = bInBounds && sourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [No EAX]"), i, *emitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
+							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [No EAX]"), i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
 					}
 				}
 			}
@@ -276,13 +278,13 @@ void AVAudioWorld::Tick(float DeltaTime)
 			// the grouped EAX submix - recomputed here purely for display, doesn't affect audio).
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
-				AVAudioEmitter* emitter = Cast<AVAudioEmitter>(RegisteredEmitters[i]);
+				AVAudioContinuous* emitter = Cast<AVAudioContinuous>(RegisteredEmitters[i]);
 				if (!emitter)
 					continue;
 
 				VAEmitter* vaEmitter = emitter->GetVAEmitter();
 
-				if (!vaEmitter || emitter->bIsMainListener || !emitter->bAffectsGroupedEAX)
+				if (!vaEmitter || !emitter->bAffectsGroupedEAX)
 					continue;
 
 				int32 groupedEAXIndex = vaEmitterGetGroupedEAXIndex(vaEmitter);

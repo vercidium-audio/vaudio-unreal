@@ -11,7 +11,6 @@ struct VAMeshPrimitive;
 struct VACapsulePrimitive;
 struct VASpherePrimitive;
 struct VAPrismPrimitive;
-class AVAudioEmitter;
 class AVAudioEmitterBase;
 class AVAudioListener;
 class UVAudioMaterialAssetBase;
@@ -176,7 +175,7 @@ public:
 	// EndPlay.
 	static TArray<TWeakObjectPtr<AVAudioWorld>> RunningWorlds;
 
-	// --- Internal API used by AVAudioEmitter ---
+	// --- Internal API used by AVAudioEmitterBase subclasses ---
 
 	VAWorld* GetVAWorld() const { return World; }
 	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;

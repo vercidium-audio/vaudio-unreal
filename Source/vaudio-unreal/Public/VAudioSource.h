@@ -7,8 +7,7 @@
 #include "SourceEffects/SourceEffectFilter.h"
 #include "VAudioSource.generated.h"
 
-// A raytracing target that also plays a 3D sound - the direct equivalent of today's
-// AVAudioEmitter with bIsMainListener = false. Inherits all raytracing-target behaviour
+// A raytracing target that also plays a 3D sound. Inherits all raytracing-target behaviour
 // (occlusion/permeation, grouped-EAX submix routing) from AVAudioContinuous and adds the
 // SourceSound playback/filtering on top.
 UCLASS(DisplayName = "VAudio Source")
