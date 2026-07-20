@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Components/AudioComponent.h"
+#include "Components/SceneComponent.h"
 #include "VAudioRelativeSource.generated.h"
 
 class AVAudioEmitterBase;
@@ -59,6 +60,11 @@ public:
 	UAudioComponent* SourceAudioComponent = nullptr;
 
 private:
+	// This actor has no VAEmitter* of its own (see class comment) but still needs a root
+	// component so bAttachToSelf spawning has something to attach the audio component to.
+	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio|Source")
+	USceneComponent* SourceRootComponent = nullptr;
+
 	// Cached downcasts of ReverbSource, resolved once at BeginPlay - exactly one of these is set
 	// after a valid BeginPlay (or both null if ReverbSource was misconfigured).
 	UPROPERTY(Transient)

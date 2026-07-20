@@ -36,6 +36,7 @@ enum EVADebugMessageKey : uint64
 	VAPrimitiveStatusMessage  = VAKeyBase + 5,
 	VAGroupedEAXStatusMessage = VAKeyBase + 6,
 	VAInvalidMaterialsMessage = VAKeyBase + 7,
+	VAListenerEAXMessage      = VAKeyBase + 8,
 	VAEmitterStatus           = VAKeyBase + 0x1000,
 	VAGroupedEAXMessageBase   = VAKeyBase + 0x2000,
 	VAEmitterMessageBase      = VAKeyBase + 0x100000,

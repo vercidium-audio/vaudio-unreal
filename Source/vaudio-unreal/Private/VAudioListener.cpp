@@ -1,6 +1,7 @@
 #include "VAudioListener.h"
 #include "VAudioWorld.h"
 #include "VAudioSource.h"
+#include "VADebugMessageKeys.h"
 #include "GameFramework/PlayerController.h"
 #include "AudioMixerBlueprintLibrary.h"
 
@@ -163,6 +164,10 @@ void AVAudioListener::ApplyListenerReverb()
 	settings.DryLevel            = 0.0f;
 
 	ListenerReverbPreset->SetSettings(settings);
+
+	GEngine->AddOnScreenDebugMessage(VAListenerEAXMessage, 0.0f, FColor::Green,
+		FString::Printf(TEXT("[VA] Listener EAX: decayTime=%.2f wetLevel=%.2f gain=%.2f gainHF=%.2f  |  Submix '%s' gain=%.2f"),
+			EAX->decayTime, EAX->returnedPercent, EAX->gain, EAX->gainHF, *ListenerReverbSubmix->GetName(), settings.Gain));
 }
 
 void AVAudioListener::ApplyGroupedEAXReverb()

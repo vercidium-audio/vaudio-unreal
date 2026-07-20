@@ -2,6 +2,7 @@
 #include "VAudioEmitterBase.h"
 #include "VAudioListener.h"
 #include "VAudioContinuous.h"
+#include "VAudioWorld.h"
 #include "Kismet/GameplayStatics.h"
 
 extern "C" {
@@ -16,6 +17,9 @@ const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
 AVAudioRelativeSource::AVAudioRelativeSource()
 {
 	PrimaryActorTick.bCanEverTick = true;
+
+	SourceRootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	SetRootComponent(SourceRootComponent);
 }
 
 void AVAudioRelativeSource::BeginPlay()
@@ -56,6 +60,12 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 {
 	if (bAttachToSelf)
 	{
+		if (!GetRootComponent())
+		{
+			VALog(L"Failed to play sound - RelativeSource has no root component to attach to");
+			return;
+		}
+
 		SourceAudioComponent = UGameplayStatics::SpawnSoundAttached(SourceSound, GetRootComponent(), NAME_None, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.0f, 1.0f, 0.0f, nullptr, nullptr, true);
 	}
 	else
@@ -69,7 +79,7 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 	}
 	else
 	{
-		VALog(L"Failed to play sound");
+		VALog(L"Failed to play sound - %s returned null for SourceSound '%s' (invalid/empty sound asset?)", bAttachToSelf ? L"SpawnSoundAttached" : L"SpawnSound2D", *GetNameSafe(SourceSound));
 	}
 }
 
@@ -102,6 +112,12 @@ void AVAudioRelativeSource::ApplyReverbSource()
 
 		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, EAX->gainHF));
 		SourceAudioComponent->SetVolumeMultiplier(EAX->gainLF);
+
+		// The dry signal shaping above doesn't put any of the sound into the listener's reverb
+		// submix - without this send, ListenerReverbSubmix's reverb effect never receives audio
+		// and this source is heard fully dry regardless of ListenerReverbSubmix being configured.
+		if (ListenerReverbSource->ListenerReverbSubmix)
+			SourceAudioComponent->SetSubmixSend(ListenerReverbSource->ListenerReverbSubmix, 1.0f);
 	}
 	else if (ContinuousReverbSource)
 	{
@@ -113,5 +129,14 @@ void AVAudioRelativeSource::ApplyReverbSource()
 
 		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, MufflingResult->gainHF));
 		SourceAudioComponent->SetVolumeMultiplier(MufflingResult->gainLF);
+
+		// Send to the same grouped-EAX submix the continuous emitter is already blended into, so
+		// this source shares its reverb rather than playing fully dry (see the ListenerReverbSource
+		// branch above for why the send is needed).
+		if (ContinuousReverbSource->AudioWorld)
+		{
+			if (USoundSubmix* Submix = ContinuousReverbSource->AudioWorld->GetGroupedEAXSubmix(ContinuousReverbSource->GetGroupedEAXIndex()))
+				SourceAudioComponent->SetSubmixSend(Submix, 1.0f);
+		}
 	}
 }
