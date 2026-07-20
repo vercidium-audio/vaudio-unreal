@@ -13,6 +13,7 @@ struct VASpherePrimitive;
 struct VAPrismPrimitive;
 class AVAudioEmitter;
 class AVAudioEmitterBase;
+class AVAudioListener;
 class UVAudioMaterialAssetBase;
 
 // Baked local-space triangle mesh for one UStaticMeshComponent, captured in-editor via
@@ -185,10 +186,9 @@ public:
 	void RegisterEmitter(AVAudioEmitterBase* Emitter);
 	void UnregisterEmitter(AVAudioEmitterBase* Emitter);
 
-	// Returns the first registered AVAudioEmitter with bIsMainListener == true. Temporary: once
-	// AVAudioListener exists (see actor_plan.md item 2), this will return AVAudioListener* instead
-	// and no longer need to filter RegisteredEmitters by class/flag.
-	AVAudioEmitter* GetMainListener() const;
+	// Returns the first registered AVAudioListener ("first one wins", warns on duplicates - see
+	// RegisterEmitter()).
+	AVAudioListener* GetMainListener() const;
 
 private:
 	VAWorld* World = nullptr;
@@ -205,9 +205,9 @@ private:
 
 	TArray<AVAudioEmitterBase*> RegisteredEmitters;
 
-	// Cached from RegisteredEmitters whenever an emitter with bIsMainListener == true is
-	// (un)registered, so GetMainListener() and Tick() don't need to scan every frame.
-	TWeakObjectPtr<AVAudioEmitter> MainListener;
+	// Cached from RegisteredEmitters whenever an AVAudioListener is (un)registered, so
+	// GetMainListener() and Tick() don't need to scan every frame.
+	TWeakObjectPtr<AVAudioListener> MainListener;
 
 	// Actors whose geometry failed to make it into raytracing - either a material configuration
 	// problem (e.g. MaterialAsset isn't in this world's Materials array) or vaWorldAddPrimitive_

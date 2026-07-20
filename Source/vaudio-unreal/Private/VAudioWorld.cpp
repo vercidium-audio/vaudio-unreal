@@ -1,6 +1,7 @@
 #include "VAudioWorld.h"
 #include "VAudioEmitterBase.h"
 #include "VAudioEmitter.h"
+#include "VAudioListener.h"
 #include "VAudioMaterial.h"
 #include "VAudioMaterialComponent.h"
 #include "Components/BillboardComponent.h"
@@ -293,7 +294,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				if (vaWorldGetInitialising(World) == false)
 				{
 					const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
-					AVAudioEmitter* Listener = GetMainListener();
+					AVAudioListener* Listener = GetMainListener();
 
 					if (GroupedEAX && GroupedEAX[groupedEAXIndex] && Listener && Listener->GetVAEmitter())
 					{
@@ -309,9 +310,9 @@ void AVAudioWorld::Tick(float DeltaTime)
 					FString::Printf(TEXT("[VA] Submix '%s': gain=%.2f"), *emitter->GetActorNameOrLabel(), SendLevel));
 			}
 
-			// Per-target LPF applied by the main listener (mirrors the filter AVAudioEmitter::Tick()
+			// Per-target LPF applied by the main listener (mirrors the filter AVAudioListener::TickTypeSpecific()
 			// applies to each target's source - recomputed here purely for display).
-			if (AVAudioEmitter* MessageListener = GetMainListener())
+			if (AVAudioListener* MessageListener = GetMainListener())
 			{
 				VAEmitter* ListenerVA = MessageListener->GetVAEmitter();
 
@@ -319,7 +320,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				{
 					for (int32 i = 0; i < MessageListener->TargetEmitters.Num(); ++i)
 					{
-						AVAudioEmitter* Target = MessageListener->TargetEmitters[i];
+						AVAudioEmitterBase* Target = MessageListener->TargetEmitters[i];
 
 						uint64 messageID = VAEmitterMessageBase + MessageListener->GetEmitterIndex() * VAEmitterMessageStride + VAEmitterTargetStatus + i;
 
@@ -388,7 +389,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 			}
 
 
-			if (AVAudioEmitter* CurrentMainListener = GetMainListener())
+			if (AVAudioListener* CurrentMainListener = GetMainListener())
 			{
 				FVector ListenerPos = CurrentMainListener->GetActorLocation();
 
@@ -411,7 +412,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				}
 			}
 			else
-				GEngine->AddOnScreenDebugMessage(VAListenerStatusMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] There is no main listener. Ensure one emitter has Listener > Is Main Listener enabled, and is assigned to a World")));
+				GEngine->AddOnScreenDebugMessage(VAListenerStatusMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] There is no main listener. Ensure an AVAudioListener actor is placed and assigned to a World")));
 
 			GEngine->AddOnScreenDebugMessage(VAPrimitiveStatusMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Primitives: prisms=%d spheres=%d capsules=%d meshes=%d"), PrismPrimitives.Num(), SpherePrimitives.Num(), CapsulePrimitives.Num(), MeshPrimitives.Num()));
 			GEngine->AddOnScreenDebugMessage(VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.2f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
@@ -444,20 +445,16 @@ void AVAudioWorld::RegisterEmitter(AVAudioEmitterBase* Emitter)
 	RegisteredEmitters.AddUnique(Emitter);
 	Emitter->SetEmitterIndex(RegisteredEmitters.Find(Emitter));
 
-	// bIsMainListener only exists on AVAudioEmitter today - once AVAudioListener exists (see
-	// actor_plan.md item 2), this check becomes "is Emitter an AVAudioListener" instead.
-	AVAudioEmitter* ConcreteEmitter = Cast<AVAudioEmitter>(Emitter);
-
-	if (ConcreteEmitter && ConcreteEmitter->bIsMainListener)
+	if (AVAudioListener* ConcreteListener = Cast<AVAudioListener>(Emitter))
 	{
-		if (MainListener.IsValid() && MainListener.Get() != ConcreteEmitter)
+		if (MainListener.IsValid() && MainListener.Get() != ConcreteListener)
 		{
-			VALog(L"'%s' registered as main listener, but '%s' is already the main listener - keeping the first one. Only one emitter should have bIsMainListener = true.",
+			VALog(L"'%s' registered as an AVAudioListener, but '%s' is already the main listener - keeping the first one. Only one AVAudioListener should exist per world.",
 				*Emitter->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
 		}
 		else
 		{
-			MainListener = ConcreteEmitter;
+			MainListener = ConcreteListener;
 		}
 	}
 }
@@ -477,7 +474,7 @@ void AVAudioWorld::UnregisterEmitter(AVAudioEmitterBase* Emitter)
 		MainListener = nullptr;
 }
 
-AVAudioEmitter* AVAudioWorld::GetMainListener() const
+AVAudioListener* AVAudioWorld::GetMainListener() const
 {
 	return MainListener.Get();
 }

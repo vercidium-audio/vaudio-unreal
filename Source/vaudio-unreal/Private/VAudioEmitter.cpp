@@ -1,5 +1,6 @@
 ﻿#include "VAudioEmitter.h"
 #include "VAudioWorld.h"
+#include "VAudioListener.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "AudioMixerBlueprintLibrary.h"
@@ -273,7 +274,7 @@ void AVAudioEmitter::TrySpawnSourceSound()
 {
 	// This plugin currently assumes a single main listener - if that ever changes, spawn
 	// readiness would need to consider raytrace state from every listener targeting this emitter.
-	AVAudioEmitter* Listener = AudioWorld ? AudioWorld->GetMainListener() : nullptr;
+	AVAudioListener* Listener = AudioWorld ? AudioWorld->GetMainListener() : nullptr;
 
 	// Listener may not have registered yet (actor init order isn't guaranteed) - retry next Tick.
 	if (!Listener || !Listener->GetVAEmitter())
@@ -462,7 +463,7 @@ void AVAudioEmitter::UpdateSourceSubmix()
 	bool bHasRelative = false;
 
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
-	AVAudioEmitter* Listener = AudioWorld->GetMainListener();
+	AVAudioListener* Listener = AudioWorld->GetMainListener();
 
 	if (!vaWorld)
 	{
