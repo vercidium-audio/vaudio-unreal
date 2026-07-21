@@ -382,6 +382,12 @@ void AVAudioWorld::Tick(float DeltaTime)
 							continue;
 						}
 
+						if (Target == MessageListener)
+						{
+							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has itself in its own Target Emitters list"), *MessageListener->GetActorNameOrLabel()));
+							continue;
+						}
+
 						if (!Target->GetVAEmitter())
 						{
 							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' target '%s' has no emitter. Ensure the target emitter is assigned to the same World"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
