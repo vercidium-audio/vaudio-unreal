@@ -100,8 +100,8 @@ void AVAudioWorld::BeginPlay()
 		(float)WorldSize.X,
 		(float)WorldSize.Y,
 		(float)WorldSize.Z));
-	vaWorldSetInverseSpeedOfSound(World, 1.0f / SpeedOfSound);
-	vaWorldSetMetersPerUnit(World, MetersPerUnit);
+	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
+	vaWorldSetMetersPerUnit(World, FMath::Max(0.0001f, MetersPerUnit));
 	vaWorldSetWorldIsIndoors(World, bIsIndoors);
 	vaWorldSetEpsilon(World, Epsilon);
 	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
@@ -138,6 +138,47 @@ void AVAudioWorld::BeginPlay()
 	ApplyMaterials();
 	ScanAndAddPrimitives();
 }
+
+#if WITH_EDITOR
+void AVAudioWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	// Null before BeginPlay (or after EndPlay) - editing properties on a placed actor in the
+	// editor (not PIE) hits this every time.
+	if (!World) return;
+
+	vaWorldSetPosition(World, vaVectorCreate(
+		(float)WorldPosition.X,
+		(float)WorldPosition.Y,
+		(float)WorldPosition.Z));
+	vaWorldSetSize(World, vaVectorCreate(
+		(float)WorldSize.X,
+		(float)WorldSize.Y,
+		(float)WorldSize.Z));
+	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
+	vaWorldSetMetersPerUnit(World, FMath::Max(0.0001f, MetersPerUnit));
+	vaWorldSetWorldIsIndoors(World, bIsIndoors);
+	vaWorldSetEpsilon(World, Epsilon);
+	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
+	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
+	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
+	vaWorldSetPendingShutdown(World, bPendingShutdown);
+	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
+	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
+
+	if (bAirAbsorptionEnabled)
+	{
+		vaWorldSetAirAbsorptionHumidity(World, Humidity);
+		vaWorldSetAirAbsorptionTemperature(World, Temperature);
+		vaWorldSetAirAbsorptionPressure(World, Pressure);
+	}
+	else
+	{
+		vaWorldSetAirAbsorption(World, nullptr);
+	}
+}
+#endif
 
 void AVAudioWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {

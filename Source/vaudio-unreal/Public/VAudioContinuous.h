@@ -88,7 +88,7 @@ public:
 	float PermeationEnergyCap = 0.15f;
 
 	// Energy threshold below which permeation rays are cancelled to prevent unnecessary traversal
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float MinimumPermeationEnergy = 0.01f;
 
 	// --- Ambient ---

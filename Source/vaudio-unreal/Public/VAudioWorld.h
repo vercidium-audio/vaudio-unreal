@@ -39,7 +39,7 @@ struct FVAudioBakedMesh
 
 // Place one of these in your level. It owns the VA raytracing world and scans
 // for UVAudioMaterialComponent on BeginPlay to populate the scene geometry.
-UCLASS(DisplayName = "VA Audio World")
+UCLASS(DisplayName = "VAudio World")
 class VAUDIOUNREAL_API AVAudioWorld : public AActor
 {
 	GENERATED_BODY()
@@ -50,6 +50,14 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+#if WITH_EDITOR
+	// Re-applies World/Physics/AirAbsorption/Threading/Emitters settings below when edited live via
+	// the details panel during PIE - without this, BeginPlay()'s one-shot vaWorldSet* calls mean
+	// edits made after play-start would otherwise silently have no effect. Mirrors the pattern used
+	// by AVAudioListener::PostEditChangeProperty.
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 public:
 	virtual void Tick(float DeltaTime) override;
@@ -64,10 +72,10 @@ public:
 
 	// --- Physics ---
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001", Delta = "0.001"))
 	float MetersPerUnit = 0.01f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001", Delta = "1.0"))
 	float SpeedOfSound = 343.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
@@ -80,15 +88,15 @@ public:
 	// --- Air Absorption ---
 
 	// Relative humidity as a percentage (0–1).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float Humidity = 0.1f;
 
 	// Air temperature in degrees Celsius.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin="-273.151", Delta = "1.0"))
 	float Temperature = 26.0f;
 
 	// Atmospheric pressure in Pascals.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", Delta = "10.0"))
 	float Pressure = 101325.0f;
 
 	// Whether air absorption is applied at all. When false, Humidity/Temperature/Pressure below are ignored.
@@ -96,11 +104,11 @@ public:
 	bool bAirAbsorptionEnabled = true;
 
 	// Low-frequency reference (Hz) for air absorption, reverb, and material scattering.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001", Delta = "1.0"))
 	float ReferenceFrequencyLF = 300.0f;
 
 	// High-frequency reference (Hz) for air absorption, reverb, and material scattering.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001", Delta = "1.0"))
 	float ReferenceFrequencyHF = 4000.0f;
 
 	// --- Reverb ---
