@@ -8,6 +8,7 @@ extern "C" {
 }
 
 #include "VaRawLog.h"
+#include "VADebugMessageKeys.h"
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
 const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
@@ -73,8 +74,20 @@ void AVAudioAmbientSource::Tick(float DeltaTime)
 
 void AVAudioAmbientSource::ApplyAmbientFilter()
 {
-	if (!AudioWorld)
+	if (!AudioWorld || !SourceSound)
 		return;
+
+	// This actor can start SourceSound at 0 volume (gainLF starts at 0) and ramp it up later as the
+	// ambient filter changes - if SourceSound isn't set to play when silent, Unreal can decide the
+	// sound is inaudible at spawn and never actually start it, so raising the volume later does
+	// nothing. See TrySpawnSourceSound() above. Checked every tick (rather than once in BeginPlay())
+	// so the on-screen warning doesn't expire after one frame - AddOnScreenDebugMessage's
+	// TimeToDisplay of 0.0f means "reissue every tick to keep it alive", not "show forever".
+	if (!SourceSound->IsPlayWhenSilent())
+	{
+		uint64 messageID = VANonEmitterSourceMessageBase + GetUniqueID();
+		GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] AmbientSource '%s': SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *SourceSound->GetName()));
+	}
 
 	AVAudioListener* Listener = AudioWorld->GetMainListener();
 

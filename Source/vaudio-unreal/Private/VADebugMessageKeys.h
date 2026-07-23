@@ -41,6 +41,11 @@ enum EVADebugMessageKey : uint64
 	VAGroupedEAXMessageBase   = VAKeyBase + 0x2000,
 	VAEmitterMessageBase      = VAKeyBase + 0x100000,
 	VAEmitterMessageStride    = 1000,
+
+	// Base for actors with no emitter index of their own (AVAudioAmbientSource,
+	// AVAudioRelativeSource) - keyed by GetUniqueID() instead, which is stable for the actor's
+	// lifetime and distinct across actors, so no stride/offset is needed.
+	VANonEmitterSourceMessageBase = VAKeyBase + 0x200000,
 };
 
 // Offsets within one emitter's band (see VAEmitterMessageBase above). TargetStatus is further
@@ -48,8 +53,9 @@ enum EVADebugMessageKey : uint64
 // expected to stay well under VAEmitterMessageStride entries).
 enum EVAEmitterMessageOffset : uint32
 {
-	VAEmitterSubmixStatus      = 0,
-	VAEmitterTargetStatus      = 1,
-	VAEmitterAttenuationStatus = 2,
-	VAEmitterSourceStatus      = 3,
+	VAEmitterSubmixStatus         = 0,
+	VAEmitterTargetStatus         = 1,
+	VAEmitterAttenuationStatus    = 2,
+	VAEmitterSourceStatus         = 3,
+	VAEmitterVirtualizationStatus = 4,
 };

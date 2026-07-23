@@ -76,6 +76,17 @@ void AVAudioSource::TickTypeSpecific(float DeltaTime)
 
 	if (bAffectsGroupedEAX)
 		UpdateSourceSubmix();
+
+	// ApplySourceFilter() can drive this sound's volume down to 0 (occluded) and back up later as
+	// the emitter's raytraced gainLF changes - if SourceSound isn't set to play when silent, Unreal
+	// can decide the sound is inaudible at 0 volume and never resume it. Checked every tick (rather
+	// than once in TrySpawnSourceSound()) so the on-screen warning doesn't expire after one frame -
+	// AddOnScreenDebugMessage's TimeToDisplay of 0.0f means "reissue every tick to keep it alive".
+	if (SourceSound && !SourceSound->IsPlayWhenSilent())
+	{
+		uint64 messageID = VAEmitterMessageBase + GetEmitterIndex() * VAEmitterMessageStride + VAEmitterVirtualizationStatus;
+		GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source '%s': SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *SourceSound->GetName()));
+	}
 }
 
 void AVAudioSource::TrySpawnSourceSound()

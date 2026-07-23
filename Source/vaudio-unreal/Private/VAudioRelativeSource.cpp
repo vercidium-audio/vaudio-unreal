@@ -10,6 +10,7 @@ extern "C" {
 }
 
 #include "VaRawLog.h"
+#include "VADebugMessageKeys.h"
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
 const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
@@ -102,6 +103,17 @@ void AVAudioRelativeSource::ApplyReverbSource()
 {
 	if (!SourceAudioComponent)
 		return;
+
+	// This actor's volume can be modulated down to 0 and back up below (EAX/muffling gainLF) - if
+	// the playing sound isn't set to play when silent, Unreal can decide it's inaudible at 0 volume
+	// and never resume it, so raising the volume later does nothing. Checked every tick (rather than
+	// once in TrySpawnSourceSound()) so the on-screen warning doesn't expire after one frame -
+	// AddOnScreenDebugMessage's TimeToDisplay of 0.0f means "reissue every tick to keep it alive".
+	if (USoundBase* PlayingSound = SourceAudioComponent->Sound; PlayingSound && !PlayingSound->IsPlayWhenSilent())
+	{
+		uint64 messageID = VANonEmitterSourceMessageBase + GetUniqueID();
+		GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] RelativeSource '%s': SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *PlayingSound->GetName()));
+	}
 
 	if (ListenerReverbSource)
 	{
