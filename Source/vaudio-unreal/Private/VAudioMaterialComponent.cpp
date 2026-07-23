@@ -1,10 +1,32 @@
 #include "VAudioMaterialComponent.h"
+#include "VAudioMaterial.h"
+#include "VAudioWorld.h"
+#include "VAudioMaterialConversion.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+
+#include "VaRawLog.h"
 
 UVAudioMaterialComponent::UVAudioMaterialComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+}
+
+bool UVAudioMaterialComponent::GetMaterialId(int32& OutMaterialId)
+{
+	if (!MaterialAsset)
+	{
+		OutMaterialId = (int32)EVAudioMaterialToVA(Material);
+		return true;
+	}
+
+	if (!AudioWorld || !AudioWorld->Materials.Contains(MaterialAsset))
+	{
+		VALogObj(L"MaterialAsset '%s' is not in AudioWorld's Materials array - assign AudioWorld first and add the asset to its Materials array.", *MaterialAsset->GetName());
+		return false;
+	}
+
+	return MaterialAsset->GetMaterialId(AudioWorld, OutMaterialId);
 }
 
 #if WITH_EDITOR
@@ -18,6 +40,11 @@ void UVAudioMaterialComponent::OnRegister()
 {
 	Super::OnRegister();
 	EnsureMeshesAllowCPUAccess();
+
+	// Owner is null in CDO/archetype contexts (see EnsureMeshesAllowCPUAccess above) - nothing to warn about yet.
+	AActor* Owner = GetOwner();
+	if (Owner && !AudioWorld)
+		VALogObj(L"'%s' has no AudioWorld assigned - its geometry will not be added to raytracing until one is set.", *Owner->GetActorNameOrLabel());
 }
 
 

@@ -35,13 +35,19 @@ inline const wchar_t* VaFileNameOnly(const wchar_t* Path)
 	return Slash ? Slash + 1 : Path;
 }
 
-// Logs "fileName: functionName(): GetName(): message", prepending call-site context via
+// Logs "fileName: functionName(): actorName: message", prepending call-site context via
 // __FILEW__/__FUNCTION__ (C++ has no runtime reflection for this - these are compile-time
-// macros expanded by the preprocessor at the call site, e.g. in VAudioEmitter.cpp, not here -
+// macros expanded by the preprocessor at the call site, e.g. in VAudioSource.cpp, not here -
 // so the file/function reported is always the caller's, never VaRawLog.h). Must be a macro
-// rather than a function since __FUNCTION__ needs to expand at the call site, and GetName()
-// must resolve against the caller's `this` (an AActor/UObject).
-#define VALog(Message, ...) VaRawLog(L"%s: %hs(): %s: " Message, VaFileNameOnly(__FILEW__), __FUNCTION__, *GetName(), ##__VA_ARGS__)
+// rather than a function since __FUNCTION__ needs to expand at the call site, and
+// GetActorNameOrLabel() must resolve against the caller's `this` (an AActor). Uses the actor
+// label (e.g. "Footsteps_1") instead of GetName()'s internal object name (e.g.
+// "VAudioEmitter_UAID_...") so log output matches what's shown in the World Outliner.
+#define VALog(Message, ...) VaRawLog(L"%s: %hs(): %s: " Message, VaFileNameOnly(__FILEW__), __FUNCTION__, *GetActorNameOrLabel(), ##__VA_ARGS__)
+
+// Same as VALog, but for plain UObjects (e.g. UDataAsset) that have no GetActorNameOrLabel().
+// Uses GetName() instead - the object's asset/instance name rather than an actor's outliner label.
+#define VALogObj(Message, ...) VaRawLog(L"%s: %hs(): %s: " Message, VaFileNameOnly(__FILEW__), __FUNCTION__, *GetName(), ##__VA_ARGS__)
 
 // Matches VALogCallback = void(*)(const char*). Pass directly to vaWorldSetLogCallback,
 // vaEmitterSetLogCallback, vaEmitterSetLogErrorCallback etc so SDK-internal diagnostics

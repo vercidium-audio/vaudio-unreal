@@ -1,29 +1,25 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "Engine/DataAsset.h"
 #include "VAudioMaterialComponent.h"
 #include "VAudioMaterial.generated.h"
 
 struct VAWorld;
+class AVAudioWorld;
 
-// Place this actor as a child of AVAudioWorld in the outliner.
-// Set MaterialName to match a built-in material (e.g. "Concrete", "Metal") to inherit
-// that material's defaults, then override individual properties as needed.
-// Changes to properties during PIE are applied immediately.
-UCLASS(DisplayName = "VA Audio Material")
-class VAUDIOUNREAL_API AVAudioMaterial : public AActor
+// Shared base for VA Audio Material assets, assigned to an AVAudioWorld's Materials array
+// (Content Browser asset, not a level actor). Changes to properties in the editor are applied
+// immediately to any running world that references this asset.
+// Two concrete kinds:
+// - UVAudioMaterialAsset: overrides one of the 23 built-in materials.
+// - UVAudioCustomMaterialAsset: defines a brand new material with an SDK-assigned ID.
+UCLASS(Abstract, BlueprintType)
+class VAUDIOUNREAL_API UVAudioMaterialAssetBase : public UDataAsset
 {
 	GENERATED_BODY()
 
 public:
-	AVAudioMaterial();
-
-	// Name of the built-in material to override (e.g. "Concrete", "Metal"). Must match one of the
-	// EVAudioMaterial names. This is used instead of the actor name/label to resolve the material type.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
-	FString MaterialName;
-
 	// Percentage of low-frequency energy lost when a ray bounces (0.0 to 1.0)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float AbsorptionLF = 0.02f;
@@ -52,24 +48,78 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float PlaneTransmissionHF = 0.25f;
 
-	// Resolves the actor label to an EVAudioMaterial. Returns false if the name doesn't match any built-in.
-	bool ResolveMaterialType(EVAudioMaterial& OutMaterial) const;
+	// Returns the SDK material ID this asset applies to (built-in or custom, see subclasses).
+	// Returns false (logs why) if the ID can't be resolved.
+	virtual bool GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId) PURE_VIRTUAL(UVAudioMaterialAssetBase::GetMaterialId, return false;);
 
-	// Reads defaults from the SDK for the resolved material type and applies them to this actor's properties.
+	// Display name for logging (built-in material name, or the custom material's name).
+	virtual FString GetMaterialDisplayName() const PURE_VIRTUAL(UVAudioMaterialAssetBase::GetMaterialDisplayName, return FString(););
+
+	// Pushes this asset's current property values into Owner's VA world. Owner must be the
+	// AVAudioWorld whose Materials array contains this asset (needed to resolve/assign the
+	// material ID - see GetMaterialId()).
+	void ApplyToWorld(AVAudioWorld* Owner);
+
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+
+protected:
+	// Finds the running world (if any) whose Materials array contains this asset, via
+	// AVAudioWorld::RunningWorlds. Null if this asset isn't assigned to any running world.
+	AVAudioWorld* FindOwningWorldActor();
+
+	// Reads the current SDK defaults for MaterialId into our properties.
+	void LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId);
+};
+
+// Overrides one of the 23 built-in materials (e.g. "Concrete", "Metal") - pick from
+// MaterialType's dropdown, then override individual properties as needed.
+UCLASS(BlueprintType, DisplayName = "VA Default Material")
+class VAUDIOUNREAL_API UVAudioMaterialAsset : public UVAudioMaterialAssetBase
+{
+	GENERATED_BODY()
+
+public:
+	// Which built-in material this asset overrides.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
+	EVAudioMaterial MaterialType = EVAudioMaterial::Concrete;
+
+	virtual bool GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId) override;
+	virtual FString GetMaterialDisplayName() const override;
+
+	// Reads defaults from the SDK for MaterialType and applies them to this asset's properties.
 	// Call this from the editor to reset to built-in defaults.
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio")
 	void ResetToDefaults();
+};
 
-	// Pushes this actor's current property values into the VA world.
-	void ApplyToWorld(VAWorld* World) const;
+// Defines a brand new custom material (not one of the 23 built-ins), with an SDK-assigned ID
+// (>= 1000, auto-assigned - unique among the other custom materials in the same AVAudioWorld's
+// Materials array). Assign a MaterialName to identify it, then assign this asset to a
+// UVAudioMaterialComponent's MaterialAsset field to use it on geometry.
+UCLASS(BlueprintType, DisplayName = "VA Custom Material")
+class VAUDIOUNREAL_API UVAudioCustomMaterialAsset : public UVAudioMaterialAssetBase
+{
+	GENERATED_BODY()
+
+public:
+	// Free-form name identifying this custom material. Must be unique among the other custom
+	// materials in the same AVAudioWorld's Materials array.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
+	FString MaterialName;
+
+	virtual bool GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId) override;
+	virtual FString GetMaterialDisplayName() const override { return MaterialName; }
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
 private:
-	// Reads the current SDK defaults for MaterialType into our properties.
-	void LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId);
-
-	VAWorld* GetOwningVAWorld() const;
+	// Custom material ID (>= 1000), lazily assigned by GetMaterialId() the first time this asset
+	// is applied. 0 means "not yet assigned". Not user-editable - IDs are an implementation
+	// detail, materials are identified by MaterialName in the editor.
+	UPROPERTY()
+	int32 CustomMaterialId = 0;
 };

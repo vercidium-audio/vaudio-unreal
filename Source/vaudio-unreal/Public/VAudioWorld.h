@@ -11,8 +11,9 @@ struct VAMeshPrimitive;
 struct VACapsulePrimitive;
 struct VASpherePrimitive;
 struct VAPrismPrimitive;
-class AVAudioEmitter;
-class AVAudioMaterial;
+class AVAudioEmitterBase;
+class AVAudioListener;
+class UVAudioMaterialAssetBase;
 
 // Baked local-space triangle mesh for one UStaticMeshComponent, captured in-editor via
 // AVAudioWorld::BakeGeometry so shipping builds don't depend on the mesh's CPU-accessible
@@ -38,7 +39,7 @@ struct FVAudioBakedMesh
 
 // Place one of these in your level. It owns the VA raytracing world and scans
 // for UVAudioMaterialComponent on BeginPlay to populate the scene geometry.
-UCLASS(DisplayName = "VA Audio World")
+UCLASS(DisplayName = "VAudio World")
 class VAUDIOUNREAL_API AVAudioWorld : public AActor
 {
 	GENERATED_BODY()
@@ -49,6 +50,14 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+#if WITH_EDITOR
+	// Re-applies World/Physics/AirAbsorption/Threading/Emitters settings below when edited live via
+	// the details panel during PIE - without this, BeginPlay()'s one-shot vaWorldSet* calls mean
+	// edits made after play-start would otherwise silently have no effect. Mirrors the pattern used
+	// by AVAudioListener::PostEditChangeProperty.
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 public:
 	virtual void Tick(float DeltaTime) override;
@@ -63,10 +72,10 @@ public:
 
 	// --- Physics ---
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001", Delta = "0.001"))
 	float MetersPerUnit = 0.01f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001", Delta = "1.0"))
 	float SpeedOfSound = 343.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
@@ -79,15 +88,15 @@ public:
 	// --- Air Absorption ---
 
 	// Relative humidity as a percentage (0–1).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float Humidity = 0.1f;
 
 	// Air temperature in degrees Celsius.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin="-273.151", Delta = "1.0"))
 	float Temperature = 26.0f;
 
 	// Atmospheric pressure in Pascals.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", Delta = "10.0"))
 	float Pressure = 101325.0f;
 
 	// Whether air absorption is applied at all. When false, Humidity/Temperature/Pressure below are ignored.
@@ -95,11 +104,11 @@ public:
 	bool bAirAbsorptionEnabled = true;
 
 	// Low-frequency reference (Hz) for air absorption, reverb, and material scattering.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001", Delta = "1.0"))
 	float ReferenceFrequencyLF = 300.0f;
 
 	// High-frequency reference (Hz) for air absorption, reverb, and material scattering.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0001", Delta = "1.0"))
 	float ReferenceFrequencyHF = 4000.0f;
 
 	// --- Reverb ---
@@ -162,16 +171,31 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio", AdvancedDisplay)
 	TArray<FVAudioBakedMesh> BakedMeshes;
 
-	// --- Internal API used by AVAudioEmitter ---
+	// --- Materials ---
+
+	// Material assets applied to this world on BeginPlay. Each asset is only ever used by one
+	// world - not shared across worlds/levels.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
+	TArray<UVAudioMaterialAssetBase*> Materials;
+
+	// Every AVAudioWorld currently in play, so a UVAudioMaterialAssetBase's PostEditChangeProperty
+	// can find the world(s) referencing it and re-apply live. Populated in BeginPlay, cleared in
+	// EndPlay.
+	static TArray<TWeakObjectPtr<AVAudioWorld>> RunningWorlds;
+
+	// --- Internal API used by AVAudioEmitterBase subclasses ---
 
 	VAWorld* GetVAWorld() const { return World; }
 	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
 	int32 GetGroupedEAXPresetCount() const { return GroupedEAXPresets.Num(); }
 	int32 GetMaximumGroupedEAXCount() const { return GroupedEAXSubmixes.Num(); }
-	void RegisterEmitter(AVAudioEmitter* Emitter);
-	void UnregisterEmitter(AVAudioEmitter* Emitter);
-	AVAudioEmitter* GetMainListener() const;
+	void RegisterEmitter(AVAudioEmitterBase* Emitter);
+	void UnregisterEmitter(AVAudioEmitterBase* Emitter);
+
+	// Returns the first registered AVAudioListener ("first one wins", warns on duplicates - see
+	// RegisterEmitter()).
+	AVAudioListener* GetMainListener() const;
 
 private:
 	VAWorld* World = nullptr;
@@ -186,17 +210,28 @@ private:
 	TArray<VASpherePrimitive*>  SpherePrimitives;
 	TArray<VAPrismPrimitive*>   PrismPrimitives;
 
-	TArray<AVAudioEmitter*> RegisteredEmitters;
+	TArray<AVAudioEmitterBase*> RegisteredEmitters;
 
-	// Cached from RegisteredEmitters whenever an emitter with bIsMainListener == true is
-	// (un)registered, so GetMainListener() and Tick() don't need to scan every frame.
-	TWeakObjectPtr<AVAudioEmitter> MainListener;
+	// Cached from RegisteredEmitters whenever an AVAudioListener is (un)registered, so
+	// GetMainListener() and Tick() don't need to scan every frame.
+	TWeakObjectPtr<AVAudioListener> MainListener;
+
+	// Actors whose geometry failed to make it into raytracing - either a material configuration
+	// problem (e.g. MaterialAsset isn't in this world's Materials array) or vaWorldAddPrimitive_
+	// itself rejected a primitive (e.g. VA_ALREADY_EXISTS). Populated by ScanAndAddPrimitives,
+	// surfaced as a persistent on-screen warning every Tick() so it isn't missed in the log.
+	TArray<FString> ActorsWithInvalidMaterials;
 
 	// Mirrors bReverbOnly as of the last Tick(), so the dry-output loop over RegisteredEmitters
 	// only runs on the tick where it actually changes.
 	bool bWasReverbOnly = false;
 
-	void ApplyChildMaterials();
+	void ApplyMaterials();
 	void ScanAndAddPrimitives();
 	void DestroyPrimitives();
+
+	// Calls vaWorldAddPrimitive_ and checks the result. On failure, logs the actor/primitive/error
+	// code and adds ActorName to ActorsWithInvalidMaterials (see Tick()'s on-screen warning) so a
+	// rejected primitive is as visible as a material configuration problem. Returns true on success.
+	bool TryAddPrimitive(void* Primitive, const TCHAR* PrimitiveTypeName, const FString& ActorName);
 };

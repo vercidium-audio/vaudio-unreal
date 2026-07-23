@@ -1,0 +1,255 @@
+#include "VAudioListener.h"
+#include "VAudioWorld.h"
+#include "VAudioSource.h"
+#include "VADebugMessageKeys.h"
+#include "VAudioReverbConversion.h"
+#include "GameFramework/PlayerController.h"
+#include "AudioMixerBlueprintLibrary.h"
+
+extern "C" {
+#include "vaudio.h"
+}
+
+#include "VaRawLog.h"
+
+AVAudioListener::AVAudioListener()
+{
+}
+
+void AVAudioListener::InitializeTypeSpecific()
+{
+	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
+	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
+	vaEmitterSetReverbEnergyCap(Emitter, ReverbEnergyCap);
+	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
+	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
+
+	vaEmitterSetOcclusionRayCount(Emitter, OcclusionRayCount);
+	vaEmitterSetOcclusionBounceCount(Emitter, OcclusionBounceCount);
+	vaEmitterSetOcclusionEnergyCap(Emitter, OcclusionEnergyCap);
+
+	vaEmitterSetPermeationRayCount(Emitter, PermeationRayCount);
+	vaEmitterSetPermeationBounceCount(Emitter, PermeationBounceCount);
+	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
+
+	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
+	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
+	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
+	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
+	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
+	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
+
+	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
+	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
+
+	vaEmitterSetVisualisationRayCount(Emitter, VisualisationRayCount);
+	vaEmitterSetVisualisationBounceCount(Emitter, VisualisationBounceCount);
+	vaEmitterSetVisualisationUpdateFrequency(Emitter, VisualisationUpdateFrequency);
+
+	vaEmitterSetType(Emitter, EmitterType);
+	vaEmitterSetClampPosition(Emitter, bClampPosition);
+	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
+	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
+	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
+	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
+
+	// This actor's existence as an AVAudioListener IS the "is main listener" flag - always true.
+	vaEmitterSetHasRelativeReverb(Emitter, true);
+	vaEmitterSetAffectsGroupedEAX(Emitter, false);
+
+	if (ListenerReverbSubmix)
+	{
+		ListenerReverbPreset = NewObject<USubmixEffectReverbPreset>(this);
+		UAudioMixerBlueprintLibrary::AddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
+	}
+}
+
+void AVAudioListener::TickTypeSpecific(float DeltaTime)
+{
+	if (!bTargetsRegistered)
+	{
+		bool bAllTargetsReady = true;
+		for (AVAudioEmitterBase* Target : TargetEmitters)
+		{
+			if (RegisteredTargets.Contains(Target))
+				continue;
+
+			if (Target && Target->GetVAEmitter())
+			{
+				vaEmitterAddTarget(Emitter, Target->GetVAEmitter());
+				RegisteredTargets.Add(Target);
+			}
+			else
+			{
+				// Target's BeginPlay/first Tick may not have run yet (actor init order
+				// isn't guaranteed). Don't latch bTargetsRegistered until every target
+				// has a VA emitter, otherwise stragglers are silently dropped forever.
+				bAllTargetsReady = false;
+				VALog(L"target '%s' has no VA emitter yet - will retry", Target ? *Target->GetActorNameOrLabel() : TEXT("null"));
+			}
+		}
+		bTargetsRegistered = bAllTargetsReady;
+	}
+
+	// Overrides the base class's plain position sync (Tick() already ran it this frame before
+	// calling TickTypeSpecific()) when following the camera - this actor's position is also
+	// snapped to the camera so any other code reading GetActorLocation() sees the same place.
+	if (bAutoFollowCamera)
+	{
+		APlayerController* playerController = GetWorld()->GetFirstPlayerController();
+		APlayerCameraManager* cameraManager = playerController ? playerController->PlayerCameraManager : nullptr;
+
+		// GetCameraCacheTime() is 0 until the camera manager has run its first UpdateCamera(). Before that, CamPos will
+		// always be (0, 0, 0), teleporting the listener to the world origin for one frame, causing filters to spike.
+		if (cameraManager && cameraManager->GetCameraCacheTime() > 0.0f)
+		{
+			FVector CamPos = cameraManager->GetCameraLocation();
+			vaEmitterSetPosition(Emitter, vaVectorCreate((float)CamPos.X, (float)CamPos.Y, (float)CamPos.Z));
+			SetActorLocation(CamPos);
+		}
+	}
+
+	ApplyListenerReverb();
+	ApplyGroupedEAXReverb();
+
+	for (AVAudioEmitterBase* Target : TargetEmitters)
+	{
+		// Target may be an unset TArray entry (Target == null), a target whose emitter hasn't
+		// been registered yet (see bTargetsRegistered above), one not yet raytraced, or one
+		// with an invalid filter - all resolve on a later Tick. See AVAudioWorld::Tick() for
+		// the on-screen diagnostic covering these same cases.
+		if (!Target || !Target->GetVAEmitter() || !vaEmitterHasRaytracedTarget(Emitter, Target->GetVAEmitter()))
+			continue;
+
+		VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(Emitter, Target->GetVAEmitter());
+
+		if (!lowPassFilter)
+			continue;
+
+		// ApplySourceFilter() only exists on AVAudioSource (it's the only TargetEmitters member
+		// that plays a sound needing an LPF) - AVAudioContinuous targets have no filter to apply to.
+		if (AVAudioSource* ConcreteTarget = Cast<AVAudioSource>(Target))
+			ConcreteTarget->ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
+	}
+}
+
+void AVAudioListener::ApplyListenerReverb()
+{
+	// ListenerReverbPreset is only created in InitializeTypeSpecific() if ListenerReverbSubmix is
+	// assigned (it's an optional feature - see the property comment in VAudioListener.h) - listener
+	// reverb is simply disabled if the user hasn't assigned a submix.
+	if (!ListenerReverbPreset)
+		return;
+
+	VAEAXReverb* EAX = vaEmitterGetEAX(Emitter);
+
+	// Raytracing has not completed at least once yet
+	if (!EAX)
+		return;
+
+	FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
+
+	ListenerReverbPreset->SetSettings(settings);
+
+	GEngine->AddOnScreenDebugMessage(VAListenerEAXMessage, 0.0f, FColor::Green,
+		FString::Printf(TEXT("[VA] Listener EAX: decayTime=%.2f wetLevel=%.2f gain=%.2f gainHF=%.2f  |  Submix '%s' gain=%.2f"),
+			EAX->decayTime, EAX->returnedPercent, EAX->gain, EAX->gainHF, *ListenerReverbSubmix->GetName(), settings.Gain));
+}
+
+void AVAudioListener::ApplyGroupedEAXReverb()
+{
+	if (!AudioWorld)
+	{
+		VALog(L"AudioWorld is null");
+		return;
+	}
+
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+	if (!vaWorld)
+	{
+		VALog(L"vaWorld is null");
+		return;
+	}
+
+	const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(vaWorld);
+	int32 Count = vaWorldGetGroupedEAXCount(vaWorld);
+
+	// Wait for raytracing to run at least once
+	if (vaWorldGetInitialising(vaWorld))
+		return;
+
+	// Same guarantee as AVAudioSource::UpdateSourceSubmix(): maximumGroupedEAXCount is always >= 2
+	// (see AVAudioWorld::BeginPlay), so this shouldn't be null once reverb has been calculated.
+	if (!ensureMsgf(GroupedEAX, TEXT("VAudioListener '%s': vaWorldGetGroupedEAX() returned null after reverb was calculated"), *GetActorNameOrLabel()))
+		return;
+
+	for (int32 i = 0; i < Count; ++i)
+	{
+		USubmixEffectReverbPreset* Preset = AudioWorld->GetGroupedEAXPreset(i);
+
+		// GetGroupedEAXPreset(i) is only valid for i < GroupedEAXSubmixes.Num() on the VAudioWorld
+		// actor, but Count (the SDK's grouped EAX count) is always >= 2 - if fewer than 2 submixes
+		// are configured, indices in between have no preset.
+		if (!Preset)
+		{
+			VALog(L"no reverb preset configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2).", i);
+			continue;
+		}
+
+		const VAEAXReverb* EAX = GroupedEAX[i];
+
+		// EAX itself comes straight from the SDK's GroupedEAX array (sized to Count), so it
+		// should always be populated for i < Count once reverb has been calculated.
+		if (!ensureMsgf(EAX, TEXT("VAudioListener '%s': GroupedEAX[%d] is null after reverb was calculated"), *GetActorNameOrLabel(), i))
+			continue;
+
+		FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
+		Preset->SetSettings(settings);
+	}
+}
+
+#if WITH_EDITOR
+void AVAudioListener::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	// Emitter only exists while PIE/game is running and TryInitializeEmitter() has completed -
+	// editing properties on a placed actor in the editor (not PIE) hits this every time.
+	if (!Emitter) return;
+
+	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
+	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
+	vaEmitterSetReverbEnergyCap(Emitter, ReverbEnergyCap);
+	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
+	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
+
+	vaEmitterSetOcclusionRayCount(Emitter, OcclusionRayCount);
+	vaEmitterSetOcclusionBounceCount(Emitter, OcclusionBounceCount);
+	vaEmitterSetOcclusionEnergyCap(Emitter, OcclusionEnergyCap);
+
+	vaEmitterSetPermeationRayCount(Emitter, PermeationRayCount);
+	vaEmitterSetPermeationBounceCount(Emitter, PermeationBounceCount);
+	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
+
+	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
+	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
+
+	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
+	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
+	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
+	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
+	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
+	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
+
+	vaEmitterSetVisualisationRayCount(Emitter, VisualisationRayCount);
+	vaEmitterSetVisualisationBounceCount(Emitter, VisualisationBounceCount);
+	vaEmitterSetVisualisationUpdateFrequency(Emitter, VisualisationUpdateFrequency);
+
+	vaEmitterSetType(Emitter, EmitterType);
+	vaEmitterSetClampPosition(Emitter, bClampPosition);
+	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
+	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
+	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
+	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
+}
+#endif
