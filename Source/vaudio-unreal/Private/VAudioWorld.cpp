@@ -96,12 +96,6 @@ void AVAudioWorld::BeginPlay()
 
 	RunningWorlds.Add(this);
 
-	// On-screen debug messages otherwise persist from the previous PIE/game session (GEngine
-	// outlives individual play sessions), so stale entries from actors that no longer exist would
-	// stick around and get mixed in with this session's messages.
-	//if (GEngine)
-		//GEngine->ClearOnScreenDebugMessages();
-
 	World = vaWorldCreate();
 	vaWorldSetLogMemoryAllocationWarnings(World, true);
 	vaWorldSetCoordinateSystem(World, VACoordinateSystemUnreal);

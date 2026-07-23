@@ -12,7 +12,7 @@ inline void DisplayDebugWarningArgs(uint64 messageID, const TCHAR* fmt, va_list 
 	TCHAR buffer[1024];
 	FCString::GetVarArgs(buffer, UE_ARRAY_COUNT(buffer), fmt, args);
 
-	GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, buffer);
+	GEngine->AddOnScreenDebugMessage(messageID, 60.0f, FColor::Orange, buffer);
 }
 
 inline void DisplayDebugWarning(uint64 messageID, const TCHAR* fmt, ...)
