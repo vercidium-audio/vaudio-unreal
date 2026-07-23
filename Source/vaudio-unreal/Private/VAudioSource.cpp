@@ -1,7 +1,6 @@
 #include "VAudioSource.h"
 #include "VAudioWorld.h"
 #include "VAudioListener.h"
-#include "Kismet/GameplayStatics.h"
 #include "ActiveSound.h"
 #include "AudioDevice.h"
 
@@ -11,9 +10,8 @@ extern "C" {
 
 #include "VARawLog.h"
 #include "VADebugMessageKeys.h"
+#include "VAConstants.h"
 
-const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
-const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
 const float LOW_PASS_RESONANCE = 0.707f; // Butterworth Q constant
 
 AVAudioSource::AVAudioSource()
@@ -106,11 +104,34 @@ void AVAudioSource::TrySpawnSourceSound()
 
 	bSourcePendingSpawn = false;
 
-	SourceAudioComponent = UGameplayStatics::SpawnSoundAtLocation(GetWorld(), SourceSound, GetActorLocation(), FRotator::ZeroRotator, 1.0f, 1.0f, 0.0f, nullptr, nullptr, bLooping);
+	// UGameplayStatics::SpawnSoundAtLocation() calls AudioComponent->Play() internally before
+	// returning, and Play() snapshots the component's SourceEffectChain into the FActiveSound at
+	// that moment (see UAudioComponent::PlayInternal() -> FActiveSound::SetSourceEffectChain()) -
+	// it's never re-read afterwards. So SetSourceEffectChain() has to happen before Play() or the
+	// LPF preset is never actually wired into the playing sound. FAudioDevice::CreateComponent()
+	// is what SpawnSoundAtLocation() uses internally to build the component without playing it
+	// (Params.bPlay defaults to false), which lets us assign the effect chain first.
+	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
+	Params.SetLocation(GetActorLocation());
+
+	SourceAudioComponent = FAudioDevice::CreateComponent(SourceSound, Params);
 
 	if (SourceAudioComponent)
 	{
+		SourceAudioComponent->SetWorldLocationAndRotation(GetActorLocation(), FRotator::ZeroRotator);
+		SourceAudioComponent->SetVolumeMultiplier(1.0f);
+		SourceAudioComponent->SetPitchMultiplier(1.0f);
+		SourceAudioComponent->bAllowSpatialization = Params.ShouldUseAttenuation();
+
+		// bAutoDestroy, not bLooping: UAudioComponent has no per-instance loop override - looping
+		// is inherent to the SourceSound asset (USoundWave::bLooping / a Sound Cue's Looping node).
+		// bAutoDestroy only controls whether the component tears itself down once the sound finishes,
+		// so a one-shot (!bLooping) should auto-destroy, while a looping sound never finishes on its
+		// own and shouldn't be auto-destroyed out from under itself.
+		SourceAudioComponent->bAutoDestroy = !bLooping;
+		SourceAudioComponent->bStopWhenOwnerDestroyed = false;
 		SourceAudioComponent->SetSourceEffectChain(SourceEffectChain);
+		SourceAudioComponent->Play();
 
 		if (!SourceAudioComponent->AttenuationSettings)
 		{
