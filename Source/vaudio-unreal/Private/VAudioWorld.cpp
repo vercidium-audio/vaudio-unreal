@@ -309,10 +309,10 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 						FColor color = bInBounds && Submix != NULL && sourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
 
-						const wchar_t* submixStatus = Submix ? TEXT("valid") : TEXT("null");
+						FString submixStatus = Submix ? Submix->GetName() : TEXT("null");
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [groupedEAXIndex=%d] [submix=%s]"), i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, groupedEAXIndex, submixStatus));
+							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [groupedEAXIndex=%d] [submix=%s]"), i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, groupedEAXIndex, *submixStatus));
 					}
 					else
 					{
@@ -984,8 +984,10 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			}
 
 			VAMatrix Transform = MakeTranslationMatrix(WorldPos);
-			VAMeshPrimitive* MeshPrim = vaMeshPrimitiveCreate(
-				Material, VAVerts.GetData(), VAVerts.Num(), MinB, MaxB, &Transform
+			VAMeshPrimitive* MeshPrim;
+			
+			VAResult result = vaMeshPrimitiveCreate(
+				Material, VAVerts.GetData(), VAVerts.Num(), MinB, MaxB, &Transform, &MeshPrim
 			);
 
 			vaMeshPrimitiveSetSupports3DPermeation(MeshPrim, MatComp->bSupports3DPermeation);
