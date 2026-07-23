@@ -34,6 +34,9 @@ static VAMatrix MakeTranslationMatrix(const FVector& P)
 	return vaMatrixCreateTranslation((float)P.X, (float)P.Y, (float)P.Z);
 }
 
+// Rotation + translation only, no scale - used for primitives whose SetTransform doc explicitly
+// disallows scale components (capsule/prism/etc - see vaudio.h). Non-uniform scale on these
+// shapes is instead applied via their own dedicated SetRadius/SetLength/SetSize calls.
 static VAMatrix MakeRotTransMatrix(const FTransform& T)
 {
 	FQuat Q = T.GetRotation();
@@ -49,6 +52,17 @@ static VAMatrix MakeRotTransMatrix(const FTransform& T)
 		(float)AxZ.X, (float)AxZ.Y, (float)AxZ.Z, 0.f,
 		(float)P.X,   (float)P.Y,   (float)P.Z,   1.f
 	);
+}
+
+// Scale + rotation + translation - only VAMeshPrimitive's SetTransform supports a scale
+// component (see vaMatrixCreateScale's comment in vaudio.h), so this is not safe to use for any
+// other primitive type.
+static VAMatrix MakeScaleRotTransMatrix(const FTransform& T)
+{
+	VAMatrix RotTrans = MakeRotTransMatrix(T);
+	FVector Scale = T.GetScale3D();
+	VAMatrix ScaleMat = vaMatrixCreateScale((float)Scale.X, (float)Scale.Y, (float)Scale.Z);
+	return vaMatrixMultiply(&ScaleMat, &RotTrans);
 }
 
 // vaudio.h defines VAResult codes as plain #defines (not an enum), so there's no reflection -
@@ -785,6 +799,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				}
 
 				CapsulePrimitives.Add(Cap);
+				BindPrimitiveToComponent(Cap, EVAudioPrimitiveKind::Capsule, ShapeComp);
 				++SimpleCount;
 			}
 			else if (USphereComponent* Sphere = Cast<USphereComponent>(ShapeComp))
@@ -803,6 +818,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				}
 
 				SpherePrimitives.Add(Sp);
+				BindPrimitiveToComponent(Sp, EVAudioPrimitiveKind::Sphere, ShapeComp);
 				++SimpleCount;
 			}
 			else if (UBoxComponent* Box = Cast<UBoxComponent>(ShapeComp))
@@ -822,6 +838,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				}
 
 				PrismPrimitives.Add(Prism);
+				BindPrimitiveToComponent(Prism, EVAudioPrimitiveKind::Prism, ShapeComp);
 				++SimpleCount;
 			}
 		}
@@ -844,7 +861,6 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				continue;
 
 			FTransform CompTransform = MeshComp->GetComponentTransform();
-			FVector WorldPos = CompTransform.GetTranslation();
 			FVector Scale = CompTransform.GetScale3D();
 
 			bool bAddedSimple = false;
@@ -874,6 +890,9 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					}
 
 					CapsulePrimitives.Add(Cap);
+					BindPrimitiveToComponent(Cap, EVAudioPrimitiveKind::CapsuleFromMesh, MeshComp,
+						FTransform(Sphyl.GetTransform().GetRotation(), Sphyl.GetTransform().GetTranslation()),
+						FVector(Sphyl.Radius, 0.f, Sphyl.Length));
 					bAddedSimple = true;
 					++SimpleCount;
 				}
@@ -895,6 +914,9 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					}
 
 					SpherePrimitives.Add(Sp);
+					BindPrimitiveToComponent(Sp, EVAudioPrimitiveKind::SphereFromMesh, MeshComp,
+						FTransform(Sphere.GetTransform().GetTranslation()),
+						FVector(Sphere.Radius, 0.f, 0.f));
 					bAddedSimple = true;
 					++SimpleCount;
 				}
@@ -918,6 +940,9 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					}
 
 					PrismPrimitives.Add(Prism);
+					BindPrimitiveToComponent(Prism, EVAudioPrimitiveKind::PrismFromMesh, MeshComp,
+						FTransform(Box.GetTransform().GetRotation(), Box.GetTransform().GetTranslation()),
+						FVector(Box.X, Box.Y, Box.Z));
 					bAddedSimple = true;
 					++SimpleCount;
 				}
@@ -969,6 +994,11 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					LocalPositions.Add(PosBuffer.VertexPosition(Idx));
 			}
 
+			// Kept in pure local (component) space, with no rotation/scale baked in - unlike the
+			// simple-collision primitives above, VAMeshPrimitive's transform matrix supports a
+			// full scale component (see MakeScaleRotTransMatrix), so rotation/scale/translation
+			// can all be driven live through vaMeshPrimitiveSetTransform instead of requiring the
+			// vertex buffer to be rebuilt whenever the actor moves.
 			TArray<VAVector> VAVerts;
 			VAVerts.Reserve(LocalPositions.Num());
 			VAVector MinB = VECTOR_MAX;
@@ -976,16 +1006,15 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 			for (const FVector3f& LocalPos : LocalPositions)
 			{
-				FVector RotScaled = CompTransform.GetRotation().RotateVector(Scale * FVector(LocalPos));
-				VAVector V = vaVectorCreate((float)RotScaled.X, (float)RotScaled.Y, (float)RotScaled.Z);
+				VAVector V = vaVectorCreate(LocalPos.X, LocalPos.Y, LocalPos.Z);
 				VAVerts.Add(V);
 				MinB = vaVectorMin(MinB, V);
 				MaxB = vaVectorMax(MaxB, V);
 			}
 
-			VAMatrix Transform = MakeTranslationMatrix(WorldPos);
+			VAMatrix Transform = MakeScaleRotTransMatrix(CompTransform);
 			VAMeshPrimitive* MeshPrim;
-			
+
 			VAResult result = vaMeshPrimitiveCreate(
 				Material, VAVerts.GetData(), VAVerts.Num(), MinB, MaxB, &Transform, &MeshPrim
 			);
@@ -999,6 +1028,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			}
 
 			MeshPrimitives.Add(MeshPrim);
+			BindPrimitiveToComponent(MeshPrim, EVAudioPrimitiveKind::Mesh, MeshComp);
 			++MeshCount;
 		}
 	}
@@ -1008,6 +1038,8 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 void AVAudioWorld::DestroyPrimitives()
 {
+	UnbindPrimitiveComponents();
+
 	for (VAMeshPrimitive*    P : MeshPrimitives)    { vaWorldRemovePrimitive_(World, P); vaMeshPrimitiveDestroy(P); }
 	for (VACapsulePrimitive* P : CapsulePrimitives) { vaWorldRemovePrimitive_(World, P); vaCapsulePrimitiveDestroy(P); }
 	for (VASpherePrimitive*  P : SpherePrimitives)  { vaWorldRemovePrimitive_(World, P); vaSpherePrimitiveDestroy(P); }
@@ -1017,4 +1049,144 @@ void AVAudioWorld::DestroyPrimitives()
 	CapsulePrimitives.Empty();
 	SpherePrimitives.Empty();
 	PrismPrimitives.Empty();
+}
+
+// ---------------------------------------------------------------------------
+// Move tracking — keeps primitive transforms in sync with their owning components
+// ---------------------------------------------------------------------------
+
+void AVAudioWorld::BindPrimitiveToComponent(void* Primitive, EVAudioPrimitiveKind Kind, USceneComponent* Component,
+	const FTransform& LocalOffset, const FVector& LocalExtent)
+{
+	// Null if this primitive's Actor has no scene component at all (shouldn't happen - every
+	// UShapeComponent/UStaticMeshComponent passed in here is itself a USceneComponent), but guard
+	// anyway since a bad bind here would silently leave a primitive frozen at its creation-time
+	// transform with no on-screen indication.
+	if (!Component)
+	{
+		VALog(L"BindPrimitiveToComponent() called with a null Component - this primitive will not track its actor's movement.");
+		return;
+	}
+
+	FVAudioPrimitiveBinding& Binding = PrimitiveBindings.AddDefaulted_GetRef();
+	Binding.Component    = Component;
+	Binding.Primitive    = Primitive;
+	Binding.Kind         = Kind;
+	Binding.LocalOffset  = LocalOffset;
+	Binding.LocalExtent  = LocalExtent;
+	Binding.Handle       = Component->TransformUpdated.AddUObject(this, &AVAudioWorld::OnPrimitiveComponentMoved);
+}
+
+void AVAudioWorld::RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& Binding)
+{
+	USceneComponent* Component = Binding.Component.Get();
+
+	// Null if the owning actor/component was destroyed without this world's EndPlay running yet
+	// (e.g. mid-PIE actor deletion) - OnPrimitiveComponentMoved() below already drops bindings
+	// whose component has gone stale, so this should be rare, not a normal per-call case.
+	if (!Component)
+		return;
+
+	FTransform WorldTransform = Binding.LocalOffset * Component->GetComponentTransform();
+
+	switch (Binding.Kind)
+	{
+	case EVAudioPrimitiveKind::Mesh:
+	{
+		VAMatrix Mat = MakeScaleRotTransMatrix(WorldTransform);
+		vaMeshPrimitiveSetTransform(static_cast<VAMeshPrimitive*>(Binding.Primitive), &Mat);
+		break;
+	}
+	case EVAudioPrimitiveKind::Capsule:
+	{
+		UCapsuleComponent* Capsule = CastChecked<UCapsuleComponent>(Component);
+		VAMatrix Mat = MakeRotTransMatrix(WorldTransform);
+		VACapsulePrimitive* Cap = static_cast<VACapsulePrimitive*>(Binding.Primitive);
+		vaCapsulePrimitiveSetRadius(Cap, Capsule->GetScaledCapsuleRadius());
+		vaCapsulePrimitiveSetLength(Cap, Capsule->GetScaledCapsuleHalfHeight_WithoutHemisphere() * 2.0f);
+		vaCapsulePrimitiveSetTransform(Cap, &Mat);
+		break;
+	}
+	case EVAudioPrimitiveKind::Sphere:
+	{
+		USphereComponent* Sphere = CastChecked<USphereComponent>(Component);
+		FVector Center = WorldTransform.GetTranslation();
+		VASpherePrimitive* Sp = static_cast<VASpherePrimitive*>(Binding.Primitive);
+		vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
+		vaSpherePrimitiveSetRadius(Sp, Sphere->GetScaledSphereRadius());
+		break;
+	}
+	case EVAudioPrimitiveKind::Prism:
+	{
+		UBoxComponent* Box = CastChecked<UBoxComponent>(Component);
+		VAMatrix Mat = MakeRotTransMatrix(WorldTransform);
+		FVector Extent = Box->GetScaledBoxExtent();
+		VAPrismPrimitive* Prism = static_cast<VAPrismPrimitive*>(Binding.Primitive);
+		vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Extent.X * 2.0f, Extent.Y * 2.0f, Extent.Z * 2.0f));
+		vaPrismPrimitiveSetTransform(Prism, &Mat);
+		break;
+	}
+	case EVAudioPrimitiveKind::CapsuleFromMesh:
+	{
+		// Matches the FMath::Max(Scale.X, Scale.Y)/Scale.Z convention ScanAndAddPrimitives
+		// originally used for FKSphylElem - see the comment on EVAudioPrimitiveKind.
+		FVector Scale = Component->GetComponentTransform().GetScale3D();
+		VAMatrix Mat = MakeRotTransMatrix(WorldTransform);
+		VACapsulePrimitive* Cap = static_cast<VACapsulePrimitive*>(Binding.Primitive);
+		vaCapsulePrimitiveSetRadius(Cap, Binding.LocalExtent.X * FMath::Max(Scale.X, Scale.Y));
+		vaCapsulePrimitiveSetLength(Cap, Binding.LocalExtent.Z * Scale.Z);
+		vaCapsulePrimitiveSetTransform(Cap, &Mat);
+		break;
+	}
+	case EVAudioPrimitiveKind::SphereFromMesh:
+	{
+		FVector Scale = Component->GetComponentTransform().GetScale3D();
+		FVector Center = WorldTransform.GetTranslation();
+		VASpherePrimitive* Sp = static_cast<VASpherePrimitive*>(Binding.Primitive);
+		vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
+		vaSpherePrimitiveSetRadius(Sp, Binding.LocalExtent.X * Scale.GetAbsMax());
+		break;
+	}
+	case EVAudioPrimitiveKind::PrismFromMesh:
+	{
+		FVector Scale = Component->GetComponentTransform().GetScale3D();
+		VAMatrix Mat = MakeRotTransMatrix(WorldTransform);
+		VAPrismPrimitive* Prism = static_cast<VAPrismPrimitive*>(Binding.Primitive);
+		vaPrismPrimitiveSetSize(Prism, vaVectorCreate(
+			Binding.LocalExtent.X * Scale.X, Binding.LocalExtent.Y * Scale.Y, Binding.LocalExtent.Z * Scale.Z));
+		vaPrismPrimitiveSetTransform(Prism, &Mat);
+		break;
+	}
+	}
+}
+
+void AVAudioWorld::OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport)
+{
+	for (int32 i = PrimitiveBindings.Num() - 1; i >= 0; --i)
+	{
+		FVAudioPrimitiveBinding& Binding = PrimitiveBindings[i];
+
+		// Component was destroyed without going through DestroyPrimitives()/UnbindPrimitiveComponents()
+		// first (e.g. the owning actor was deleted mid-PIE while this world is still alive) - drop
+		// the now-useless binding instead of leaving its primitive frozen forever.
+		if (!Binding.Component.IsValid())
+		{
+			PrimitiveBindings.RemoveAtSwap(i);
+			continue;
+		}
+
+		if (Binding.Component.Get() == UpdatedComponent)
+			RefreshPrimitiveTransform(Binding);
+	}
+}
+
+void AVAudioWorld::UnbindPrimitiveComponents()
+{
+	for (const FVAudioPrimitiveBinding& Binding : PrimitiveBindings)
+	{
+		if (USceneComponent* Component = Binding.Component.Get())
+			Component->TransformUpdated.Remove(Binding.Handle);
+	}
+
+	PrimitiveBindings.Empty();
 }

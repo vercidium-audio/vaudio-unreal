@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "SubmixEffects/AudioMixerSubmixEffectReverb.h"
 #include "Sound/SoundSubmix.h"
+#include "Components/SceneComponent.h"
 #include "VAudioWorld.generated.h"
 
 struct VAWorld;
@@ -14,6 +15,55 @@ struct VAPrismPrimitive;
 class AVAudioEmitterBase;
 class AVAudioListener;
 class UVAudioMaterialAssetBase;
+
+// Which VAXPrimitiveSet* calls RefreshPrimitiveTransform() should use for a given entry - there's
+// no common base type across VAMeshPrimitive/VACapsulePrimitive/etc, so the primitive pointer is
+// stored as void* and this tag says how to interpret it.
+//
+// Capsule/Sphere/Prism (from a UShapeComponent directly) re-read their size live from that
+// component's own GetScaledCapsuleRadius()/GetScaledSphereRadius()/GetScaledBoxExtent(), which
+// already account for the component's current scale. CapsuleFromMesh/SphereFromMesh/PrismFromMesh
+// (simple collision baked from a UStaticMeshComponent's body setup, which has no such per-element
+// accessor) instead re-derive their size from LocalExtent scaled by the component's current
+// GetComponentTransform().GetScale3D(), matching the FMath::Max(Scale.X,Scale.Y)/GetAbsMax()/
+// per-axis conventions ScanAndAddPrimitives originally used for sphyl/sphere/box respectively.
+enum class EVAudioPrimitiveKind : uint8
+{
+	Mesh,
+	Capsule,
+	Sphere,
+	Prism,
+	CapsuleFromMesh,
+	SphereFromMesh,
+	PrismFromMesh,
+};
+
+// Tracks the live link between a moving USceneComponent (owned by some other actor in the level)
+// and the VA primitive ScanAndAddPrimitives() created from its shape/mesh at BeginPlay. Bound to
+// Component's TransformUpdated delegate so the primitive's transform (and, for shape primitives,
+// its scale-derived size) is kept in sync whenever that actor moves or rotates at runtime.
+//
+// LocalOffset is this primitive's transform relative to Component - identity for a primitive
+// built directly from a UShapeComponent, or a UStaticMeshComponent's per-element sphyl/sphere/box
+// offset (see FKSphylElem::GetTransform() etc in ScanAndAddPrimitives) for simple collision baked
+// from a mesh's body setup. The primitive's live world transform is always LocalOffset composed
+// with Component's current world transform, recomputed from scratch on every move rather than
+// incrementally, so drift can never accumulate.
+struct FVAudioPrimitiveBinding
+{
+	TWeakObjectPtr<USceneComponent> Component;
+	void* Primitive = nullptr;
+	EVAudioPrimitiveKind Kind = EVAudioPrimitiveKind::Mesh;
+	FTransform LocalOffset = FTransform::Identity;
+
+	// Unscaled local radius/length/size, as read from the FKSphylElem/FKSphereElem/FKBoxElem at
+	// scan time - only used by the …FromMesh kinds (see EVAudioPrimitiveKind comment above).
+	// Meaning depends on Kind: CapsuleFromMesh uses X=radius, Z=length; SphereFromMesh uses
+	// X=radius; PrismFromMesh uses X/Y/Z=full size (not half-extent).
+	FVector LocalExtent = FVector::ZeroVector;
+
+	FDelegateHandle Handle;
+};
 
 // Baked local-space triangle mesh for one UStaticMeshComponent, captured in-editor via
 // AVAudioWorld::BakeGeometry so shipping builds don't depend on the mesh's CPU-accessible
@@ -210,6 +260,12 @@ private:
 	TArray<VASpherePrimitive*>  SpherePrimitives;
 	TArray<VAPrismPrimitive*>   PrismPrimitives;
 
+	// One entry per primitive created in ScanAndAddPrimitives, so its transform can be kept in
+	// sync if the owning component moves at runtime - see BindPrimitiveToComponent()/
+	// OnPrimitiveComponentMoved(). A single component can own more than one primitive (e.g. a
+	// static mesh's simple collision can contain several sphyl/sphere/box elements).
+	TArray<FVAudioPrimitiveBinding> PrimitiveBindings;
+
 	TArray<AVAudioEmitterBase*> RegisteredEmitters;
 
 	// Cached from RegisteredEmitters whenever an AVAudioListener is (un)registered, so
@@ -234,4 +290,27 @@ private:
 	// code and adds ActorName to ActorsWithInvalidMaterials (see Tick()'s on-screen warning) so a
 	// rejected primitive is as visible as a material configuration problem. Returns true on success.
 	bool TryAddPrimitive(void* Primitive, const TCHAR* PrimitiveTypeName, const FString& ActorName);
+
+	// Binds Component's TransformUpdated delegate so moving/rotating it at runtime updates
+	// Primitive's transform (see OnPrimitiveComponentMoved). Called once per primitive right
+	// after TryAddPrimitive succeeds for it. LocalOffset/LocalExtent are stored as-is on the
+	// binding - see FVAudioPrimitiveBinding's comment for what they mean per Kind.
+	void BindPrimitiveToComponent(void* Primitive, EVAudioPrimitiveKind Kind, USceneComponent* Component,
+		const FTransform& LocalOffset = FTransform::Identity, const FVector& LocalExtent = FVector::ZeroVector);
+
+	// Recomputes and applies Binding's live world transform (LocalOffset composed with
+	// Binding.Component's current world transform) to its SDK primitive. Shared by both the
+	// initial ScanAndAddPrimitives() creation and OnPrimitiveComponentMoved() refreshes so the
+	// two can never compute it differently.
+	static void RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& Binding);
+
+	// Fired by TransformUpdated (a non-dynamic multicast event, bound via AddUObject - see
+	// BindPrimitiveToComponent) on any component we bound. Recomputes and re-applies the
+	// transform (and, for shape primitives, the scale-derived size) of every primitive bound to
+	// UpdatedComponent.
+	void OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
+
+	// Unbinds every TransformUpdated delegate registered in PrimitiveBindings and empties it.
+	// Called from DestroyPrimitives().
+	void UnbindPrimitiveComponents();
 };
