@@ -9,9 +9,34 @@ extern "C" {
 
 #include "VaRawLog.h"
 #include "VADebugMessageKeys.h"
+#include <HAL/Platform.h>
+#include <Math/Color.h>
+#include <Math/UnrealMathUtility.h>
+#include <Misc/CString.h>
+#include <Templates/UnrealTemplate.h>
+#include <Engine/Engine.h>
+#include <Engine/EngineTypes.h>
+#include <cstdarg>
+#include <VAudioEmitterBase.h>
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
 const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
+
+void AVAudioAmbientSource::DisplayWarning(const TCHAR* fmt, ...) const
+{
+	if (!GEngine)
+		return;
+
+	// Format the string
+	va_list args;
+	va_start(args, fmt);
+	TCHAR buffer[1024];
+	FCString::GetVarArgs(buffer, UE_ARRAY_COUNT(buffer), fmt, args);
+	va_end(args);
+
+	uint64 messageID = VANonEmitterSourceMessageBase + GetUniqueID();
+	GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, buffer);
+}
 
 AVAudioAmbientSource::AVAudioAmbientSource()
 {
@@ -22,16 +47,25 @@ void AVAudioAmbientSource::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!SourceSound)
+	if (!AudioWorld)
 	{
-		VALog(L"AmbientSource has no SourceSound assigned - it will do nothing");
+		DisplayWarning(TEXT("[VA] AmbientSource '%s' does not have an AudioWorld assigned and will not play"), *GetActorNameOrLabel());
 		return;
 	}
 
-	if (!AudioWorld)
+	if (!SourceSound)
 	{
-		VALog(L"AudioWorld is not assigned - this ambient source will play with no filtering. Assign AudioWorld in the Details panel.");
+		DisplayWarning(TEXT("[VA] AmbientSource '%s' does not have a sound file assigned and will not play"), *GetActorNameOrLabel());
+		return;
 	}
+
+	// If VirtualisationMode is not 'Play When Silent', and the sound starts with 0 LF gain, it won't play when LF gain increases later
+	if (!SourceSound->IsPlayWhenSilent())
+	{
+		DisplayWarning(TEXT("[VA] AmbientSource '%s': SourceSound '%s' must have Virtualization Mode set to 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *SourceSound->GetName());
+		return;
+	}
+
 }
 
 void AVAudioAmbientSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -42,8 +76,6 @@ void AVAudioAmbientSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		SourceAudioComponent->Stop();
 		SourceAudioComponent = nullptr;
-
-		VALog(L"Stopped ambient source sound");
 	}
 }
 
@@ -61,6 +93,7 @@ void AVAudioAmbientSource::TrySpawnSourceSound(const VALowPassFilter* AmbientFil
 	}
 	else
 	{
+		// TODO - why could SourceAudioComponent be null?
 		VALog(L"Failed to play sound");
 	}
 }
@@ -74,41 +107,42 @@ void AVAudioAmbientSource::Tick(float DeltaTime)
 
 void AVAudioAmbientSource::ApplyAmbientFilter()
 {
+	// Not configured correctly - do not play
 	if (!AudioWorld || !SourceSound)
 		return;
 
-	// This actor can start SourceSound at 0 volume (gainLF starts at 0) and ramp it up later as the
-	// ambient filter changes - if SourceSound isn't set to play when silent, Unreal can decide the
-	// sound is inaudible at spawn and never actually start it, so raising the volume later does
-	// nothing. See TrySpawnSourceSound() above. Checked every tick (rather than once in BeginPlay())
-	// so the on-screen warning doesn't expire after one frame - AddOnScreenDebugMessage's
-	// TimeToDisplay of 0.0f means "reissue every tick to keep it alive", not "show forever".
-	if (!SourceSound->IsPlayWhenSilent())
-	{
-		uint64 messageID = VANonEmitterSourceMessageBase + GetUniqueID();
-		GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] AmbientSource '%s': SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *SourceSound->GetName()));
-	}
-
 	AVAudioListener* Listener = AudioWorld->GetMainListener();
 
-	if (!Listener || !Listener->GetVAEmitter())
+	// User did not add a VAudioListener actor to this world
+	if (!Listener)
 		return;
 
-	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(Listener->GetVAEmitter());
+	VAEmitter* vaListener = Listener->GetVAEmitter();
 
-	// Raytracing has not completed at least once yet - don't spawn until there's a real filter to
-	// start from, otherwise the sound would be briefly audible unfiltered/at full volume.
+	// TODO - unsure how this could be null
+	if (!vaListener)
+		return;
+
+	// Warn the user that their listener does not have ambient rays
+	if (!vaEmitterGetAmbientOcclusionEnabled(vaListener) && !vaEmitterGetAmbientOcclusionEnabled(vaListener))
+	{
+		GEngine->AddOnScreenDebugMessage(VAListenerNoAmbientRaysMessage, 0.0f, FColor::Orange,
+			FString::Printf(TEXT("[VA] AmbientSource '%s' will not be muffled as the listener does not cast ambient occlusion or ambient permeation rays"), *GetActorNameOrLabel()));
+	}
+
+	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(vaListener);
+
+	// Raytracing has not completed yet - don't play the sound
 	if (!AmbientFilter)
 		return;
 
 	if (!SourceAudioComponent)
 	{
-		// Applies AmbientFilter and starts playback itself, so the very first sample is already
-		// filtered - see TrySpawnSourceSound()'s comment.
 		TrySpawnSourceSound(AmbientFilter);
-		return;
 	}
-
-	SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, AmbientFilter->gainHF));
-	SourceAudioComponent->SetVolumeMultiplier(AmbientFilter->gainLF);
+	else
+	{
+		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, AmbientFilter->gainHF));
+		SourceAudioComponent->SetVolumeMultiplier(AmbientFilter->gainLF);
+	}
 }

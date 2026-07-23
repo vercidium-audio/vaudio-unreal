@@ -46,4 +46,5 @@ public:
 private:
 	void TrySpawnSourceSound(const VALowPassFilter* AmbientFilter);
 	void ApplyAmbientFilter();
+	void DisplayWarning(const TCHAR* fmt, ...) const;
 };

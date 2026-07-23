@@ -28,19 +28,20 @@
 // key = VAEmitterMessageBase + EmitterIndex * VAEmitterMessageStride + offset.
 enum EVADebugMessageKey : uint64
 {
-	VAKeyBase                 = 0x5641554400000000ULL,
-	VARaytracingTimeMessage   = VAKeyBase + 1,
-	VAListenerStatusMessage   = VAKeyBase + 2,
-	VAAmbientFilterMessage    = VAKeyBase + 3,
-	VANoMainListenerMessage   = VAKeyBase + 4,
-	VAPrimitiveStatusMessage  = VAKeyBase + 5,
-	VAGroupedEAXStatusMessage = VAKeyBase + 6,
-	VAInvalidMaterialsMessage = VAKeyBase + 7,
-	VAListenerEAXMessage      = VAKeyBase + 8,
-	VAEmitterStatus           = VAKeyBase + 0x1000,
-	VAGroupedEAXMessageBase   = VAKeyBase + 0x2000,
-	VAEmitterMessageBase      = VAKeyBase + 0x100000,
-	VAEmitterMessageStride    = 1000,
+	VAKeyBase						= 0x5641554400000000ULL,
+	VARaytracingTimeMessage			= VAKeyBase + 1,
+	VAListenerStatusMessage			= VAKeyBase + 2,
+	VAAmbientFilterMessage			= VAKeyBase + 3,
+	VANoMainListenerMessage			= VAKeyBase + 4,
+	VAPrimitiveStatusMessage		= VAKeyBase + 5,
+	VAGroupedEAXStatusMessage		= VAKeyBase + 6,
+	VAInvalidMaterialsMessage		= VAKeyBase + 7,
+	VAListenerEAXMessage			= VAKeyBase + 8,
+	VAListenerNoAmbientRaysMessage  = VAKeyBase + 9,
+	VAEmitterStatus					= VAKeyBase + 0x1000,
+	VAGroupedEAXMessageBase			= VAKeyBase + 0x2000,
+	VAEmitterMessageBase			= VAKeyBase + 0x100000,
+	VAEmitterMessageStride			= 1000,
 
 	// Base for actors with no emitter index of their own (AVAudioAmbientSource,
 	// AVAudioRelativeSource) - keyed by GetUniqueID() instead, which is stable for the actor's
