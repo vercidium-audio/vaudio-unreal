@@ -60,6 +60,11 @@ protected:
 	// VAWorld isn't ready yet (actor BeginPlay order isn't guaranteed).
 	bool TryInitializeEmitter();
 
+	// On-screen warning, keyed by GetUniqueID() so each actor gets its own message slot
+	// (see VANonEmitterSourceMessageBase in VADebugMessageKeys.h). Subclasses use this for
+	// their own configuration warnings (missing sound file, etc), not just the AudioWorld check below.
+	void DisplayWarning(const TCHAR* fmt, ...) const;
+
 	VAEmitter* Emitter = nullptr;
 
 private:

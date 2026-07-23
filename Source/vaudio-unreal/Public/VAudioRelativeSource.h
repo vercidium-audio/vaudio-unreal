@@ -69,11 +69,12 @@ private:
 	// Cached downcasts of ReverbSource, resolved once at BeginPlay - exactly one of these is set
 	// after a valid BeginPlay (or both null if ReverbSource was misconfigured).
 	UPROPERTY(Transient)
-	AVAudioListener* ListenerReverbSource = nullptr;
+	AVAudioListener* ListenerEmitter = nullptr;
 
 	UPROPERTY(Transient)
-	AVAudioContinuous* ContinuousReverbSource = nullptr;
+	AVAudioContinuous* ContinuousEmitter = nullptr;
 
 	void TrySpawnSourceSound();
 	void ApplyReverbSource();
+	void DisplayWarning(const TCHAR* fmt, ...) const;
 };

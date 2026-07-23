@@ -22,7 +22,7 @@ extern "C" {
 #include "vaudio.h"
 }
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
 #include "VADebugMessageKeys.h"
 
 // ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ void AVAudioWorld::BeginPlay()
 	World = vaWorldCreate();
 	vaWorldSetLogMemoryAllocationWarnings(World, true);
 	vaWorldSetCoordinateSystem(World, VACoordinateSystemUnreal);
-	vaWorldSetLogCallback(World, &VaSdkLogCallback);
+	vaWorldSetLogCallback(World, &VASdkLogCallback);
 	vaWorldSetPosition(World, vaVectorCreate(
 		(float)WorldPosition.X,
 		(float)WorldPosition.Y,

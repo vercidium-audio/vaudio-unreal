@@ -5,7 +5,20 @@ extern "C" {
 #include "vaudio.h"
 }
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
+#include "VADebugMessageKeys.h"
+
+void AVAudioEmitterBase::DisplayWarning(const TCHAR* fmt, ...) const
+{
+	// Format the string
+	va_list args;
+	va_start(args, fmt);
+	TCHAR buffer[1024];
+	FCString::GetVarArgs(buffer, UE_ARRAY_COUNT(buffer), fmt, args);
+	va_end(args);
+
+	DisplayDebugWarning(VAEmitterMessageBase + GetUniqueID(), TEXT("%s"), buffer);
+}
 
 AVAudioEmitterBase::AVAudioEmitterBase()
 {
@@ -22,7 +35,7 @@ void AVAudioEmitterBase::BeginPlay()
 	// Display a warning if the user forgot to set the AudioWorld
 	if (!AudioWorld)
 	{
-		VALog(L"AudioWorld is not assigned - this emitter will do nothing. Assign a VAudioWorld actor in the Details panel.");
+		DisplayWarning(TEXT("[VA] Emitter '%s' does not have an AudioWorld assigned and will not play"), *GetActorNameOrLabel());
 		return;
 	}
 
@@ -49,8 +62,8 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 
 	Emitter = vaEmitterCreate();
 
-	vaEmitterSetLogCallback(Emitter, &VaSdkLogCallback);
-	vaEmitterSetLogErrorCallback(Emitter, &VaSdkLogCallback);
+	vaEmitterSetLogCallback(Emitter, &VASdkLogCallback);
+	vaEmitterSetLogErrorCallback(Emitter, &VASdkLogCallback);
 
 	FVector Pos = GetActorLocation();
 	vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Y, (float)Pos.Z));

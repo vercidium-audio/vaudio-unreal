@@ -7,35 +7,18 @@ extern "C" {
 #include "vaudio.h"
 }
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
 #include "VADebugMessageKeys.h"
-#include <HAL/Platform.h>
-#include <Math/Color.h>
-#include <Math/UnrealMathUtility.h>
-#include <Misc/CString.h>
-#include <Templates/UnrealTemplate.h>
-#include <Engine/Engine.h>
-#include <Engine/EngineTypes.h>
-#include <cstdarg>
-#include <VAudioEmitterBase.h>
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
 const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
 
 void AVAudioAmbientSource::DisplayWarning(const TCHAR* fmt, ...) const
 {
-	if (!GEngine)
-		return;
-
-	// Format the string
 	va_list args;
 	va_start(args, fmt);
-	TCHAR buffer[1024];
-	FCString::GetVarArgs(buffer, UE_ARRAY_COUNT(buffer), fmt, args);
+	DisplayDebugWarningArgs(VAEmitterMessageBase + GetUniqueID(), fmt, args);
 	va_end(args);
-
-	uint64 messageID = VANonEmitterSourceMessageBase + GetUniqueID();
-	GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, buffer);
 }
 
 AVAudioAmbientSource::AVAudioAmbientSource()
@@ -65,7 +48,6 @@ void AVAudioAmbientSource::BeginPlay()
 		DisplayWarning(TEXT("[VA] AmbientSource '%s': SourceSound '%s' must have Virtualization Mode set to 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *SourceSound->GetName());
 		return;
 	}
-
 }
 
 void AVAudioAmbientSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -126,8 +108,7 @@ void AVAudioAmbientSource::ApplyAmbientFilter()
 	// Warn the user that their listener does not have ambient rays
 	if (!vaEmitterGetAmbientOcclusionEnabled(vaListener) && !vaEmitterGetAmbientOcclusionEnabled(vaListener))
 	{
-		GEngine->AddOnScreenDebugMessage(VAListenerNoAmbientRaysMessage, 0.0f, FColor::Orange,
-			FString::Printf(TEXT("[VA] AmbientSource '%s' will not be muffled as the listener does not cast ambient occlusion or ambient permeation rays"), *GetActorNameOrLabel()));
+		DisplayDebugWarning(VAListenerNoAmbientRaysMessage, TEXT("[VA] AmbientSource '%s' will not be muffled as the listener does not cast ambient occlusion or ambient permeation rays"), *GetActorNameOrLabel());
 	}
 
 	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(vaListener);

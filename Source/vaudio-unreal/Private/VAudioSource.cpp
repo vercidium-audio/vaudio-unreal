@@ -9,7 +9,7 @@ extern "C" {
 #include "vaudio.h"
 }
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
 #include "VADebugMessageKeys.h"
 
 const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;

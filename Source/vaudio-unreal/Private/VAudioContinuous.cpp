@@ -1,12 +1,11 @@
-#include "VAudioContinuous.h"
-#include "VAudioWorld.h"
-#include "VAudioListener.h"
-
 extern "C" {
 #include "vaudio.h"
 }
 
-#include "VaRawLog.h"
+#include "VAudioContinuous.h"
+#include "VAudioWorld.h"
+#include "VAudioListener.h"
+#include "VARawLog.h"
 
 AVAudioContinuous::AVAudioContinuous()
 {

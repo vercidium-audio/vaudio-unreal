@@ -10,7 +10,7 @@ extern "C" {
 #include "vaudio.h"
 }
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
 
 AVAudioListener::AVAudioListener()
 {

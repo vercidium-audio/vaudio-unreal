@@ -2,7 +2,7 @@
 #include "VAudioWorld.h"
 #include "VAudioMaterialConversion.h"
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
 
 void UVAudioMaterialAssetBase::LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId)
 {
