@@ -163,6 +163,10 @@ void AVAudioEmitterBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Config issue (e.g. World not assigned)
+	if (!Emitter)
+		return;
+
 	FVector Pos = GetActorLocation();
 	vaEmitterSetPositionUnreal(Emitter, Pos);
 

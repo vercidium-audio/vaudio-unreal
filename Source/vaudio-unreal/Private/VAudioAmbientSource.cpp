@@ -1,15 +1,16 @@
 #include "VAudioAmbientSource.h"
 #include "VAudioWorld.h"
 #include "VAudioListener.h"
+#include "VARawLog.h"
+#include "VADebugMessageKeys.h"
+#include "VAConstants.h"
+
 #include "Kismet/GameplayStatics.h"
 
 extern "C" {
 #include "vaudio.h"
 }
 
-#include "VARawLog.h"
-#include "VADebugMessageKeys.h"
-#include "VAConstants.h"
 
 void AVAudioAmbientSource::DisplayWarning(const TCHAR* fmt, ...) const
 {
@@ -98,10 +99,6 @@ void AVAudioAmbientSource::ApplyAmbientFilter()
 		return;
 
 	VAEmitter* vaListener = Listener->GetVAEmitter();
-
-	// TODO - unsure how this could be null
-	if (!vaListener)
-		return;
 
 	// Warn the user that their listener does not have ambient rays
 	if (!vaEmitterGetAmbientOcclusionEnabled(vaListener) && !vaEmitterGetAmbientOcclusionEnabled(vaListener))

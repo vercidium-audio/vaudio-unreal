@@ -28,12 +28,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	USoundBase* SourceSound = nullptr;
 
-	// Whether the sound should loop
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
-	bool bLooping = true;
-
-	// --- Runtime access ---
-
 	void ApplySourceFilter(float GainLF, float GainHF);
 	void SetDryOutputEnabled(bool bEnabled);
 

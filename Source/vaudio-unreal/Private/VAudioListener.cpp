@@ -52,6 +52,12 @@ void AVAudioListener::InitializeTypeSpecific()
 			continue;
 		}
 
+		if (!Target->AudioWorld)
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned a World. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
+			continue;
+		}
+
 		// Actor init order isn't guaranteed so just initialise the emitter here
 		Target->TryInitializeEmitter();
 		VAEmitter* vaEmitter = Target->GetVAEmitter();
@@ -61,6 +67,10 @@ void AVAudioListener::InitializeTypeSpecific()
 		if (result == VA_FEATURE_DISABLED)
 		{
 			DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
+		}
+		else if (result == VA_NOT_ADDED_TO_WORLD)
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned a World. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
 		}
 
 		RegisteredTargets.Add(Target);

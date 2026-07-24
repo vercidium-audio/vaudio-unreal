@@ -27,6 +27,14 @@ void UVAudioMaterialAssetBase::ApplyToWorld(AVAudioWorld* Owner)
 	if (!GetMaterialId(Owner, MaterialId))
 		return;
 
+	// Custom materials (MaterialId >= 1000) don't exist in the SDK until we create them -
+	// built-in materials (UVAudioDefaultMaterialAsset) already exist, so skip this for those.
+	if (IsA<UVAudioCustomMaterialAsset>() && !vaWorldHasMaterial(World, MaterialId))
+	{
+		VAResult result = vaWorldCreateMaterial(World, MaterialId);
+		check(result == VA_SUCCESS);
+	}
+
 	vaWorldSetMaterialAbsorptionLF(World,        MaterialId, AbsorptionLF);
 	vaWorldSetMaterialAbsorptionHF(World,        MaterialId, AbsorptionHF);
 	vaWorldSetMaterialScattering(World,          MaterialId, Scattering);
