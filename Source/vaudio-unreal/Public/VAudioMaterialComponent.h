@@ -49,8 +49,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	AVAudioWorld* AudioWorld = nullptr;
 
-	// Optional - if set, overrides Material below with a UVAudioMaterialAsset or
-	// UVAudioCustomMaterialAsset from AudioWorld's Materials array.
+	// Optional - if set, overrides Material below with a UVAudioDefaultMaterialAsset or UVAudioCustomMaterialAsset from AudioWorld's Materials array.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	UVAudioMaterialAssetBase* MaterialAsset = nullptr;
 

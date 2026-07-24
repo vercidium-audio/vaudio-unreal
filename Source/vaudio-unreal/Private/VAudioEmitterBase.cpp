@@ -127,6 +127,42 @@ void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 }
 
+void AVAudioEmitterBase::ApplyRayPropertiesToEmitter()
+{
+	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
+	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
+	vaEmitterSetReverbEnergyCap(Emitter, ReverbEnergyCap);
+	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
+	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
+
+	vaEmitterSetOcclusionRayCount(Emitter, OcclusionRayCount);
+	vaEmitterSetOcclusionBounceCount(Emitter, OcclusionBounceCount);
+	vaEmitterSetOcclusionEnergyCap(Emitter, OcclusionEnergyCap);
+
+	vaEmitterSetPermeationRayCount(Emitter, PermeationRayCount);
+	vaEmitterSetPermeationBounceCount(Emitter, PermeationBounceCount);
+	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
+
+	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
+	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
+	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
+	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
+	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
+	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
+
+	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
+	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
+
+	vaEmitterSetVisualisationRayCount(Emitter, VisualisationRayCount);
+	vaEmitterSetVisualisationBounceCount(Emitter, VisualisationBounceCount);
+	vaEmitterSetVisualisationUpdateFrequency(Emitter, VisualisationUpdateFrequency);
+
+	vaEmitterSetType(Emitter, EmitterType);
+	vaEmitterSetClampPosition(Emitter, bClampPosition);
+	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
+	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
+}
+
 void AVAudioEmitterBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);

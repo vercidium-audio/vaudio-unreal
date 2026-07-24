@@ -309,25 +309,26 @@ void AVAudioWorld::Tick(float DeltaTime)
 					}
 
 					UAudioComponent* sourceAudioComponent = source ? source->SourceAudioComponent : nullptr;
+					FString typeString = source ? TEXT("Source") : TEXT("Continuous");
 
 					if (continuousEmitter->bAffectsGroupedEAX)
 					{
 						int32 groupedEAXIndex = vaEmitterGetGroupedEAXIndex(vaEmitter);
 						USoundSubmix* Submix = GetGroupedEAXSubmix(groupedEAXIndex);
 
-						FColor color = bInBounds && Submix != NULL && sourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
+						FColor color = bInBounds && Submix != NULL ? FColor::Green : FColor::Orange;
 
 						FString submixStatus = Submix ? Submix->GetName() : TEXT("null");
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [groupedEAXIndex=%d] [submix=%s]"), i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, groupedEAXIndex, *submixStatus));
+							FString::Printf(TEXT("[VA] %s Emitter %d '%s': (%.1f, %.1f, %.1f), %s [groupedEAXIndex=%d] [submix=%s]"), *typeString, i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, groupedEAXIndex, *submixStatus));
 					}
 					else
 					{
-						FColor color = bInBounds && sourceAudioComponent != NULL ? FColor::Green : FColor::Orange;
+						FColor color = bInBounds ? FColor::Green : FColor::Orange;
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-							FString::Printf(TEXT("[VA] Source Emitter %d '%s': (%.1f, %.1f, %.1f), %s [No EAX]"), i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
+							FString::Printf(TEXT("[VA] %s Emitter %d '%s': (%.1f, %.1f, %.1f), %s [No EAX]"), *typeString, i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
 					}
 				}
 			}
@@ -367,7 +368,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 				uint64 messageID = VAEmitterMessageBase + emitter->GetEmitterIndex() * VAEmitterMessageStride + VAEmitterSubmixStatus;
 				GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-					FString::Printf(TEXT("[VA] Submix '%s': gain=%.2f"), *emitter->GetActorNameOrLabel(), SendLevel));
+					FString::Printf(TEXT("[VA] Submix '%s': sendLevel=%.2f"), *emitter->GetActorNameOrLabel(), SendLevel));
 			}
 
 			// Per-target LPF applied by the main listener (mirrors the filter AVAudioListener::TickTypeSpecific()
@@ -444,7 +445,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 						}
 
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-							FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f wetLevel=%.2f gain=%.2f"), i, EAX->decayTime, EAX->returnedPercent, EAX->gain));
+							FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f gainLF=%.2f gainHF=%.2f"), i, EAX->decayTime, EAX->gainLF, EAX->gainHF));
 					}
 				}
 			}

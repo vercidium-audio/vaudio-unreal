@@ -18,38 +18,8 @@ AVAudioListener::AVAudioListener()
 
 void AVAudioListener::InitializeTypeSpecific()
 {
-	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
-	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
-	vaEmitterSetReverbEnergyCap(Emitter, ReverbEnergyCap);
-	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
-	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
+	ApplyRayPropertiesToEmitter();
 
-	vaEmitterSetOcclusionRayCount(Emitter, OcclusionRayCount);
-	vaEmitterSetOcclusionBounceCount(Emitter, OcclusionBounceCount);
-	vaEmitterSetOcclusionEnergyCap(Emitter, OcclusionEnergyCap);
-
-	vaEmitterSetPermeationRayCount(Emitter, PermeationRayCount);
-	vaEmitterSetPermeationBounceCount(Emitter, PermeationBounceCount);
-	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
-
-	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
-	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
-	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
-	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
-	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
-	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
-
-	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
-	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
-
-	vaEmitterSetVisualisationRayCount(Emitter, VisualisationRayCount);
-	vaEmitterSetVisualisationBounceCount(Emitter, VisualisationBounceCount);
-	vaEmitterSetVisualisationUpdateFrequency(Emitter, VisualisationUpdateFrequency);
-
-	vaEmitterSetType(Emitter, EmitterType);
-	vaEmitterSetClampPosition(Emitter, bClampPosition);
-	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
-	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
 	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
 	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
 
@@ -76,16 +46,20 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 
 			if (Target && Target->GetVAEmitter())
 			{
-				vaEmitterAddTarget(Emitter, Target->GetVAEmitter());
+				VAResult result = vaEmitterAddTarget(Emitter, Target->GetVAEmitter());
+
+				if (result == VA_FEATURE_DISABLED)
+				{
+					DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
+				}
+
 				RegisteredTargets.Add(Target);
 			}
 			else
 			{
-				// Target's BeginPlay/first Tick may not have run yet (actor init order
-				// isn't guaranteed). Don't latch bTargetsRegistered until every target
-				// has a VA emitter, otherwise stragglers are silently dropped forever.
+				// Target's BeginPlay/first Tick may not have run yet (actor init order isn't guaranteed).
+				// Keep retrying untill all are registered
 				bAllTargetsReady = false;
-				VALog(L"target '%s' has no VA emitter yet - will retry", Target ? *Target->GetActorNameOrLabel() : TEXT("null"));
 			}
 		}
 		bTargetsRegistered = bAllTargetsReady;
@@ -217,38 +191,8 @@ void AVAudioListener::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 	// editing properties on a placed actor in the editor (not PIE) hits this every time.
 	if (!Emitter) return;
 
-	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
-	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
-	vaEmitterSetReverbEnergyCap(Emitter, ReverbEnergyCap);
-	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
-	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
+	ApplyRayPropertiesToEmitter();
 
-	vaEmitterSetOcclusionRayCount(Emitter, OcclusionRayCount);
-	vaEmitterSetOcclusionBounceCount(Emitter, OcclusionBounceCount);
-	vaEmitterSetOcclusionEnergyCap(Emitter, OcclusionEnergyCap);
-
-	vaEmitterSetPermeationRayCount(Emitter, PermeationRayCount);
-	vaEmitterSetPermeationBounceCount(Emitter, PermeationBounceCount);
-	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
-
-	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
-	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
-
-	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
-	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
-	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
-	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
-	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
-	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
-
-	vaEmitterSetVisualisationRayCount(Emitter, VisualisationRayCount);
-	vaEmitterSetVisualisationBounceCount(Emitter, VisualisationBounceCount);
-	vaEmitterSetVisualisationUpdateFrequency(Emitter, VisualisationUpdateFrequency);
-
-	vaEmitterSetType(Emitter, EmitterType);
-	vaEmitterSetClampPosition(Emitter, bClampPosition);
-	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
-	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
 	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
 	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
 }

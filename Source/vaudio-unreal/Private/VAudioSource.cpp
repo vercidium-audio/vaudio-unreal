@@ -12,7 +12,7 @@ extern "C" {
 #include "VADebugMessageKeys.h"
 #include "VAConstants.h"
 
-const float LOW_PASS_RESONANCE = 0.707f; // Butterworth Q constant
+const float LOW_PASS_RESONANCE = 0.707f; // Butterworth Q constant - maximally flat passband, no resonant peak at the cutoff
 
 AVAudioSource::AVAudioSource()
 {
@@ -171,7 +171,7 @@ void AVAudioSource::ApplySourceFilter(float GainLF, float GainHF)
 	settings.FilterCircuit   = ESourceEffectFilterCircuit::StateVariable;
 	settings.FilterType      = ESourceEffectFilterType::LowPass;
 	settings.CutoffFrequency = FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, GainHF);
-	settings.FilterQ         = 0.707f; // Butterworth Q - maximally flat passband, no resonant peak at the cutoff
+	settings.FilterQ		 = LOW_PASS_RESONANCE;
 	SourceLPFPreset->SetSettings(settings);
 
 	SourceAudioComponent->SetVolumeMultiplier(GainLF);
