@@ -83,6 +83,14 @@ void AVAudioAmbientSource::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// HACK - need to fix the init order madness
+	// Bail if the listener failed to initialise
+	if (!AudioWorld->GetMainListener() || !AudioWorld->GetMainListener()->GetVAEmitter())
+	{
+		DisplayWarning(TEXT("[VA] AmbientSource '%s' will not play as the listener failed validation"), *GetActorNameOrLabel());
+		return;
+	}
+
 	VAEmitter* vaListener = AudioWorld->GetMainListener()->GetVAEmitter();
 	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(vaListener);
 

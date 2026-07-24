@@ -1,5 +1,6 @@
 #include "VAudioEmitterBase.h"
 #include "VAudioWorld.h"
+#include "VAudioListener.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -77,17 +78,29 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 		// Add the emitter to the world
 		VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
 
-		if (result == VA_ALREADY_EXISTS)
+		// HACK - if this is a listener, it should say VA_ALREADY_EXISTS because the listener initialises itself
+		if (AVAudioListener* listener = Cast<AVAudioListener>(this))
 		{
-			DisplayWarning(TEXT("[VA] '%s' was added to AudioWorld '%s' twice"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
-		}
-		else if (result == VA_WORLD_CONFLICT)
-		{
-			DisplayWarning(TEXT("[VA] '%s' cannot be added to AudioWorld '%s' as it is already added to another world"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+			check(result == VA_ALREADY_EXISTS);
+
+			AudioWorld->RegisterEmitter(this);
+			registered = true;
+			return true;
 		}
 		else
 		{
-			check(result == VA_SUCCESS);
+			if (result == VA_ALREADY_EXISTS)
+			{
+				DisplayWarning(TEXT("[VA] '%s' was added to AudioWorld '%s' twice"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+			}
+			else if (result == VA_WORLD_CONFLICT)
+			{
+				DisplayWarning(TEXT("[VA] '%s' cannot be added to AudioWorld '%s' as it is already added to another world"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+			}
+			else
+			{
+				check(result == VA_SUCCESS);
+			}
 		}
 
 		if (result == VA_SUCCESS)
@@ -132,6 +145,10 @@ void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AVAudioEmitterBase::Tick(float DeltaTime)
 {
+	// TODO - Source still calling Tick even if it failed validation above
+	if (!Emitter)
+		return;
+
 	check(Emitter);
 	check(AudioWorld);
 

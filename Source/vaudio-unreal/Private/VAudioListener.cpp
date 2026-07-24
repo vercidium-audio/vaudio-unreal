@@ -36,6 +36,12 @@ bool AVAudioListener::InitializeTypeSpecific()
 
 	TSet<AVAudioEmitterBase*> registeredTargets;
 
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+
+	// HACK - Must add ourselves to the world first, else the vaEmitterAddTarget validation below will fail
+	VAResult listenerResult = vaWorldAddEmitter(vaWorld, Emitter);
+	check(listenerResult == VA_SUCCESS);
+
 	// Add targets
 	for (int32 i = 0; i < TargetEmitters.Num(); i++)
 	{
@@ -45,6 +51,7 @@ bool AVAudioListener::InitializeTypeSpecific()
 		if (!target)
 		{
 			DisplayWarning(TEXT("[VA] Listener '%s' will not cast rays as it has a null target at index %d"), *GetActorNameOrLabel(), i);
+			vaWorldRemoveEmitter(vaWorld, Emitter);
 			return false;
 		}
 
@@ -83,6 +90,7 @@ bool AVAudioListener::InitializeTypeSpecific()
 		if (result == VA_FEATURE_DISABLED)
 		{
 			DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
+			vaWorldRemoveEmitter(vaWorld, Emitter);
 			return false;
 		}
 		else if (result == VA_NOT_ADDED_TO_WORLD)

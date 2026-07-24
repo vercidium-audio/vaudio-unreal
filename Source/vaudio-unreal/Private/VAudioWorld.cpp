@@ -447,7 +447,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 				VAEmitter* emitter = CurrentMainListener->GetVAEmitter();
 
-				if (vaEmitterGetAmbientOcclusionEnabled(emitter) || vaEmitterGetAmbientPermeationEnabled(emitter))
+				if (emitter && (vaEmitterGetAmbientOcclusionEnabled(emitter) || vaEmitterGetAmbientPermeationEnabled(emitter)))
 				{
 					// Wait for raytracing to complete at least once
 					if (VALowPassFilter* ambientFilter = vaEmitterGetAmbientFilter(emitter))

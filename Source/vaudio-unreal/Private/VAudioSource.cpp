@@ -88,6 +88,14 @@ void AVAudioSource::TickTypeSpecific(float DeltaTime)
 	check(AudioWorld);
 	check(Emitter);
 
+	// HACK - need to fix the init order madness
+	// Bail if the listener failed to initialise
+	if (!AudioWorld->GetMainListener() || !AudioWorld->GetMainListener()->GetVAEmitter())
+	{
+		DisplayWarning(TEXT("[VA] Source '%s' will not play as the listener failed validation"), *GetActorNameOrLabel());
+		return;
+	}
+
 	Super::TickTypeSpecific(DeltaTime);
 
 	if (bSourcePendingSpawn)
