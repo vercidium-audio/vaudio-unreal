@@ -17,6 +17,41 @@ AVAudioListener::AVAudioListener()
 {
 }
 
+bool AVAudioListener::ValidateConfig()
+{
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+
+	bool occlusionEnabled = OcclusionRayCount > 0 && OcclusionBounceCount > 0;
+	bool permeationEnabled = PermeationRayCount > 0 && PermeationBounceCount > 0;
+
+	if (!occlusionEnabled && !permeationEnabled)
+		if (TargetEmitters.Num() > 0)
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
+			return false;
+		}
+
+	// Check for null targets
+	TSet<AVAudioEmitterBase*> registeredTargets;
+
+	for (int32 i = 0; i < TargetEmitters.Num(); i++)
+	{
+		AVAudioEmitterBase* target = TargetEmitters[i];
+
+		// Fail validation if the user added a null target
+		if (!target)
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' will not cast rays as it has a null target at index %d"), *GetActorNameOrLabel(), i);
+			vaWorldRemoveEmitter(vaWorld, Emitter);
+			return false;
+		}
+
+		registeredTargets.Add(target);
+	}
+
+	return true;
+}
+
 bool AVAudioListener::InitializeTypeSpecific()
 {
 	// Set ray counts and other settings
@@ -47,12 +82,11 @@ bool AVAudioListener::InitializeTypeSpecific()
 	{
 		AVAudioEmitterBase* target = TargetEmitters[i];
 
-		// Fail validation if the user added a null target
 		if (!target)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' will not cast rays as it has a null target at index %d"), *GetActorNameOrLabel(), i);
-			vaWorldRemoveEmitter(vaWorld, Emitter);
-			return false;
+			// ValidateConfig() should've caught null targets
+			check(false);
+			continue;
 		}
 
 		if (registeredTargets.Contains(target))
@@ -87,23 +121,17 @@ bool AVAudioListener::InitializeTypeSpecific()
 
 		VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());
 
+		check(result == VA_SUCCESS);
+
 		if (result == VA_FEATURE_DISABLED)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
-			vaWorldRemoveEmitter(vaWorld, Emitter);
+			// ValidateConfig() above should've caught this
 			return false;
 		}
 		else if (result == VA_NOT_ADDED_TO_WORLD)
 		{
 			// The target->AudioWorld check above should have caught this already
-			check(false);
-
-			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that is assigned to a different world: '%s'. This target will not be raytraced"), *GetActorNameOrLabel(), *target->GetActorNameOrLabel(), *target->AudioWorld->GetActorNameOrLabel());
-			continue;
-		}
-		else
-		{
-			check(result == VA_SUCCESS);
+			return false;
 		}
 
 		registeredTargets.Add(target);

@@ -18,6 +18,7 @@ public:
 	AVAudioListener();
 
 protected:
+	virtual bool ValidateConfig() override;
 	virtual bool InitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 	virtual void UpdateVAEmitter() override;
