@@ -552,8 +552,30 @@ void AVAudioWorld::UnregisterEmitter(AVAudioEmitterBase* Emitter)
 		MainListener = nullptr;
 }
 
-AVAudioListener* AVAudioWorld::GetMainListener() const
+AVAudioListener* AVAudioWorld::GetMainListener()
 {
+	if (MainListener.IsValid())
+		return MainListener.Get();
+
+	// Not registered yet - this happens when the AVAudioListener is a child actor of something
+	// whose own BeginPlay (and therefore the listener's) hasn't run yet (actor BeginPlay order
+	// isn't guaranteed - see TryInitializeEmitter()). Find it in the level and force it to
+	// initialise now, same as AVAudioListener::InitializeTypeSpecific() does for its targets.
+	UWorld* UEWorld = GetWorld();
+	if (!UEWorld)
+		return nullptr;
+
+	for (TActorIterator<AVAudioListener> ActorIt(UEWorld); ActorIt; ++ActorIt)
+	{
+		AVAudioListener* Listener = *ActorIt;
+
+		if (Listener->AudioWorld != this)
+			continue;
+
+		Listener->TryInitializeEmitter();
+		break;
+	}
+
 	return MainListener.Get();
 }
 

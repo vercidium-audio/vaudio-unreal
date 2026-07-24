@@ -29,23 +29,43 @@ void AVAudioAmbientSource::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Disable the actor if validation fails
 	if (!AudioWorld)
 	{
-		DisplayWarning(TEXT("[VA] AmbientSource '%s' does not have an AudioWorld assigned and will not play"), *GetActorNameOrLabel());
+		DisplayWarning(TEXT("[VA] AmbientSource '%s' will not play as it does not have an AudioWorld assigned"), *GetActorNameOrLabel());
+		SetActorTickEnabled(false);
 		return;
 	}
 
 	if (!SourceSound)
 	{
-		DisplayWarning(TEXT("[VA] AmbientSource '%s' does not have a sound file assigned and will not play"), *GetActorNameOrLabel());
+		DisplayWarning(TEXT("[VA] AmbientSource '%s' will not play as it does not have a sound file assigned"), *GetActorNameOrLabel());
+		SetActorTickEnabled(false);
 		return;
 	}
 
-	// If VirtualisationMode is not 'Play When Silent', and the sound starts with 0 LF gain, it won't play when LF gain increases later
+	AVAudioListener* listener = AudioWorld->GetMainListener();
+
+	if (!listener)
+	{
+		DisplayWarning(TEXT("[VA] AmbientSource '%s' will not play as the AudioWorld does not have a listener"), *GetActorNameOrLabel());
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	// Warnings
 	if (!SourceSound->IsPlayWhenSilent())
 	{
 		DisplayWarning(TEXT("[VA] AmbientSource '%s': SourceSound '%s' must have Virtualization Mode set to 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *SourceSound->GetName());
-		return;
+	}
+
+	bool occlusionEnabled = listener->AmbientOcclusionRayCount > 0 && listener->AmbientOcclusionBounceCount > 0;
+	bool permeationEnabled = listener->AmbientPermeationRayCount > 0 && listener->AmbientPermeationBounceCount > 0;
+
+	// Warn the user that their listener does not have ambient rays
+	if (!occlusionEnabled && !permeationEnabled)
+	{
+		DisplayWarning(TEXT("[VA] AmbientSource '%s' will not be muffled as the listener does not cast ambient occlusion or ambient permeation rays"), *GetActorNameOrLabel());
 	}
 }
 
@@ -57,6 +77,30 @@ void AVAudioAmbientSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		SourceAudioComponent->Stop();
 		SourceAudioComponent = nullptr;
+	}
+}
+
+void AVAudioAmbientSource::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	VAEmitter* vaListener = AudioWorld->GetMainListener()->GetVAEmitter();
+	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(vaListener);
+
+	// Raytracing has not completed yet - don't play the sound
+	if (!AmbientFilter)
+		return;
+
+	if (!SourceAudioComponent)
+	{
+		// Play the sound
+		TrySpawnSourceSound(AmbientFilter);
+	}
+	else
+	{
+		// Update the low pass filter
+		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, AmbientFilter->gainHF));
+		SourceAudioComponent->SetVolumeMultiplier(AmbientFilter->gainLF);
 	}
 }
 
@@ -74,51 +118,6 @@ void AVAudioAmbientSource::TrySpawnSourceSound(const VALowPassFilter* AmbientFil
 	}
 	else
 	{
-		// TODO - why could SourceAudioComponent be null?
-		VALog(L"Failed to play sound");
-	}
-}
-
-void AVAudioAmbientSource::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
-	ApplyAmbientFilter();
-}
-
-void AVAudioAmbientSource::ApplyAmbientFilter()
-{
-	// Not configured correctly - do not play
-	if (!AudioWorld || !SourceSound)
-		return;
-
-	AVAudioListener* Listener = AudioWorld->GetMainListener();
-
-	// User did not add a VAudioListener actor to this world
-	if (!Listener)
-		return;
-
-	VAEmitter* vaListener = Listener->GetVAEmitter();
-
-	// Warn the user that their listener does not have ambient rays
-	if (!vaEmitterGetAmbientOcclusionEnabled(vaListener) && !vaEmitterGetAmbientOcclusionEnabled(vaListener))
-	{
-		DisplayDebugWarning(VAListenerNoAmbientRaysMessage, TEXT("[VA] AmbientSource '%s' will not be muffled as the listener does not cast ambient occlusion or ambient permeation rays"), *GetActorNameOrLabel());
-	}
-
-	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(vaListener);
-
-	// Raytracing has not completed yet - don't play the sound
-	if (!AmbientFilter)
-		return;
-
-	if (!SourceAudioComponent)
-	{
-		TrySpawnSourceSound(AmbientFilter);
-	}
-	else
-	{
-		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, AmbientFilter->gainHF));
-		SourceAudioComponent->SetVolumeMultiplier(AmbientFilter->gainLF);
+		DisplayWarning(TEXT("[VA] AmbientSource '%s' play failed. Check if this actor was correctly spawned, or if the Unreal World does not allow audio playback"), *GetActorNameOrLabel());
 	}
 }

@@ -36,7 +36,7 @@ void AVAudioEmitterBase::BeginPlay()
 	// Display a warning if the user forgot to set the AudioWorld
 	if (!AudioWorld)
 	{
-		DisplayWarning(TEXT("[VA] Emitter '%s' does not have an AudioWorld assigned and will not play"), *GetActorNameOrLabel());
+		DisplayWarning(TEXT("[VA] Emitter '%s' does not have an AudioWorld assigned and will not cast rays or play sound"), *GetActorNameOrLabel());
 		return;
 	}
 

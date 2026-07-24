@@ -52,9 +52,9 @@ void AVAudioListener::InitializeTypeSpecific()
 			continue;
 		}
 
-		if (!Target->AudioWorld)
+		if (Target->AudioWorld != AudioWorld)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned a World. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned to the same World as this listener. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
 			continue;
 		}
 
@@ -70,7 +70,11 @@ void AVAudioListener::InitializeTypeSpecific()
 		}
 		else if (result == VA_NOT_ADDED_TO_WORLD)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned a World. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned to the same World as this listener. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
+		}
+		else
+		{
+			check(result == VA_SUCCESS);
 		}
 
 		RegisteredTargets.Add(Target);

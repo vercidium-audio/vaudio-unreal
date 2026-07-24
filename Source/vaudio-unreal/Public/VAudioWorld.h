@@ -250,8 +250,10 @@ public:
 	void UnregisterEmitter(AVAudioEmitterBase* Emitter);
 
 	// Returns the first registered AVAudioListener ("first one wins", warns on duplicates - see
-	// RegisterEmitter()).
-	AVAudioListener* GetMainListener() const;
+	// RegisterEmitter()). If none is registered yet - e.g. the listener is a child actor of
+	// something whose BeginPlay hasn't run yet, so the listener's own BeginPlay hasn't either -
+	// finds it in the level and force-initialises it before returning (see TryInitializeEmitter()).
+	AVAudioListener* GetMainListener();
 
 private:
 	VAWorld* World = nullptr;
