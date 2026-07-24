@@ -18,9 +18,9 @@ AVAudioSource::AVAudioSource()
 {
 }
 
-bool AVAudioSource::InitializeTypeSpecific()
+bool AVAudioSource::ValidateConfig()
 {
-	Super::InitializeTypeSpecific();
+	Super::ValidateConfig();
 
 	if (!SourceSound)
 	{
@@ -35,6 +35,19 @@ bool AVAudioSource::InitializeTypeSpecific()
 		DisplayWarning(TEXT("[VA] Source '%s' will not play as the AudioWorld does not have a listener"), *GetActorNameOrLabel());
 		return false;
 	}
+
+	return true;
+}
+
+void AVAudioSource::InitializeTypeSpecific()
+{
+	Super::InitializeTypeSpecific();
+
+	AVAudioListener* listener = AudioWorld->GetMainListener();
+
+	// Already validated by ValidateConfig() above
+	check(SourceSound);
+	check(listener);
 
 	if (!SourceSound->IsPlayWhenSilent())
 	{
@@ -66,8 +79,6 @@ bool AVAudioSource::InitializeTypeSpecific()
 	// this emitter at least once - otherwise the sound starts clear (LPF fully open) and pops
 	// to muffled a few frames later once the first real filter result arrives.
 	bSourcePendingSpawn = true;
-
-	return true;
 }
 
 void AVAudioSource::DeinitializeTypeSpecific()

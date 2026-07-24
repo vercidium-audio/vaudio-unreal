@@ -52,7 +52,7 @@ bool AVAudioListener::ValidateConfig()
 	return true;
 }
 
-bool AVAudioListener::InitializeTypeSpecific()
+void AVAudioListener::InitializeTypeSpecific()
 {
 	// Set ray counts and other settings
 	UpdateVAEmitter();
@@ -72,10 +72,6 @@ bool AVAudioListener::InitializeTypeSpecific()
 	TSet<AVAudioEmitterBase*> registeredTargets;
 
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
-
-	// HACK - Must add ourselves to the world first, else the vaEmitterAddTarget validation below will fail
-	VAResult listenerResult = vaWorldAddEmitter(vaWorld, Emitter);
-	check(listenerResult == VA_SUCCESS);
 
 	// Add targets
 	for (int32 i = 0; i < TargetEmitters.Num(); i++)
@@ -126,18 +122,16 @@ bool AVAudioListener::InitializeTypeSpecific()
 		if (result == VA_FEATURE_DISABLED)
 		{
 			// ValidateConfig() above should've caught this
-			return false;
+			continue;
 		}
 		else if (result == VA_NOT_ADDED_TO_WORLD)
 		{
 			// The target->AudioWorld check above should have caught this already
-			return false;
+			continue;
 		}
 
 		registeredTargets.Add(target);
 	}
-
-	return true;
 }
 
 void AVAudioListener::TickTypeSpecific(float DeltaTime)
@@ -153,8 +147,9 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 		if (cameraManager && cameraManager->GetCameraCacheTime() > 0.0f)
 		{
 			FVector CamPos = cameraManager->GetCameraLocation();
+			FRotator CamRot = cameraManager->GetCameraRotation();
 			vaEmitterSetPositionUnreal(Emitter, CamPos);
-			SetActorLocation(CamPos);
+			SetActorLocationAndRotation(CamPos, CamRot);
 		}
 	}
 

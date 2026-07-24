@@ -67,6 +67,16 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 	AudioWorld->InitializeVAWorld();
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 
+	bool configPass = ValidateConfig();
+
+	if (!configPass)
+	{
+		// Failed validation, disable this actor
+		SetActorTickEnabled(false);
+
+		failedInitialisation = true;
+		return false;
+	}
 
 	// Create the emitter
 	Emitter = vaEmitterCreate();
@@ -74,58 +84,26 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 	vaEmitterSetLogErrorCallback(Emitter, &VASdkLogCallback);
 	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
 
+	// Add the emitter to the world
+	VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
 
-	// Initialise the specific emitter type (Source, Continuous, etc)
-	bool pass = InitializeTypeSpecific();
+	check(result == VA_SUCCESS);
 
-	if (pass)
+	if (result == VA_ALREADY_EXISTS)
 	{
-		// Add the emitter to the world
-		VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
-
-		// HACK - if this is a listener, it should say VA_ALREADY_EXISTS because the listener initialises itself
-		if (AVAudioListener* listener = Cast<AVAudioListener>(this))
-		{
-			check(result == VA_ALREADY_EXISTS);
-
-			AudioWorld->RegisterEmitter(this);
-			registered = true;
-			return true;
-		}
-		else
-		{
-			if (result == VA_ALREADY_EXISTS)
-			{
-				DisplayWarning(TEXT("[VA] '%s' was added to AudioWorld '%s' twice"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
-			}
-			else if (result == VA_WORLD_CONFLICT)
-			{
-				DisplayWarning(TEXT("[VA] '%s' cannot be added to AudioWorld '%s' as it is already added to another world"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
-			}
-			else
-			{
-				check(result == VA_SUCCESS);
-			}
-		}
-
-		if (result == VA_SUCCESS)
-		{
-			AudioWorld->RegisterEmitter(this);
-			registered = true;
-			return true;
-		}
+		DisplayWarning(TEXT("[VA] '%s' was added to AudioWorld '%s' twice"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+	}
+	else if (result == VA_WORLD_CONFLICT)
+	{
+		DisplayWarning(TEXT("[VA] '%s' cannot be added to AudioWorld '%s' as it is already added to another world"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
 	}
 
-	// Failed validation, disable this actor
-	SetActorTickEnabled(false);
+	// Initialise the specific emitter type (e.g. Listener adds targets, Source, Continuous, etc)
+	InitializeTypeSpecific();
 
-	// The listener calls this function when iterating its targets, so ensure we set everything here
-	vaEmitterDestroy(Emitter);
-	Emitter = nullptr;
-	failedInitialisation = true;
-
-	return false;
-
+	AudioWorld->RegisterEmitter(this);
+	registered = true;
+	return true;
 }
 
 void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)

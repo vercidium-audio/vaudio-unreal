@@ -142,12 +142,12 @@ public:
 	int32 ScatteringSeed = 0;
 
 protected:
-	virtual bool ValidateConfig() { return false; }
+	virtual bool ValidateConfig() { return true; }
 
 	// Called once per subclass after the base VAEmitter* is created and added to the vaWorld,
 	// but before AudioWorld->RegisterEmitter(). Subclasses build their own audio components/
 	// submix presets here and apply their own vaEmitterSet* calls.
-	virtual bool InitializeTypeSpecific() { return false; }
+	virtual void InitializeTypeSpecific() { }
 
 	// Called from EndPlay before the VAEmitter* is destroyed and removed from the vaWorld.
 	// Subclasses tear down their own audio components/presets here.

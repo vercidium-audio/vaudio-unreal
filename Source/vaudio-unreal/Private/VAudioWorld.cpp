@@ -1,4 +1,5 @@
 #include "VAudioWorld.h"
+#include "VAudioSubmixEffectDirectionalPan.h"
 #include "VAudioEmitterBase.h"
 #include "VAudioSource.h"
 #include "VAudioContinuous.h"
@@ -178,13 +179,21 @@ void AVAudioWorld::InitializeVAWorld()
 	{
 		USoundSubmix* Sub = GroupedEAXSubmixes[i];
 		USubmixEffectReverbPreset* Preset = NewObject<USubmixEffectReverbPreset>(this);
+		USubmixEffectDirectionalPanPreset* PanPreset = NewObject<USubmixEffectDirectionalPanPreset>(this);
 
 		if (Sub)
+		{
+			// Pan effect must be added after the reverb preset so it operates on the wet reverb
+			// output rather than dry input - see directional_reverb_plan.md's "Effect chain
+			// insertion API" note.
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, Preset);
+			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, PanPreset);
+		}
 		else
 			DisplayDebugWarning(VANullGroupedEAXMessage, TEXT("[VA] World '%s' has a null grouped EAX submix at index %d. Please assign a submix"), *GetActorNameOrLabel(), i);
 
 		GroupedEAXPresets.Add(Preset);
+		GroupedEAXPanPresets.Add(PanPreset);
 	}
 
 	ApplyMaterials();
@@ -200,6 +209,9 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 	const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
 	int32 Count = vaWorldGetGroupedEAXCount(World);
 
+	AVAudioListener* Listener = GetMainListener();
+	VAEmitter* ListenerVA = Listener ? Listener->GetVAEmitter() : nullptr;
+
 	for (int32 i = 0; i < Count; ++i)
 	{
 		USubmixEffectReverbPreset* Preset = GetGroupedEAXPreset(i);
@@ -212,6 +224,26 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 
 		FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
 		Preset->SetSettings(settings);
+
+		// Direction == nullptr means "no entry for this emitter" (vaudio.h:384) - e.g. the listener
+		// hasn't been raytraced against this zone yet, or lacks hasRelativeReverb. Leave pan holding
+		// its last value rather than forcing it to 0 every such tick.
+		if (ListenerVA)
+		{
+			VAVector* Direction = vaEAXReverbGetRelativeDirection(EAX, ListenerVA);
+
+			if (Direction)
+			{
+				FVector directionUnreal(Direction->x, Direction->y, Direction->z);
+
+				// Magnitude IS strength (OpenAL Soft EAX style) - do not normalize.
+				float pan = FVector::DotProduct(directionUnreal, Listener->GetActorRightVector());
+				pan = FMath::Clamp(pan, -1.0f, 1.0f);
+
+				if (USubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr)
+					PanPreset->SetPan(pan);
+			}
+		}
 	}
 }
 
@@ -222,6 +254,7 @@ void AVAudioWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	RunningWorlds.RemoveSingleSwap(this);
 
 	GroupedEAXPresets.Empty();
+	GroupedEAXPanPresets.Empty();
 
 	if (World)
 	{
@@ -422,8 +455,11 @@ void AVAudioWorld::Tick(float DeltaTime)
 							continue;
 						}
 
+						USubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr;
+						float pan = PanPreset ? PanPreset->GetSettings().Pan : 0.0f;
+
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-							FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f gainLF=%.2f gainHF=%.2f"), i, EAX->decayTime, EAX->gainLF, EAX->gainHF));
+							FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f gainLF=%.2f gainHF=%.2f pan=%.2f"), i, EAX->decayTime, EAX->gainLF, EAX->gainHF, pan));
 					}
 				}
 			}

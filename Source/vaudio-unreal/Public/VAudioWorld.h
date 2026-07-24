@@ -16,6 +16,7 @@ struct VAPrismPrimitive;
 class AVAudioEmitterBase;
 class AVAudioListener;
 class UVAudioMaterialAssetBase;
+class USubmixEffectDirectionalPanPreset;
 
 // Plain UBoxComponent, except its BoxExtent always shows greyed-out in the details panel.
 // AVAudioWorld's WorldBounds is a read-only visualisation re-derived from WorldPosition/WorldSize
@@ -298,6 +299,12 @@ private:
 	// saving these as real exports corrupts the package (they don't round-trip through a reload).
 	UPROPERTY(Transient)
 	TArray<USubmixEffectReverbPreset*> GroupedEAXPresets;
+
+	// Parallel to GroupedEAXPresets, one per grouped-EAX zone - added after the reverb preset in
+	// each submix's effect chain so it pans the wet reverb tail rather than dry input. Same
+	// Transient treatment/reasoning as GroupedEAXPresets above.
+	UPROPERTY(Transient)
+	TArray<USubmixEffectDirectionalPanPreset*> GroupedEAXPanPresets;
 
 	TArray<VAMeshPrimitive*>    MeshPrimitives;
 	TArray<VACapsulePrimitive*> CapsulePrimitives;

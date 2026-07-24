@@ -11,7 +11,7 @@ AVAudioContinuous::AVAudioContinuous()
 {
 }
 
-bool AVAudioContinuous::InitializeTypeSpecific()
+void AVAudioContinuous::InitializeTypeSpecific()
 {
 	if (bAffectsGroupedEAX && (ReverbRayCount == 0 || ReverbBounceCount == 0))
 	{
@@ -23,8 +23,6 @@ bool AVAudioContinuous::InitializeTypeSpecific()
 	vaEmitterSetMaxVolume(Emitter, MaxVolume);
 	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
 	vaEmitterSetHasRelativeReverb(Emitter, false);
-
-	return true;
 }
 
 void AVAudioContinuous::DeinitializeTypeSpecific()
