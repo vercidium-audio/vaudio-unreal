@@ -331,7 +331,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 					FColor color = bInBounds ? FColor::Green : FColor::Orange;
 
 					GEngine->AddOnScreenDebugMessage(messageID, 0.0f, color,
-						FString::Printf(TEXT("[VA] Main Listener Emitter %d '%s': (%.1f, %.1f, %.1f) %s"), i, *listener->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
+						FString::Printf(TEXT("[VA] Listener Emitter %d '%s': (%.1f, %.1f, %.1f) %s"), i, *listener->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
 				}
 				else
 				{

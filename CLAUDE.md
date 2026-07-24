@@ -3,10 +3,31 @@
 ~\vaudiofps2\ThirdParty\vaudio\include\vaudio.h is the public header for Vercidium Audio.
 
 Coding guidelines:
-- Don't write "if (!something) return;" with no reasoning why 'something' could be null. Rather than letting null checks permeate the codebase, fix them early. If it genuinely can be null, leave a comment explaining why
 - Use DisplayWarning() to surface errors to the user on the screen. I used to use VALog() instead
 - Use camelCase for variable names
 - Don't use single capitalised acronyms for variable names - use position instead of P, vaWorld instead of VAW, etc.
+
+## Actor Initialisation
+
+If an actor has invalid configuration, disable it with `SetActorTickEnabled(false)`, rather than letting `if (!AudioWorld)` or `if (!Emitter)` checks pollute the rest of the code, e.g. in `VAudioRelativeSource.cpp`:
+
+```cpp
+void AVAudioRelativeSource::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Disable the actor if validation fails
+	if (SourceSounds.Num() == 0)
+	{
+		DisplayWarning(TEXT("[VA] RelativeSource '%s' has no SourceSounds and will not play sound"), *GetActorNameOrLabel());
+		SetActorTickEnabled(false);
+		return;
+	}
+}
+```
+
+
+## VAResult Handling
 
 When a va* function returns a VAResult, ensure all options are handled, e.g. in `VAudioListener.cpp`:
 

@@ -33,14 +33,31 @@ void AVAudioRelativeSource::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Disable the actor if validation fails
 	if (SourceSounds.Num() == 0)
 	{
-		DisplayWarning(TEXT("[VA] RelativeSource '%s' has no SourceSounds and will play nothing"), *GetActorNameOrLabel());
+		DisplayWarning(TEXT("[VA] RelativeSource '%s' has no SourceSounds and will not play sound"), *GetActorNameOrLabel());
+		SetActorTickEnabled(false);
 		return;
 	}
 
 	ListenerEmitter = Cast<AVAudioListener>(ReverbSource);
 	ContinuousEmitter = Cast<AVAudioContinuous>(ReverbSource);
+
+	if (ListenerEmitter)
+	{
+		if (!ListenerEmitter->GetVAEmitter())
+		{
+			DisplayWarning(TEXT("[VA] RelativeSource '%s' will not play as its listener '%s' is not assigned to an AudioWorld"), *GetActorNameOrLabel(), *ListenerEmitter->GetActorNameOrLabel());
+			SetActorTickEnabled(false);
+			return;
+		}
+
+		if (!ListenerEmitter->ListenerReverbSubmix)
+		{
+			DisplayWarning(TEXT("[VA] RelativeSource '%s' will have no reverb as the Listener has no reverb submix"), *GetActorNameOrLabel());
+		}
+	}
 
 	for (int32 i = 0; i < SourceSounds.Num(); i++)
 	{
@@ -48,8 +65,9 @@ void AVAudioRelativeSource::BeginPlay()
 
 		if (!sound)
 		{
-			DisplayWarning(TEXT("[VA] RelativeSource '%s': SourceSounds has an invalid sound assigned to index %d"), *GetActorNameOrLabel(), i);
-			break;
+			DisplayWarning(TEXT("[VA] RelativeSource '%s' will not play as it has a null sound assigned to index %d"), *GetActorNameOrLabel(), i);
+			SetActorTickEnabled(false);
+			return;
 		}
 
 		if (!sound->IsPlayWhenSilent())
@@ -72,12 +90,9 @@ void AVAudioRelativeSource::BeginPlay()
 
 	if (bAttachToSelf && !GetRootComponent())
 	{
-		DisplayWarning(TEXT("[VA] RelativeSource '%s' has Attach To Self = true, but has no root component. Assign this RelativeSource to an actor"), *GetActorNameOrLabel());
-	}
-
-	if (ListenerEmitter && !ListenerEmitter->ListenerReverbSubmix)
-	{
-		DisplayWarning(TEXT("[VA] RelativeSource '%s' will have no reverb as the Listener has no reverb submix"), *GetActorNameOrLabel());
+		DisplayWarning(TEXT("[VA] RelativeSource '%s' will not play as it has AttachToSelf = true, but has no root component. Assign this RelativeSource to an actor"), *GetActorNameOrLabel());
+		SetActorTickEnabled(false);
+		return;
 	}
 
 	// If attached to a ContinuousEmitter, the low pass filter must be primed from that emitter's
@@ -109,17 +124,18 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 	{
 		vaLowPassFilter = ContinuousEmitter->GetMufflingResult();
 
+		// Wait for raytracing to complete
 		if (!vaLowPassFilter)
 			return;
+	}
+	else
+	{
+		// TODO - wait for listener to raytrace once and have valid EAX?
 	}
 
 	bSourcePendingSpawn = false;
 
 	USoundBase* ChosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
-
-	// User assigned an invalid sound to the array. This is already logged above in BeginPlay()
-	if (!ChosenSound)
-		return;
 
 	// Build the component without starting playback, so the low pass filter can be configured before Play()
 	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
@@ -127,9 +143,6 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 	// TODO - rename 'Self' to something that makes more sense
 	if (bAttachToSelf)
 	{
-		if (!GetRootComponent())
-			return;
-
 		Params.SetLocation(GetRootComponent()->GetComponentLocation());
 	}
 
@@ -153,7 +166,7 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 	}
 	else
 	{
-		// TODO - why did it fail to play a sound? We've already checked the sounds in BeginPlay() above. Any other config we didn't check?
+		DisplayWarning(TEXT("[VA] RelativeSource '%s' play failed. Check if this actor was correctly spawned, or if the Unreal World does not allow audio playback"), *GetActorNameOrLabel());
 	}
 }
 
@@ -169,16 +182,9 @@ void AVAudioRelativeSource::ApplyReverbSource()
 	if (bSourcePendingSpawn)
 		TrySpawnSourceSound();
 
-	if (!SourceAudioComponent)
-		return;
-
 	if (ListenerEmitter)
 	{
 		VAEmitter* vaEmitter = ListenerEmitter->GetVAEmitter();
-
-		// This is null if the listener was not assigned a World
-		if (!vaEmitter)
-			return;
 
 		// Already logged above if ListenerReverbSubmix is null
 		if (ListenerEmitter->ListenerReverbSubmix)
