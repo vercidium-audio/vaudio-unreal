@@ -8,12 +8,13 @@
 struct VAWorld;
 class AVAudioWorld;
 
-// Shared base for VA Audio Material assets, assigned to an AVAudioWorld's Materials array
-// (Content Browser asset, not a level actor). Changes to properties in the editor are applied
-// immediately to any running world that references this asset.
-// Two concrete kinds:
-// - UVAudioMaterialAsset: overrides one of the 23 built-in materials.
-// - UVAudioCustomMaterialAsset: defines a brand new material with an SDK-assigned ID.
+// Shared base class for VA Audio Material assets, assigned to an AVAudioWorld's Materials array as an asset, not a level actor.
+// 
+// Changes to properties in the editor are applied immediately to any running world that references this asset.
+// 
+// Two kinds:
+// - UVAudioDefaultMaterialAsset: overrides one of the 23 built-in materials
+// - UVAudioCustomMaterialAsset: defines a brand new material
 UCLASS(Abstract, BlueprintType)
 class VAUDIOUNREAL_API UVAudioMaterialAssetBase : public UDataAsset
 {
@@ -52,9 +53,6 @@ public:
 	// Returns false (logs why) if the ID can't be resolved.
 	virtual bool GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId) PURE_VIRTUAL(UVAudioMaterialAssetBase::GetMaterialId, return false;);
 
-	// Display name for logging (built-in material name, or the custom material's name).
-	virtual FString GetMaterialDisplayName() const PURE_VIRTUAL(UVAudioMaterialAssetBase::GetMaterialDisplayName, return FString(););
-
 	// Pushes this asset's current property values into Owner's VA world. Owner must be the
 	// AVAudioWorld whose Materials array contains this asset (needed to resolve/assign the
 	// material ID - see GetMaterialId()).
@@ -76,7 +74,7 @@ protected:
 // Overrides one of the 23 built-in materials (e.g. "Concrete", "Metal") - pick from
 // MaterialType's dropdown, then override individual properties as needed.
 UCLASS(BlueprintType, DisplayName = "VA Default Material")
-class VAUDIOUNREAL_API UVAudioMaterialAsset : public UVAudioMaterialAssetBase
+class VAUDIOUNREAL_API UVAudioDefaultMaterialAsset : public UVAudioMaterialAssetBase
 {
 	GENERATED_BODY()
 
@@ -86,7 +84,6 @@ public:
 	EVAudioMaterial MaterialType = EVAudioMaterial::Concrete;
 
 	virtual bool GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId) override;
-	virtual FString GetMaterialDisplayName() const override;
 
 	// Reads defaults from the SDK for MaterialType and applies them to this asset's properties.
 	// Call this from the editor to reset to built-in defaults.
@@ -96,30 +93,21 @@ public:
 
 // Defines a brand new custom material (not one of the 23 built-ins), with an SDK-assigned ID
 // (>= 1000, auto-assigned - unique among the other custom materials in the same AVAudioWorld's
-// Materials array). Assign a MaterialName to identify it, then assign this asset to a
-// UVAudioMaterialComponent's MaterialAsset field to use it on geometry.
+// Materials array). Assign this asset to a UVAudioMaterialComponent's MaterialAsset field to use it on geometry.
 UCLASS(BlueprintType, DisplayName = "VA Custom Material")
 class VAUDIOUNREAL_API UVAudioCustomMaterialAsset : public UVAudioMaterialAssetBase
 {
 	GENERATED_BODY()
 
 public:
-	// Free-form name identifying this custom material. Must be unique among the other custom
-	// materials in the same AVAudioWorld's Materials array.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
-	FString MaterialName;
-
 	virtual bool GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId) override;
-	virtual FString GetMaterialDisplayName() const override { return MaterialName; }
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
 private:
-	// Custom material ID (>= 1000), lazily assigned by GetMaterialId() the first time this asset
-	// is applied. 0 means "not yet assigned". Not user-editable - IDs are an implementation
-	// detail, materials are identified by MaterialName in the editor.
+	// Custom material ID (>= 1000), lazily assigned by GetMaterialId() the first time this asset is applied. 0 means "not yet assigned".
 	UPROPERTY()
 	int32 CustomMaterialId = 0;
 };

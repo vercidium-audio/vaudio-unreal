@@ -2,7 +2,7 @@
 #include "VAudioWorld.h"
 #include "VAudioMaterialConversion.h"
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
 
 void UVAudioMaterialAssetBase::LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId)
 {
@@ -27,6 +27,14 @@ void UVAudioMaterialAssetBase::ApplyToWorld(AVAudioWorld* Owner)
 	if (!GetMaterialId(Owner, MaterialId))
 		return;
 
+	// Custom materials (MaterialId >= 1000) don't exist in the SDK until we create them -
+	// built-in materials (UVAudioDefaultMaterialAsset) already exist, so skip this for those.
+	if (IsA<UVAudioCustomMaterialAsset>() && !vaWorldHasMaterial(World, MaterialId))
+	{
+		VAResult result = vaWorldCreateMaterial(World, MaterialId);
+		check(result == VA_SUCCESS);
+	}
+
 	vaWorldSetMaterialAbsorptionLF(World,        MaterialId, AbsorptionLF);
 	vaWorldSetMaterialAbsorptionHF(World,        MaterialId, AbsorptionHF);
 	vaWorldSetMaterialScattering(World,          MaterialId, Scattering);
@@ -34,12 +42,11 @@ void UVAudioMaterialAssetBase::ApplyToWorld(AVAudioWorld* Owner)
 	vaWorldSetMaterialTransmissionHF(World,      MaterialId, TransmissionHF);
 	vaWorldSetMaterialPlaneTransmissionLF(World, MaterialId, PlaneTransmissionLF);
 	vaWorldSetMaterialPlaneTransmissionHF(World, MaterialId, PlaneTransmissionHF);
-
-	VALogObj(L"applied material '%s' (id=%d) TransmissionLF=%.3f TransmissionHF=%.3f", *GetMaterialDisplayName(), MaterialId, TransmissionLF, TransmissionHF);
 }
 
 AVAudioWorld* UVAudioMaterialAssetBase::FindOwningWorldActor()
 {
+	// We must loop over each world, as this material could live on the World directly, or on a Component attached to geometry
 	for (const TWeakObjectPtr<AVAudioWorld>& WeakWorld : AVAudioWorld::RunningWorlds)
 	{
 		AVAudioWorld* AudioWorld = WeakWorld.Get();
@@ -58,8 +65,7 @@ void UVAudioMaterialAssetBase::PostEditChangeProperty(FPropertyChangedEvent& Pro
 
 	AVAudioWorld* Owner = FindOwningWorldActor();
 
-	// Null if this asset isn't assigned to any currently-running world's Materials array -
-	// nothing to apply the material to.
+	// Null if this asset isn't assigned to any world
 	if (!Owner)
 		return;
 
@@ -71,18 +77,13 @@ void UVAudioMaterialAssetBase::PostEditChangeProperty(FPropertyChangedEvent& Pro
 // UVAudioMaterialAsset - overrides one of the 23 built-in materials
 // ---------------------------------------------------------------------------
 
-bool UVAudioMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId)
+bool UVAudioDefaultMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId)
 {
 	OutMaterialId = (int32)EVAudioMaterialToVA(MaterialType);
 	return true;
 }
 
-FString UVAudioMaterialAsset::GetMaterialDisplayName() const
-{
-	return StaticEnum<EVAudioMaterial>()->GetNameStringByValue((int64)MaterialType);
-}
-
-void UVAudioMaterialAsset::ResetToDefaults()
+void UVAudioDefaultMaterialAsset::ResetToDefaults()
 {
 	AVAudioWorld* Owner = FindOwningWorldActor();
 	VAWorld* World = Owner ? Owner->GetVAWorld() : nullptr;
@@ -108,15 +109,14 @@ void UVAudioMaterialAsset::ResetToDefaults()
 
 // Smallest ID reserved for custom (non-built-in) materials - matches VAMaterialType's comment
 // in vaudio.h ("First 1000 values are reserved").
+// TODO - move this constant to vaudio.h
 static constexpr int32 FirstCustomMaterialId = 1000;
 
 bool UVAudioCustomMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId)
 {
 	if (CustomMaterialId == 0)
 	{
-		// First use: claim the lowest free ID (>= FirstCustomMaterialId) among this world's
-		// other custom materials. Stable thereafter (stored in CustomMaterialId), so geometry
-		// already pointing at this asset doesn't shift to a different material underneath it.
+		// Claim the lowest ID that hasn't been claimed yet
 		int32 NextId = FirstCustomMaterialId;
 
 		for (UVAudioMaterialAssetBase* Other : Owner->Materials)
@@ -141,23 +141,7 @@ bool UVAudioCustomMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutMa
 #if WITH_EDITOR
 void UVAudioCustomMaterialAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
-	AVAudioWorld* Owner = FindOwningWorldActor();
-
-	if (Owner)
-	{
-		for (UVAudioMaterialAssetBase* Other : Owner->Materials)
-		{
-			UVAudioCustomMaterialAsset* OtherCustom = Cast<UVAudioCustomMaterialAsset>(Other);
-
-			if (OtherCustom && OtherCustom != this && OtherCustom->MaterialName == MaterialName)
-			{
-				VALogObj(L"MaterialName '%s' is already used by another custom material in the same world - names must be unique.", *MaterialName);
-				break;
-			}
-		}
-	}
-
-	// Applies to the world (base class implementation) after the uniqueness check above.
+	// Applies to the world (base class implementation)
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 }
 #endif

@@ -8,12 +8,12 @@
 // Browser's "Create Asset" (right-click) menu, and gives array/object property pickers a
 // "create new asset" option for it.
 UCLASS()
-class UVAudioMaterialAssetFactory : public UFactory
+class UVAudioDefaultMaterialAssetFactory : public UFactory
 {
 	GENERATED_BODY()
 
 public:
-	UVAudioMaterialAssetFactory();
+	UVAudioDefaultMaterialAssetFactory();
 
 	virtual UObject* FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn) override;
 
@@ -22,8 +22,7 @@ public:
 	virtual FText GetDisplayName() const override;
 };
 
-// Same as UVAudioMaterialAssetFactory, but for UVAudioCustomMaterialAsset (a brand new
-// material with an SDK-assigned ID).
+// Same as UVAudioDefaultMaterialAssetFactory, but for UVAudioCustomMaterialAsset (a brand new material with an SDK-assigned ID).
 UCLASS()
 class UVAudioCustomMaterialAssetFactory : public UFactory
 {

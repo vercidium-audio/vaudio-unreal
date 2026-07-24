@@ -19,7 +19,7 @@ public:
 	AVAudioSource();
 
 protected:
-	virtual void InitializeTypeSpecific() override;
+	virtual bool InitializeTypeSpecific() override;
 	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 
@@ -27,12 +27,6 @@ public:
 	// The sound file to play
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	USoundBase* SourceSound = nullptr;
-
-	// Whether the sound should loop
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
-	bool bLooping = true;
-
-	// --- Runtime access ---
 
 	void ApplySourceFilter(float GainLF, float GainHF);
 	void SetDryOutputEnabled(bool bEnabled);

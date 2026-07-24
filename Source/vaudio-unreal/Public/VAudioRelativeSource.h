@@ -69,11 +69,17 @@ private:
 	// Cached downcasts of ReverbSource, resolved once at BeginPlay - exactly one of these is set
 	// after a valid BeginPlay (or both null if ReverbSource was misconfigured).
 	UPROPERTY(Transient)
-	AVAudioListener* ListenerReverbSource = nullptr;
+	AVAudioListener* ListenerEmitter = nullptr;
 
 	UPROPERTY(Transient)
-	AVAudioContinuous* ContinuousReverbSource = nullptr;
+	AVAudioContinuous* ContinuousEmitter = nullptr;
+
+	// True from BeginPlay() until TrySpawnSourceSound() succeeds. When attached to a
+	// ContinuousEmitter, spawning is deferred until that emitter has a raytraced muffling result,
+	// so the low pass filter can be primed before Play() instead of popping from clear to muffled.
+	bool bSourcePendingSpawn = false;
 
 	void TrySpawnSourceSound();
 	void ApplyReverbSource();
+	void DisplayWarning(const TCHAR* fmt, ...) const;
 };

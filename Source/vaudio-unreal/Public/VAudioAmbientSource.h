@@ -10,7 +10,7 @@ struct VALowPassFilter;
 
 // For rain/wind/room-tone sounds. NOT raytraced, NO reverb - plays SourceSound in 2D and applies
 // a low-pass filter driven by the main listener's ambient filter (vaEmitterGetAmbientFilter()),
-// same mechanism as AVAudioListener::ApplyAmbientFilter(). Independent instances of this actor
+// same mechanism as AVAudioListener::Tick(). Independent instances of this actor
 // are how multiple ambient sounds are supported, unlike AVAudioListener's single WIP AmbientSound.
 //
 // This does not inherit AVAudioEmitterBase and creates no VAEmitter* of its own: it has no
@@ -45,5 +45,5 @@ public:
 
 private:
 	void TrySpawnSourceSound(const VALowPassFilter* AmbientFilter);
-	void ApplyAmbientFilter();
+	void DisplayWarning(const TCHAR* fmt, ...) const;
 };

@@ -5,7 +5,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
 
 UVAudioMaterialComponent::UVAudioMaterialComponent()
 {

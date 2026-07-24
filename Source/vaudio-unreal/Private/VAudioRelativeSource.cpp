@@ -3,16 +3,23 @@
 #include "VAudioListener.h"
 #include "VAudioContinuous.h"
 #include "VAudioWorld.h"
-#include "Kismet/GameplayStatics.h"
+#include "AudioDevice.h"
 
 extern "C" {
 #include "vaudio.h"
 }
 
-#include "VaRawLog.h"
+#include "VARawLog.h"
+#include "VADebugMessageKeys.h"
+#include "VAConstants.h"
 
-const float MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
-const float MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
+void AVAudioRelativeSource::DisplayWarning(const TCHAR* fmt, ...) const
+{
+	va_list args;
+	va_start(args, fmt);
+	DisplayDebugWarningArgs(VAEmitterMessageBase + GetUniqueID(), fmt, args);
+	va_end(args);
+}
 
 AVAudioRelativeSource::AVAudioRelativeSource()
 {
@@ -26,21 +33,75 @@ void AVAudioRelativeSource::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Disable the actor if validation fails
 	if (SourceSounds.Num() == 0)
 	{
-		VALog(L"RelativeSource has no SourceSounds assigned - it will do nothing");
+		DisplayWarning(TEXT("[VA] RelativeSource '%s' has no SourceSounds and will not play sound"), *GetActorNameOrLabel());
+		SetActorTickEnabled(false);
 		return;
 	}
 
-	ListenerReverbSource = Cast<AVAudioListener>(ReverbSource);
-	ContinuousReverbSource = Cast<AVAudioContinuous>(ReverbSource);
+	ListenerEmitter = Cast<AVAudioListener>(ReverbSource);
+	ContinuousEmitter = Cast<AVAudioContinuous>(ReverbSource);
 
-	if (!ListenerReverbSource && !ContinuousReverbSource)
+	if (ListenerEmitter)
 	{
-		VALog(L"ReverbSource is not assigned to an AVAudioListener or AVAudioContinuous - this relative source will play with no reverb/muffling. Assign ReverbSource in the Details panel.");
+		if (!ListenerEmitter->GetVAEmitter())
+		{
+			DisplayWarning(TEXT("[VA] RelativeSource '%s' will not play as its listener '%s' is not assigned to an AudioWorld"), *GetActorNameOrLabel(), *ListenerEmitter->GetActorNameOrLabel());
+			SetActorTickEnabled(false);
+			return;
+		}
+
+		if (!ListenerEmitter->ListenerReverbSubmix)
+		{
+			DisplayWarning(TEXT("[VA] RelativeSource '%s' will have no reverb as the Listener has no reverb submix"), *GetActorNameOrLabel());
+		}
 	}
 
-	TrySpawnSourceSound();
+	for (int32 i = 0; i < SourceSounds.Num(); i++)
+	{
+		USoundBase* sound = SourceSounds[i];
+
+		if (!sound)
+		{
+			DisplayWarning(TEXT("[VA] RelativeSource '%s' will not play as it has a null sound assigned to index %d"), *GetActorNameOrLabel(), i);
+			SetActorTickEnabled(false);
+			return;
+		}
+
+		if (!sound->IsPlayWhenSilent())
+		{
+			DisplayWarning(TEXT("[VA] RelativeSource '%s': SourceSound '%s' must have Virtualization Mode set to 'Play When Silent', else it may not play correctly when fully muffled"), *GetActorNameOrLabel(), *sound->GetName());
+			break;
+		}
+
+		// If assigned to a Continuous emitter, it must be spatialised
+		if (ContinuousEmitter && !sound->AttenuationSettings)
+		{
+			DisplayWarning(TEXT("[VA] RelativeSource '%s': SourceSound has no Sound Attenuation - it will not fall off with distance"), *GetActorNameOrLabel(), *sound->GetName());
+		}
+	}
+
+	if (!ListenerEmitter && !ContinuousEmitter)
+	{
+		DisplayWarning(TEXT("[VA] RelativeSource '%s': ReverbSource is not assigned to an AVAudioListener or AVAudioContinuous, meaning this sound will have no reverb or muffling."), *GetActorNameOrLabel());
+	}
+
+	if (bAttachToSelf && !GetRootComponent())
+	{
+		DisplayWarning(TEXT("[VA] RelativeSource '%s' will not play as it has AttachToSelf = true, but has no root component. Assign this RelativeSource to an actor"), *GetActorNameOrLabel());
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	// If attached to a ContinuousEmitter, the low pass filter must be primed from that emitter's
+	// muffling result before Play() - Tick()/ApplyReverbSource() defers spawning until that result
+	// is available. Otherwise (Listener or misconfigured) there is nothing to wait for.
+	bSourcePendingSpawn = true;
+
+	if (!ContinuousEmitter)
+		TrySpawnSourceSound();
 }
 
 void AVAudioRelativeSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -51,43 +112,61 @@ void AVAudioRelativeSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		SourceAudioComponent->Stop();
 		SourceAudioComponent = nullptr;
-
-		VALog(L"Stopped relative source sound");
 	}
 }
 
 void AVAudioRelativeSource::TrySpawnSourceSound()
 {
-	USoundBase* ChosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
+	// If attached to a ContinuousEmitter, wait until it has it has been raytraced before playing a sound
+	VALowPassFilter* vaLowPassFilter = nullptr;
 
-	if (!ChosenSound)
+	if (ContinuousEmitter)
 	{
-		VALog(L"Failed to play sound - SourceSounds contains a null entry at the chosen index");
-		return;
-	}
+		vaLowPassFilter = ContinuousEmitter->GetMufflingResult();
 
-	if (bAttachToSelf)
-	{
-		if (!GetRootComponent())
-		{
-			VALog(L"Failed to play sound - RelativeSource has no root component to attach to");
+		// Wait for raytracing to complete
+		if (!vaLowPassFilter)
 			return;
-		}
-
-		SourceAudioComponent = UGameplayStatics::SpawnSoundAttached(ChosenSound, GetRootComponent(), NAME_None, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.0f, 1.0f, 0.0f, nullptr, nullptr, true);
 	}
 	else
 	{
-		SourceAudioComponent = UGameplayStatics::SpawnSound2D(GetWorld(), ChosenSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
+		// TODO - wait for listener to raytrace once and have valid EAX?
 	}
+
+	bSourcePendingSpawn = false;
+
+	USoundBase* ChosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
+
+	// Build the component without starting playback, so the low pass filter can be configured before Play()
+	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
+
+	// TODO - rename 'Self' to something that makes more sense
+	if (bAttachToSelf)
+	{
+		Params.SetLocation(GetRootComponent()->GetComponentLocation());
+	}
+
+	SourceAudioComponent = FAudioDevice::CreateComponent(ChosenSound, Params);
 
 	if (SourceAudioComponent)
 	{
+		if (bAttachToSelf)
+			SourceAudioComponent->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+
+		SourceAudioComponent->bAutoDestroy = true;
 		SourceAudioComponent->SetLowPassFilterEnabled(true);
+
+		if (vaLowPassFilter)
+		{
+			SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, vaLowPassFilter->gainHF));
+			SourceAudioComponent->SetVolumeMultiplier(vaLowPassFilter->gainLF);
+		}
+
+		SourceAudioComponent->Play();
 	}
 	else
 	{
-		VALog(L"Failed to play sound - %s returned null for SourceSound '%s' (invalid/empty sound asset?)", bAttachToSelf ? L"SpawnSoundAttached" : L"SpawnSound2D", *GetNameSafe(ChosenSound));
+		DisplayWarning(TEXT("[VA] RelativeSource '%s' play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"), *GetActorNameOrLabel());
 	}
 }
 
@@ -100,50 +179,32 @@ void AVAudioRelativeSource::Tick(float DeltaTime)
 
 void AVAudioRelativeSource::ApplyReverbSource()
 {
-	if (!SourceAudioComponent)
-		return;
+	if (bSourcePendingSpawn)
+		TrySpawnSourceSound();
 
-	if (ListenerReverbSource)
+	if (ListenerEmitter)
 	{
-		// Same mechanism as AVAudioListener::ApplyListenerReverb(), but applied as a per-source
-		// low pass filter/volume (this actor has no reverb submix of its own to route through).
-		VAEmitter* ListenerEmitter = ListenerReverbSource->GetVAEmitter();
+		VAEmitter* vaEmitter = ListenerEmitter->GetVAEmitter();
 
-		if (!ListenerEmitter)
-			return;
-
-		VAEAXReverb* EAX = vaEmitterGetEAX(ListenerEmitter);
-
-		// Raytracing has not completed at least once yet
-		if (!EAX)
-			return;
-
-		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, EAX->gainHF));
-		SourceAudioComponent->SetVolumeMultiplier(EAX->gainLF);
-
-		// The dry signal shaping above doesn't put any of the sound into the listener's reverb
-		// submix - without this send, ListenerReverbSubmix's reverb effect never receives audio
-		// and this source is heard fully dry regardless of ListenerReverbSubmix being configured.
-		if (ListenerReverbSource->ListenerReverbSubmix)
-			SourceAudioComponent->SetSubmixSend(ListenerReverbSource->ListenerReverbSubmix, 1.0f);
+		// Already logged above if ListenerReverbSubmix is null
+		if (ListenerEmitter->ListenerReverbSubmix)
+			SourceAudioComponent->SetSubmixSend(ListenerEmitter->ListenerReverbSubmix, 1.0f);
 	}
-	else if (ContinuousReverbSource)
+	else if (ContinuousEmitter)
 	{
-		VALowPassFilter* MufflingResult = ContinuousReverbSource->GetMufflingResult();
+		VALowPassFilter* vaLowPassFilter = ContinuousEmitter->GetMufflingResult();
 
 		// Continuous target hasn't been raytraced by the listener yet
-		if (!MufflingResult)
+		if (!vaLowPassFilter)
 			return;
 
-		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, MufflingResult->gainHF));
-		SourceAudioComponent->SetVolumeMultiplier(MufflingResult->gainLF);
+		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, vaLowPassFilter->gainHF));
+		SourceAudioComponent->SetVolumeMultiplier(vaLowPassFilter->gainLF);
 
-		// Send to the same grouped-EAX submix the continuous emitter is already blended into, so
-		// this source shares its reverb rather than playing fully dry (see the ListenerReverbSource
-		// branch above for why the send is needed).
-		if (ContinuousReverbSource->AudioWorld)
+		// Apply the continuous emitter's grouped EAX reverb to this sound
+		if (ContinuousEmitter->AudioWorld)
 		{
-			if (USoundSubmix* Submix = ContinuousReverbSource->AudioWorld->GetGroupedEAXSubmix(ContinuousReverbSource->GetGroupedEAXIndex()))
+			if (USoundSubmix* Submix = ContinuousEmitter->AudioWorld->GetGroupedEAXSubmix(ContinuousEmitter->GetGroupedEAXIndex()))
 				SourceAudioComponent->SetSubmixSend(Submix, 1.0f);
 		}
 	}

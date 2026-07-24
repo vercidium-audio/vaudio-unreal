@@ -1,19 +1,19 @@
 #include "VAudioMaterialAssetFactory.h"
 #include "VAudioMaterial.h"
 
-UVAudioMaterialAssetFactory::UVAudioMaterialAssetFactory()
+UVAudioDefaultMaterialAssetFactory::UVAudioDefaultMaterialAssetFactory()
 {
 	bCreateNew = true;
 	bEditAfterNew = true;
-	SupportedClass = UVAudioMaterialAsset::StaticClass();
+	SupportedClass = UVAudioDefaultMaterialAsset::StaticClass();
 }
 
-UObject* UVAudioMaterialAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
+UObject* UVAudioDefaultMaterialAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
 {
-	return NewObject<UVAudioMaterialAsset>(InParent, Class, Name, Flags);
+	return NewObject<UVAudioDefaultMaterialAsset>(InParent, Class, Name, Flags);
 }
 
-FText UVAudioMaterialAssetFactory::GetDisplayName() const
+FText UVAudioDefaultMaterialAssetFactory::GetDisplayName() const
 {
 	return SupportedClass->GetDisplayNameText();
 }
