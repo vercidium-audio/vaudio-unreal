@@ -41,16 +41,16 @@ void AVAudioEmitterBase::BeginPlay()
 		return;
 	}
 
-	if (!TryInitializeEmitter())
-	{
-		// Disable this actor if validation fails (e.g. Source has no sound file)
-		SetActorTickEnabled(false);
-	}
+	TryInitializeEmitter();
 }
 
 bool AVAudioEmitterBase::TryInitializeEmitter()
 {
 	check(AudioWorld);
+
+	// Already failed once before, don't try again
+	if (failedInitialisation)
+		return false;
 
 	// Already initialised, all is good
 	if (Emitter)
@@ -72,37 +72,42 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 	// Initialise the specific emitter type (Source, Continuous, etc)
 	bool pass = InitializeTypeSpecific();
 
-	if (!pass)
-		return false;
-
-
-	// Add the emitter to the world
-	VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
-
-	if (result == VA_ALREADY_EXISTS)
+	if (pass)
 	{
-		DisplayWarning(TEXT("[VA] '%s' was added to AudioWorld '%s' twice"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+		// Add the emitter to the world
+		VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
 
-		vaEmitterDestroy(Emitter);
-		Emitter = nullptr;
-		return false;
-	}
-	else if (result == VA_WORLD_CONFLICT)
-	{
-		DisplayWarning(TEXT("[VA] '%s' cannot be added to AudioWorld '%s' as it is already added to another world"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+		if (result == VA_ALREADY_EXISTS)
+		{
+			DisplayWarning(TEXT("[VA] '%s' was added to AudioWorld '%s' twice"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+		}
+		else if (result == VA_WORLD_CONFLICT)
+		{
+			DisplayWarning(TEXT("[VA] '%s' cannot be added to AudioWorld '%s' as it is already added to another world"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+		}
+		else
+		{
+			check(result == VA_SUCCESS);
+		}
 
-		vaEmitterDestroy(Emitter);
-		Emitter = nullptr;
-		return false;
-	}
-	else
-	{
-		check(result == VA_SUCCESS);
+		if (result == VA_SUCCESS)
+		{
+			AudioWorld->RegisterEmitter(this);
+			registered = true;
+			return true;
+		}
 	}
 
-	AudioWorld->RegisterEmitter(this);
-	registered = true;
-	return true;
+	// Failed validation, disable this actor
+	SetActorTickEnabled(false);
+
+	// The listener calls this function when iterating its targets, so ensure we set everything here
+	vaEmitterDestroy(Emitter);
+	Emitter = nullptr;
+	failedInitialisation = true;
+
+	return false;
+
 }
 
 void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)

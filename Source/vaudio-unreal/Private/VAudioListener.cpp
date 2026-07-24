@@ -66,9 +66,15 @@ bool AVAudioListener::InitializeTypeSpecific()
 			continue;
 		}
 
-		// Actor init order isn't guaranteed so just initialise the emitter here
+		// Actor init order isn't guaranteed so just initialise the targete emitter here
 		bool pass = target->TryInitializeEmitter();
-		check(pass);
+
+		// If the target failed to initialise (e.g. Source has no sound), don't add it to our list
+		if (!pass)
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that failed to initialise. It will not be raytraced"), *GetActorNameOrLabel(), *target->GetActorNameOrLabel());
+			continue;
+		}
 
 		VAEmitter* vaEmitter = target->GetVAEmitter();
 

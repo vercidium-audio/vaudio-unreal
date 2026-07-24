@@ -173,4 +173,5 @@ private:
 	// Set by AVAudioWorld::RegisterEmitter/UnregisterEmitter - see GetEmitterIndex() above.
 	int32 EmitterIndex = -1;
 	bool registered = false;
+	bool failedInitialisation = false;
 };
