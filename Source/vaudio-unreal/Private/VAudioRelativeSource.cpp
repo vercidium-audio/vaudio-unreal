@@ -166,6 +166,7 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 	}
 	else
 	{
+		check(false);
 		DisplayWarning(TEXT("[VA] RelativeSource '%s' play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"), *GetActorNameOrLabel());
 	}
 }
@@ -181,6 +182,10 @@ void AVAudioRelativeSource::ApplyReverbSource()
 {
 	if (bSourcePendingSpawn)
 		TrySpawnSourceSound();
+
+	// TODO - line 198, SourceAudioComponent was null
+	if (!SourceAudioComponent)
+		return;
 
 	if (ListenerEmitter)
 	{

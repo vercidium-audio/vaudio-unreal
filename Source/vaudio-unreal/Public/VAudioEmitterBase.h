@@ -88,7 +88,7 @@ public:
 	int32 AmbientOcclusionBounceCount = 0;
 
 	// Percentage of ambient occlusion energy required for the emitter to be at full volume.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float AmbientOcclusionEnergyCap = 0.5f;
 
 	// Number of ambient permeation rays cast
@@ -100,7 +100,7 @@ public:
 	int32 AmbientPermeationBounceCount = 0;
 
 	// Percentage of ambient permeation energy required for the emitter to be at full volume
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float AmbientPermeationEnergyCap = 0.5f;
 
 	// --- Refresh ---
