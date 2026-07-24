@@ -145,7 +145,7 @@ protected:
 	// Called once per subclass after the base VAEmitter* is created and added to the vaWorld,
 	// but before AudioWorld->RegisterEmitter(). Subclasses build their own audio components/
 	// submix presets here and apply their own vaEmitterSet* calls.
-	virtual void InitializeTypeSpecific() {}
+	virtual bool InitializeTypeSpecific() { return false; }
 
 	// Called from EndPlay before the VAEmitter* is destroyed and removed from the vaWorld.
 	// Subclasses tear down their own audio components/presets here.
@@ -172,4 +172,5 @@ protected:
 private:
 	// Set by AVAudioWorld::RegisterEmitter/UnregisterEmitter - see GetEmitterIndex() above.
 	int32 EmitterIndex = -1;
+	bool registered = false;
 };

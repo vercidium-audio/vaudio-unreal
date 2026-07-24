@@ -11,7 +11,6 @@ extern "C" {
 #include "vaudio.h"
 }
 
-
 void AVAudioAmbientSource::DisplayWarning(const TCHAR* fmt, ...) const
 {
 	va_list args;

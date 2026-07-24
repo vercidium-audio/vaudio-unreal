@@ -527,6 +527,7 @@ void AVAudioWorld::RegisterEmitter(AVAudioEmitterBase* Emitter)
 	{
 		if (MainListener.IsValid() && MainListener.Get() != ConcreteListener)
 		{
+			// TODO - show on-screen warning
 			VALog(L"'%s' registered as an AVAudioListener, but '%s' is already the main listener - keeping the first one. Only one AVAudioListener should exist per world.",
 				*Emitter->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
 		}
@@ -550,6 +551,10 @@ void AVAudioWorld::UnregisterEmitter(AVAudioEmitterBase* Emitter)
 
 	if (MainListener.Get() == Emitter)
 		MainListener = nullptr;
+
+	// If the world was removed first, no need to invoke vaWorldRemoveEmitter
+	if (World)
+		vaWorldRemoveEmitter(World, Emitter->GetVAEmitter());
 }
 
 AVAudioListener* AVAudioWorld::GetMainListener()

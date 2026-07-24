@@ -25,7 +25,7 @@ public:
 	AVAudioContinuous();
 
 protected:
-	virtual void InitializeTypeSpecific() override;
+	virtual bool InitializeTypeSpecific() override;
 	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 

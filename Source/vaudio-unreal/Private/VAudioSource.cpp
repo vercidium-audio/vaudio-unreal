@@ -18,14 +18,14 @@ AVAudioSource::AVAudioSource()
 {
 }
 
-void AVAudioSource::InitializeTypeSpecific()
+bool AVAudioSource::InitializeTypeSpecific()
 {
 	Super::InitializeTypeSpecific();
 
 	if (!SourceSound)
 	{
 		VALog(L"Source has no SourceSound assigned - it will do nothing");
-		return;
+		return false;
 	}
 
 	if (bAffectsGroupedEAX && (ReverbRayCount == 0 || ReverbBounceCount == 0))
@@ -53,6 +53,8 @@ void AVAudioSource::InitializeTypeSpecific()
 	// this emitter at least once - otherwise the sound starts clear (LPF fully open) and pops
 	// to muffled a few frames later once the first real filter result arrives.
 	bSourcePendingSpawn = true;
+
+	return true;
 }
 
 void AVAudioSource::DeinitializeTypeSpecific()
@@ -61,8 +63,6 @@ void AVAudioSource::DeinitializeTypeSpecific()
 	{
 		SourceAudioComponent->Stop();
 		SourceAudioComponent = nullptr;
-
-		VALog(L"Stopped source sound");
 	}
 
 	// No need to separately zero the submix send gain: Stop() above tears down the audio

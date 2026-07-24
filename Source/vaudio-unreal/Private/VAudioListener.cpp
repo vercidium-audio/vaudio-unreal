@@ -17,11 +17,10 @@ AVAudioListener::AVAudioListener()
 {
 }
 
-void AVAudioListener::InitializeTypeSpecific()
+bool AVAudioListener::InitializeTypeSpecific()
 {
 	// Set ray counts and other settings
 	UpdateVAEmitter();
-
 
 	// Initialise the submix
 	if (ListenerReverbSubmix)
@@ -52,9 +51,15 @@ void AVAudioListener::InitializeTypeSpecific()
 			continue;
 		}
 
+		if (Target->AudioWorld == NULL)
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned to an AudioWorld. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
+			continue;
+		}
+
 		if (Target->AudioWorld != AudioWorld)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned to the same World as this listener. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that is assigned to a different world: '%s'. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel(), *Target->AudioWorld->GetActorNameOrLabel());
 			continue;
 		}
 
@@ -79,6 +84,8 @@ void AVAudioListener::InitializeTypeSpecific()
 
 		RegisteredTargets.Add(Target);
 	}
+
+	return true;
 }
 
 void AVAudioListener::TickTypeSpecific(float DeltaTime)
