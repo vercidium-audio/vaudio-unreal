@@ -3,7 +3,7 @@
 #include "VAudioListener.h"
 #include "VAudioContinuous.h"
 #include "VAudioWorld.h"
-#include "Kismet/GameplayStatics.h"
+#include "AudioDevice.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -59,7 +59,7 @@ void AVAudioRelativeSource::BeginPlay()
 		}
 
 		// If assigned to a Continuous emitter, it must be spatialised
-		if (ContinuousEmitter && !SourceAudioComponent->AttenuationSettings)
+		if (ContinuousEmitter && !sound->AttenuationSettings)
 		{
 			DisplayWarning(TEXT("[VA] RelativeSource '%s': SourceSound has no Sound Attenuation - it will not fall off with distance"), *GetActorNameOrLabel(), *sound->GetName());
 		}
@@ -80,7 +80,13 @@ void AVAudioRelativeSource::BeginPlay()
 		DisplayWarning(TEXT("[VA] RelativeSource '%s' will have no reverb as the Listener has no reverb submix"), *GetActorNameOrLabel());
 	}
 
-	TrySpawnSourceSound();
+	// If attached to a ContinuousEmitter, the low pass filter must be primed from that emitter's
+	// muffling result before Play() - Tick()/ApplyReverbSource() defers spawning until that result
+	// is available. Otherwise (Listener or misconfigured) there is nothing to wait for.
+	bSourcePendingSpawn = true;
+
+	if (!ContinuousEmitter)
+		TrySpawnSourceSound();
 }
 
 void AVAudioRelativeSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -96,11 +102,27 @@ void AVAudioRelativeSource::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AVAudioRelativeSource::TrySpawnSourceSound()
 {
+	// If attached to a ContinuousEmitter, wait until it has it has been raytraced before playing a sound
+	VALowPassFilter* vaLowPassFilter = nullptr;
+
+	if (ContinuousEmitter)
+	{
+		vaLowPassFilter = ContinuousEmitter->GetMufflingResult();
+
+		if (!vaLowPassFilter)
+			return;
+	}
+
+	bSourcePendingSpawn = false;
+
 	USoundBase* ChosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
 
 	// User assigned an invalid sound to the array. This is already logged above in BeginPlay()
 	if (!ChosenSound)
 		return;
+
+	// Build the component without starting playback, so the low pass filter can be configured before Play()
+	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
 
 	// TODO - rename 'Self' to something that makes more sense
 	if (bAttachToSelf)
@@ -108,16 +130,26 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 		if (!GetRootComponent())
 			return;
 
-		SourceAudioComponent = UGameplayStatics::SpawnSoundAttached(ChosenSound, GetRootComponent(), NAME_None, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.0f, 1.0f, 0.0f, nullptr, nullptr, true);
+		Params.SetLocation(GetRootComponent()->GetComponentLocation());
 	}
-	else
-	{
-		SourceAudioComponent = UGameplayStatics::SpawnSound2D(GetWorld(), ChosenSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
-	}
+
+	SourceAudioComponent = FAudioDevice::CreateComponent(ChosenSound, Params);
 
 	if (SourceAudioComponent)
 	{
+		if (bAttachToSelf)
+			SourceAudioComponent->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+
+		SourceAudioComponent->bAutoDestroy = true;
 		SourceAudioComponent->SetLowPassFilterEnabled(true);
+
+		if (vaLowPassFilter)
+		{
+			SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, vaLowPassFilter->gainHF));
+			SourceAudioComponent->SetVolumeMultiplier(vaLowPassFilter->gainLF);
+		}
+
+		SourceAudioComponent->Play();
 	}
 	else
 	{
@@ -134,6 +166,9 @@ void AVAudioRelativeSource::Tick(float DeltaTime)
 
 void AVAudioRelativeSource::ApplyReverbSource()
 {
+	if (bSourcePendingSpawn)
+		TrySpawnSourceSound();
+
 	if (!SourceAudioComponent)
 		return;
 
@@ -141,7 +176,7 @@ void AVAudioRelativeSource::ApplyReverbSource()
 	{
 		VAEmitter* vaEmitter = ListenerEmitter->GetVAEmitter();
 
-		// TODO - why could this be null?
+		// This is null if the listener was not assigned a World
 		if (!vaEmitter)
 			return;
 
