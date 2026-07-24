@@ -5,6 +5,7 @@
 #include "SubmixEffects/AudioMixerSubmixEffectReverb.h"
 #include "Sound/SoundSubmix.h"
 #include "Components/SceneComponent.h"
+#include "Components/BoxComponent.h"
 #include "VAudioWorld.generated.h"
 
 struct VAWorld;
@@ -15,6 +16,23 @@ struct VAPrismPrimitive;
 class AVAudioEmitterBase;
 class AVAudioListener;
 class UVAudioMaterialAssetBase;
+
+// Plain UBoxComponent, except its BoxExtent always shows greyed-out in the details panel.
+// AVAudioWorld's WorldBounds is a read-only visualisation re-derived from WorldPosition/WorldSize
+// every time either changes (see AVAudioWorld::RefreshWorldBounds) - without this, BoxExtent would
+// look editable (and even respond to dragging) but silently snap back on the next refresh, since
+// UCLASS(HideCategories=...) on the owning actor doesn't reach into a native component's own
+// details sub-tree.
+UCLASS(NotBlueprintType, NotBlueprintable)
+class VAUDIOUNREAL_API UVAudioWorldBoundsComponent : public UBoxComponent
+{
+	GENERATED_BODY()
+
+public:
+#if WITH_EDITOR
+	virtual bool CanEditChange(const FProperty* InProperty) const override;
+#endif
+};
 
 // Which VAXPrimitiveSet* calls RefreshPrimitiveTransform() should use for a given entry - there's
 // no common base type across VAMeshPrimitive/VACapsulePrimitive/etc, so the primitive pointer is
@@ -89,7 +107,12 @@ struct FVAudioBakedMesh
 
 // Place one of these in your level. It owns the VA raytracing world and scans
 // for UVAudioMaterialComponent on BeginPlay to populate the scene geometry.
-UCLASS(DisplayName = "VAudio World")
+//
+// WorldBounds (see below) is a read-only visualisation re-derived from WorldPosition/WorldSize
+// every time either changes - its own Transform/Shape/Collision/Rendering/Physics/etc categories
+// are hidden here so nothing in the details panel looks editable when it isn't (dragging its
+// extent or moving it directly will just snap back on the next edit/reconstruction).
+UCLASS(DisplayName = "VAudio World", HideCategories = (Shape, Collision, Rendering, Physics, HLOD, Navigation, VirtualTexture, Tags, Cooking, LOD, AssetUserData, Mobile, RayTracing))
 class VAUDIOUNREAL_API AVAudioWorld : public AActor
 {
 	GENERATED_BODY()
@@ -98,6 +121,12 @@ public:
 	AVAudioWorld();
 
 protected:
+	// Called after WorldPosition/WorldSize (and the actor's own placed transform) have been loaded
+	// onto this instance - unlike the constructor, which only ever sees CDO defaults. Also re-runs
+	// on every move in the editor and after undo/redo/paste, so it's the correct place (alongside
+	// PostEditChangeProperty) to keep WorldBounds in sync.
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -119,6 +148,14 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
 	FVector WorldSize = FVector(6000.f, 6000.f, 6000.f);
+
+	// Visualises WorldPosition/WorldSize (an absolute world-space min-corner + size, independent of
+	// this actor's own transform) as a box in the editor viewport. Purely a read-only visual aid -
+	// its transform/extent are re-derived from WorldPosition/WorldSize every time (constructor and
+	// PostEditChangeProperty), so it is NOT the root component and is not itself editable. Move/
+	// resize the world by editing WorldPosition/WorldSize above instead.
+	UPROPERTY(VisibleInstanceOnly, Category = "Vercidium Audio|World", meta = (AllowPrivateAccess = "true"))
+	UVAudioWorldBoundsComponent* WorldBounds;
 
 	// --- Physics ---
 
@@ -240,6 +277,10 @@ public:
 	// this world's, since actor BeginPlay order is not guaranteed). Called from BeginPlay() as well
 	// as AVAudioEmitterBase::TryInitializeEmitter().
 	void InitializeVAWorld();
+
+	// Repositions/resizes WorldBounds from the current WorldPosition/WorldSize. Called from the
+	// constructor and PostEditChangeProperty whenever either property changes in the editor.
+	void RefreshWorldBounds();
 
 	VAWorld* GetVAWorld() const { return World; }
 	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;

@@ -6,7 +6,6 @@
 #include "VAudioMaterial.h"
 #include "VAudioMaterialComponent.h"
 #include "VAudioReverbConversion.h"
-#include "Components/BillboardComponent.h"
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
@@ -37,9 +36,8 @@ static VAMatrix MakeTranslationMatrix(const FVector& P)
 	return vaMatrixCreateTranslation((float)P.X, (float)P.Y, (float)P.Z);
 }
 
-// Rotation + translation only, no scale - used for primitives whose SetTransform doc explicitly
-// disallows scale components (capsule/prism/etc - see vaudio.h). Non-uniform scale on these
-// shapes is instead applied via their own dedicated SetRadius/SetLength/SetSize calls.
+// Rotation + translation only, no scale - used for primitives whose SetTransform doc explicitly disallows scale components (capsule/prism/etc - see vaudio.h).
+// Non-uniform scale on these shapes is instead applied via their own dedicated SetRadius/SetLength/SetSize calls.
 static VAMatrix MakeRotTransMatrix(const FTransform& T)
 {
 	FQuat Q = T.GetRotation();
@@ -57,9 +55,7 @@ static VAMatrix MakeRotTransMatrix(const FTransform& T)
 	);
 }
 
-// Scale + rotation + translation - only VAMeshPrimitive's SetTransform supports a scale
-// component (see vaMatrixCreateScale's comment in vaudio.h), so this is not safe to use for any
-// other primitive type.
+// Scale + rotation + translation - only VAMeshPrimitive's SetTransform supports a scale  component (see vaMatrixCreateScale's comment in vaudio.h), so this is not safe to use for any other primitive type.
 static VAMatrix MakeScaleRotTransMatrix(const FTransform& T)
 {
 	VAMatrix RotTrans = MakeRotTransMatrix(T);
@@ -74,24 +70,74 @@ static const TCHAR* VAResultToString(VAResult Result)
 {
 	switch (Result)
 	{
-	case VA_SUCCESS:                  return TEXT("VA_SUCCESS");
-	case VA_INVALID_MATERIAL:         return TEXT("VA_INVALID_MATERIAL (primitive's material is VAMaterialAir)");
-	case VA_MATERIAL_DOES_NOT_EXIST:  return TEXT("VA_MATERIAL_DOES_NOT_EXIST (primitive's material does not exist)");
-	case VA_ALREADY_EXISTS:           return TEXT("VA_ALREADY_EXISTS (primitive already added to this or another world)");
-	case VA_WORLD_CONFLICT:           return TEXT("VA_WORLD_CONFLICT (mesh already in use by a different world)");
-	default:                          return TEXT("unknown VAResult");
+		case VA_SUCCESS:                  return TEXT("VA_SUCCESS");
+		case VA_INVALID_MATERIAL:         return TEXT("VA_INVALID_MATERIAL (primitive's material is VAMaterialAir)");
+		case VA_MATERIAL_DOES_NOT_EXIST:  return TEXT("VA_MATERIAL_DOES_NOT_EXIST (primitive's material does not exist)");
+		case VA_ALREADY_EXISTS:           return TEXT("VA_ALREADY_EXISTS (primitive already added to this or another world)");
+		case VA_WORLD_CONFLICT:           return TEXT("VA_WORLD_CONFLICT (mesh already in use by a different world)");
+		default:                          return TEXT("unknown VAResult");
 	}
 }
 
+// List of worlds that Material assets use to reverse-lookup the world(s) they belong to
 TArray<TWeakObjectPtr<AVAudioWorld>> AVAudioWorld::RunningWorlds;
 
 AVAudioWorld::AVAudioWorld()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	UBillboardComponent* Root = CreateDefaultSubobject<UBillboardComponent>(TEXT("Root"));
+	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
+
+	// Purely a visual aid, not the root - it must never move independently of WorldPosition/
+	// WorldSize, so it's not selectable/movable via its own gizmo (see RefreshWorldBounds, which
+	// re-derives its transform every time either property changes).
+	WorldBounds = CreateDefaultSubobject<UVAudioWorldBoundsComponent>(TEXT("WorldBounds"));
+	WorldBounds->SetupAttachment(Root);
+	WorldBounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WorldBounds->SetGenerateOverlapEvents(false);
+	WorldBounds->SetHiddenInGame(false);
+
+	// Not RefreshWorldBounds() here - the constructor only ever sees CDO defaults for
+	// WorldPosition/WorldSize (a placed instance's saved values haven't been applied yet at this
+	// point), so it would just build the box from the wrong numbers. OnConstruction() below runs
+	// after those values are loaded and is what actually sizes/places WorldBounds.
 }
+
+void AVAudioWorld::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	RefreshWorldBounds();
+}
+
+void AVAudioWorld::RefreshWorldBounds()
+{
+	// WorldPosition/WorldSize are an absolute world-space min-corner + size (see InitializeVAWorld's
+	// vaWorldSetPosition/vaWorldSetSize calls), completely independent of this actor's own transform
+	// - moving/placing the actor is just for organisational convenience and must not affect them.
+	// WorldBounds is parented to the actor though, so its transform has to cancel out the actor's
+	// current transform to land on the same absolute location regardless of where the actor sits.
+	WorldBounds->SetWorldLocation(WorldPosition + WorldSize * 0.5f);
+	WorldBounds->SetWorldRotation(FQuat::Identity);
+	WorldBounds->SetBoxExtent(WorldSize * 0.5f);
+}
+
+#if WITH_EDITOR
+bool UVAudioWorldBoundsComponent::CanEditChange(const FProperty* InProperty) const
+{
+	// BoxExtent is re-derived from the owning AVAudioWorld's WorldSize every time it changes (see
+	// RefreshWorldBounds) - greyed out rather than hidden, since a native component's own details
+	// sub-tree isn't reachable via the owning actor's UCLASS(HideCategories=...). Transform is left
+	// editable even though RefreshWorldBounds also overwrites it, purely so it doesn't look broken.
+	static const FName BoxExtentPropertyName(TEXT("BoxExtent"));
+
+	if (InProperty && InProperty->GetFName() == BoxExtentPropertyName)
+		return false;
+
+	return Super::CanEditChange(InProperty);
+}
+#endif
 
 void AVAudioWorld::BeginPlay()
 {
@@ -149,10 +195,13 @@ void AVAudioWorld::InitializeVAWorld()
 	{
 		USoundSubmix* Sub = GroupedEAXSubmixes[i];
 		USubmixEffectReverbPreset* Preset = NewObject<USubmixEffectReverbPreset>(this);
+
 		if (Sub)
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, Preset);
+		else
+			DisplayDebugWarning(VANullGroupedEAXMessage, TEXT("[VA] World '%s' has a null grouped EAX submix at index %d. Please assign a submix"), *GetActorNameOrLabel(), i);
+
 		GroupedEAXPresets.Add(Preset);
-		VALog(L"GroupedEAX[%d] submix=%s", i, Sub ? *Sub->GetName() : TEXT("null"));
 	}
 
 	ApplyMaterials();
@@ -199,6 +248,10 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 void AVAudioWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	// Unlike the vaWorldSet* calls below, the box should reflect WorldPosition/WorldSize even
+	// before BeginPlay (or after EndPlay), since World is null until then.
+	RefreshWorldBounds();
 
 	// Null before BeginPlay (or after EndPlay) - editing properties on a placed actor in the
 	// editor (not PIE) hits this every time.
@@ -261,18 +314,6 @@ void AVAudioWorld::Tick(float DeltaTime)
 	{
 		vaWorldUpdate(World);
 		ApplyGroupedEAXReverb();
-
-		static float TimeSinceHeartbeat = 0.0f;
-		TimeSinceHeartbeat += DeltaTime;
-
-		bool doHeartbeat = TimeSinceHeartbeat >= 1.0f;
-
-		if (doHeartbeat)
-		{
-			VALog(L"RaytracingTime=%.3fms RegisteredEmitters=%d", vaWorldGetRaytracingTime(World), RegisteredEmitters.Num());
-			VALog(L"Primitives: prisms=%d spheres=%d capsules=%d meshes=%d", PrismPrimitives.Num(), SpherePrimitives.Num(), CapsulePrimitives.Num(), MeshPrimitives.Num());
-			TimeSinceHeartbeat = 0.0f;
-		}
 
 		if (bReverbOnly != bWasReverbOnly)
 		{
@@ -463,7 +504,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 			if (GroupedEAXSubmixes.Num() == 0)
 			{
-				GEngine->AddOnScreenDebugMessage(VAGroupedEAXStatusMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] World '%s' has no Grouped EAX Submixes. Ensure at least one is added"), *GetActorNameOrLabel()));
+				GEngine->AddOnScreenDebugMessage(VANoGroupedEAXMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] World '%s' has no Grouped EAX Submixes. Ensure at least one is added"), *GetActorNameOrLabel()));
 			}
 
 
@@ -527,9 +568,8 @@ void AVAudioWorld::RegisterEmitter(AVAudioEmitterBase* Emitter)
 	{
 		if (MainListener.IsValid() && MainListener.Get() != ConcreteListener)
 		{
-			// TODO - show on-screen warning
-			VALog(L"'%s' registered as an AVAudioListener, but '%s' is already the main listener - keeping the first one. Only one AVAudioListener should exist per world.",
-				*Emitter->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
+			DisplayDebugWarning(VADuplicateListenerMessage, TEXT("[VA] World '%s' has multiple listeners: '%s' and '%s'. Only one listener should exist per world."),
+				*GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel(), *Emitter->GetActorNameOrLabel());
 		}
 		else
 		{

@@ -31,10 +31,12 @@ enum EVADebugMessageKey : uint64
 	VAAmbientFilterMessage			= VAKeyBase + 3,
 	VANoMainListenerMessage			= VAKeyBase + 4,
 	VAPrimitiveStatusMessage		= VAKeyBase + 5,
-	VAGroupedEAXStatusMessage		= VAKeyBase + 6,
+	VANoGroupedEAXMessage		    = VAKeyBase + 6,
 	VAInvalidMaterialsMessage		= VAKeyBase + 7,
 	VAListenerEAXMessage			= VAKeyBase + 8,
 	VAListenerNoAmbientRaysMessage  = VAKeyBase + 9,
+	VADuplicateListenerMessage      = VAKeyBase + 10,
+	VANullGroupedEAXMessage         = VAKeyBase + 11,
 
 	VAEmitterStatus					= VAKeyBase + 0x1000,
 	VAGroupedEAXMessageBase			= VAKeyBase + 0x2000,
