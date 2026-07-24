@@ -237,11 +237,6 @@ public:
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Export World"))
 	void ExportWorld();
 
-	// Imports world settings, materials, primitives, and emitters from vaudio_export.va into this world.
-	// Existing primitives and emitters are not removed before importing.
-	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Import World"))
-	void ImportWorld();
-
 	// --- Baked geometry (shipping fallback) ---
 
 #if WITH_EDITOR

@@ -222,21 +222,11 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 	{
 		USubmixEffectReverbPreset* Preset = GetGroupedEAXPreset(i);
 
-		// GetGroupedEAXPreset(i) is only valid for i < GroupedEAXSubmixes.Num() on the VAudioWorld
-		// actor, but Count (the SDK's grouped EAX count) is always >= 2 - if fewer than 2 submixes
-		// are configured, indices in between have no preset.
+		// ALready logged above
 		if (!Preset)
-		{
-			VALog(L"no reverb preset configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2).", i);
 			continue;
-		}
 
 		const VAEAXReverb* EAX = GroupedEAX[i];
-
-		// EAX itself comes straight from the SDK's GroupedEAX array (sized to Count), so it
-		// should always be populated for i < Count once reverb has been calculated.
-		if (!ensureMsgf(EAX, TEXT("VAudioListener '%s': GroupedEAX[%d] is null after reverb was calculated"), *GetActorNameOrLabel(), i))
-			continue;
 
 		FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
 		Preset->SetSettings(settings);
@@ -255,7 +245,8 @@ void AVAudioWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
 
 	// Null before BeginPlay (or after EndPlay) - editing properties on a placed actor in the
 	// editor (not PIE) hits this every time.
-	if (!World) return;
+	if (!World)
+		return;
 
 	vaWorldSetPosition(World, vaVectorCreate(
 		(float)WorldPosition.X,
@@ -637,36 +628,12 @@ void AVAudioWorld::ExportWorld()
 {
 	if (!World)
 	{
-		VALog(L"world is null (press Play first).");
+		VALog(L"Cannot export world (press Play first).");
 		return;
 	}
 
 	FString Path = FPaths::ProjectDir() + TEXT("vaudio_export.va");
 	vaWorldExport(World, TCHAR_TO_UTF8(*Path));
-}
-
-void AVAudioWorld::ImportWorld()
-{
-	if (!World)
-	{
-		VALog(L"world is null (press Play first).");
-		return;
-	}
-
-	FString Path = FPaths::ProjectDir() + TEXT("vaudio_export.va");
-	VAEmitter** ImportedEmitters = nullptr;
-	int32 ImportedEmitterCount = 0;
-
-	VAResult Result = vaWorldImport(World, TCHAR_TO_UTF8(*Path), &ImportedEmitters, &ImportedEmitterCount);
-
-	if (Result != VA_SUCCESS)
-	{
-		VALog(L"import failed (result=%d) for '%s'.", Result, *Path);
-		return;
-	}
-
-	VALog(L"imported %d emitter(s) from '%s'.", ImportedEmitterCount, *Path);
-	free(ImportedEmitters);
 }
 
 // ---------------------------------------------------------------------------
@@ -685,8 +652,6 @@ void AVAudioWorld::ApplyMaterials()
 			++AppliedCount;
 		}
 	}
-
-	VALog(L"applied %d material(s).", AppliedCount);
 }
 
 // ---------------------------------------------------------------------------
@@ -726,7 +691,7 @@ void AVAudioWorld::BakeGeometry()
 
 	if (!UEWorld)
 	{
-		VALog(L"no world (open a level first).");
+		VALog(L"No Unreal World found (open a level first).");
 		return;
 	}
 
@@ -757,7 +722,7 @@ void AVAudioWorld::BakeGeometry()
 
 			if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
 			{
-				VALog(L"mesh '%s' on '%s' has no render data in-editor, skipping", *Mesh->GetName(), *Actor->GetActorNameOrLabel());
+				VALog(L"Mesh '%s' on '%s' has no render data in-editor, skipping", *Mesh->GetName(), *Actor->GetActorNameOrLabel());
 				continue;
 			}
 
@@ -779,12 +744,12 @@ void AVAudioWorld::BakeGeometry()
 
 			++BakedCount;
 
-			VALog(L"baked '%s'.'%s' tris=%d", *Actor->GetActorNameOrLabel(), *MeshComp->GetName(), Indices.Num() / 3);
+			VALog(L"Baked '%s'.'%s' tris=%d", *Actor->GetActorNameOrLabel(), *MeshComp->GetName(), Indices.Num() / 3);
 		}
 	}
 
 	MarkPackageDirty();
-	VALog(L"baked %d mesh component(s). Save the level to persist.", BakedCount);
+	VALog(L"Baked %d mesh component(s). Save the level to persist.", BakedCount);
 }
 #endif
 
@@ -1055,7 +1020,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 			{
 				if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
 				{
-					VALog(L"mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *Mesh->GetName());
+					VALog(L"Mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *Mesh->GetName());
 					continue;
 				}
 
@@ -1066,7 +1031,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				LOD.IndexBuffer.GetCopy(Indices);
 				if (Indices.IsEmpty())
 				{
-					VALog(L"mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *Mesh->GetName());
+					VALog(L"Mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *Mesh->GetName());
 					continue;
 				}
 
@@ -1114,7 +1079,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		}
 	}
 
-	VALog(L"added %d simple + %d mesh primitives (%d actors skipped, no material)", SimpleCount, MeshCount, SkippedCount);
+	VALog(L"Added %d simple + %d mesh primitives (%d actors skipped, no material)", SimpleCount, MeshCount, SkippedCount);
 }
 
 void AVAudioWorld::DestroyPrimitives()
