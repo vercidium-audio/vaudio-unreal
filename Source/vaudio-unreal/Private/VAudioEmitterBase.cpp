@@ -22,6 +22,11 @@ void AVAudioEmitterBase::DisplayWarning(const TCHAR* fmt, ...) const
 	DisplayDebugWarning(VAEmitterMessageBase + GetUniqueID(), TEXT("%s"), buffer);
 }
 
+void AVAudioEmitterBase::ClearWarning() const
+{
+	ClearDebugWarning(VAEmitterMessageBase + GetUniqueID());
+}
+
 AVAudioEmitterBase::AVAudioEmitterBase()
 {
 	PrimaryActorTick.bCanEverTick = true;

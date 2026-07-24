@@ -160,6 +160,7 @@ protected:
 	// (see VANonEmitterSourceMessageBase in VADebugMessageKeys.h). Subclasses use this for
 	// their own configuration warnings (missing sound file, etc), not just the AudioWorld check below.
 	void DisplayWarning(const TCHAR* fmt, ...) const;
+	void ClearWarning() const;
 
 	// Pushes the ray-related UPROPERTYs above onto Emitter. Subclasses call this from
 	// InitializeTypeSpecific() and (if WITH_EDITOR) PostEditChangeProperty(), and may override
