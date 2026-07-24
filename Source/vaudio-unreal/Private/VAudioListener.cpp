@@ -34,55 +34,63 @@ bool AVAudioListener::InitializeTypeSpecific()
 		}
 	}
 
+	TSet<AVAudioEmitterBase*> registeredTargets;
 
 	// Add targets
-	for (AVAudioEmitterBase* Target : TargetEmitters)
+	for (int32 i = 0; i < TargetEmitters.Num(); i++)
 	{
-		if (RegisteredTargets.Contains(Target))
+		AVAudioEmitterBase* target = TargetEmitters[i];
+
+		// Fail validation if the user added a null target
+		if (!target)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' has a duplicate target: %s"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
+			DisplayWarning(TEXT("[VA] Listener '%s' will not cast rays as it has a null target at index %d"), *GetActorNameOrLabel(), i);
+			return false;
+		}
+
+		if (registeredTargets.Contains(target))
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' has a duplicate target: %s"), *GetActorNameOrLabel(), *target->GetActorNameOrLabel());
 			continue;
 		}
 
-		// User added a null target, ignore it
-		if (!Target)
+		if (target->AudioWorld == NULL)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' has an empty target, please remove it"), *GetActorNameOrLabel());
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned to an AudioWorld. This target will not be raytraced"), *GetActorNameOrLabel(), *target->GetActorNameOrLabel());
 			continue;
 		}
 
-		if (Target->AudioWorld == NULL)
+		if (target->AudioWorld != AudioWorld)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned to an AudioWorld. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
-			continue;
-		}
-
-		if (Target->AudioWorld != AudioWorld)
-		{
-			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that is assigned to a different world: '%s'. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel(), *Target->AudioWorld->GetActorNameOrLabel());
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that is assigned to a different world: '%s'. This target will not be raytraced"), *GetActorNameOrLabel(), *target->GetActorNameOrLabel(), *target->AudioWorld->GetActorNameOrLabel());
 			continue;
 		}
 
 		// Actor init order isn't guaranteed so just initialise the emitter here
-		Target->TryInitializeEmitter();
-		VAEmitter* vaEmitter = Target->GetVAEmitter();
+		target->TryInitializeEmitter();
+		VAEmitter* vaEmitter = target->GetVAEmitter();
 
-		VAResult result = vaEmitterAddTarget(Emitter, Target->GetVAEmitter());
+		VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());
 
 		if (result == VA_FEATURE_DISABLED)
 		{
 			DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
+			return false;
 		}
 		else if (result == VA_NOT_ADDED_TO_WORLD)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned to the same World as this listener. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
+			// The target->AudioWorld check above should have caught this already
+			check(false);
+
+			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that is assigned to a different world: '%s'. This target will not be raytraced"), *GetActorNameOrLabel(), *target->GetActorNameOrLabel(), *target->AudioWorld->GetActorNameOrLabel());
+			continue;
 		}
 		else
 		{
 			check(result == VA_SUCCESS);
 		}
 
-		RegisteredTargets.Add(Target);
+		registeredTargets.Add(target);
 	}
 
 	return true;
@@ -106,16 +114,12 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 		}
 	}
 
-	ApplyListenerReverb();
-
+	if (ListenerReverbPreset)
+		ApplyListenerReverb();
 
 	// Update filters for each target VAudioSource
 	for (AVAudioEmitterBase* Target : TargetEmitters)
 	{
-		// User added a null target
-		if (!Target)
-			continue;
-
 		VAEmitter* vaEmitter = Target->GetVAEmitter();
 
 		// Wait till we've raytraced the target
@@ -151,10 +155,6 @@ void AVAudioListener::UpdateVAEmitter()
 
 void AVAudioListener::ApplyListenerReverb()
 {
-	// This is null if no submix is assigned
-	if (!ListenerReverbPreset)
-		return;
-
 	VAEAXReverb* EAX = vaEmitterGetEAX(Emitter);
 
 	// Raytracing has not completed at least once yet

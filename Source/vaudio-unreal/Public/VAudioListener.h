@@ -74,8 +74,6 @@ public:
 #endif
 
 private:
-	TSet<AVAudioEmitterBase*> RegisteredTargets;
-
 	// Transient: created via NewObject() in BeginPlay/TryInitializeEmitter and torn down in
 	// EndPlay. Must never be serialized - saving the level while this is set (e.g. mid-PIE, or
 	// after a crash skips EndPlay) writes it as a real export that doesn't round-trip through a
