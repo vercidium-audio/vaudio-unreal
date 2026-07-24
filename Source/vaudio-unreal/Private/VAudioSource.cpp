@@ -99,13 +99,6 @@ void AVAudioSource::TickTypeSpecific(float DeltaTime)
 
 void AVAudioSource::TrySpawnSourceSound()
 {
-	// User didn't assign a World
-	if (!AudioWorld)
-	{
-		DisplayWarning(TEXT("[VA] Source '%s' does not have an audio world assigned and will not play"), *GetActorNameOrLabel());
-		return;
-	}
-
 	AVAudioListener* Listener = AudioWorld->GetMainListener();
 	VAEmitter* vaListener = Listener->GetVAEmitter();
 

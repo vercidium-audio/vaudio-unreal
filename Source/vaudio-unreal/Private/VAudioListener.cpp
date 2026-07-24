@@ -67,7 +67,9 @@ bool AVAudioListener::InitializeTypeSpecific()
 		}
 
 		// Actor init order isn't guaranteed so just initialise the emitter here
-		target->TryInitializeEmitter();
+		bool pass = target->TryInitializeEmitter();
+		check(pass);
+
 		VAEmitter* vaEmitter = target->GetVAEmitter();
 
 		VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());

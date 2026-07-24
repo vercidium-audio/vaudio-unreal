@@ -119,8 +119,9 @@ void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (Emitter)
 	{
-		vaEmitterDestroy(Emitter);
-		Emitter = nullptr;
+		// TODO - Can't just kill it here - need to wait for world pendingshutdown
+		//vaEmitterDestroy(Emitter);
+		//Emitter = nullptr;
 	}
 }
 
