@@ -13,7 +13,12 @@ AVAudioContinuous::AVAudioContinuous()
 
 void AVAudioContinuous::InitializeTypeSpecific()
 {
-	ApplyRayPropertiesToEmitter();
+	if (bAffectsGroupedEAX && (ReverbRayCount == 0 || ReverbBounceCount == 0))
+	{
+		DisplayWarning(TEXT("[VA] Continuous Emitter '%s' has affectsGroupedEAX=true, but does not cast reverb rays"), *GetActorNameOrLabel());
+	}
+
+	UpdateVAEmitter();
 
 	vaEmitterSetMaxVolume(Emitter, MaxVolume);
 	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
@@ -65,7 +70,7 @@ void AVAudioContinuous::PostEditChangeProperty(FPropertyChangedEvent& PropertyCh
 	if (!Emitter)
 		return;
 
-	ApplyRayPropertiesToEmitter();
+	UpdateVAEmitter();
 
 	vaEmitterSetMaxVolume(Emitter, MaxVolume);
 	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);

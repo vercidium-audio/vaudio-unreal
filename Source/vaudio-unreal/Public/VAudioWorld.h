@@ -235,6 +235,12 @@ public:
 
 	// --- Internal API used by AVAudioEmitterBase subclasses ---
 
+	// Creates World and applies all vaWorldSet* settings/materials/primitives if this hasn't already
+	// run - safe to call repeatedly (e.g. from an AVAudioEmitterBase whose own BeginPlay ran before
+	// this world's, since actor BeginPlay order is not guaranteed). Called from BeginPlay() as well
+	// as AVAudioEmitterBase::TryInitializeEmitter().
+	void InitializeVAWorld();
+
 	VAWorld* GetVAWorld() const { return World; }
 	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
@@ -285,6 +291,7 @@ private:
 	void ApplyMaterials();
 	void ScanAndAddPrimitives();
 	void DestroyPrimitives();
+	void ApplyGroupedEAXReverb();
 
 	// Calls vaWorldAddPrimitive_ and checks the result. On failure, logs the actor/primitive/error
 	// code and adds ActorName to ActorsWithInvalidMaterials (see Tick()'s on-screen warning) so a

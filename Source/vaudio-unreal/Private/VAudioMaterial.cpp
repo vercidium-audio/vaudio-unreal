@@ -38,6 +38,7 @@ void UVAudioMaterialAssetBase::ApplyToWorld(AVAudioWorld* Owner)
 
 AVAudioWorld* UVAudioMaterialAssetBase::FindOwningWorldActor()
 {
+	// We must loop over each world, as this material could live on the World directly, or on a Component attached to geometry
 	for (const TWeakObjectPtr<AVAudioWorld>& WeakWorld : AVAudioWorld::RunningWorlds)
 	{
 		AVAudioWorld* AudioWorld = WeakWorld.Get();
@@ -56,8 +57,7 @@ void UVAudioMaterialAssetBase::PostEditChangeProperty(FPropertyChangedEvent& Pro
 
 	AVAudioWorld* Owner = FindOwningWorldActor();
 
-	// Null if this asset isn't assigned to any currently-running world's Materials array -
-	// nothing to apply the material to.
+	// Null if this asset isn't assigned to any world
 	if (!Owner)
 		return;
 

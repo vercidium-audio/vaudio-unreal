@@ -41,6 +41,10 @@ public:
 	int32 GetEmitterIndex() const { return EmitterIndex; }
 	void SetEmitterIndex(int32 Index) { EmitterIndex = Index; }
 
+	// Creates the VA emitter and wires up audio components. Safe to call repeatedly:
+	// no-ops (returns true) if already initialized, returns false if AudioWorld isn't assigned
+	bool TryInitializeEmitter();
+
 	// --- Reverb ---
 
 	// Number of reverb rays cast
@@ -65,33 +69,13 @@ public:
 
 	// --- Muffling ---
 
-	// Number of occlusion rays cast
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
-	int32 OcclusionRayCount = 0;
-
-	// Maximum number of bounces per occlusion ray
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
-	int32 OcclusionBounceCount = 0;
-
-	// Percentage of occlusion energy required for the emitter to be at full volume. Defaults to 15% of the other emitter's OcclusionRayCount
+	// Percentage of occlusion energy required for this emitter to be at full volume. Defaults to 15% of the other emitter's OcclusionRayCount
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float OcclusionEnergyCap = 0.15f;
 
-	// Number of permeation rays cast
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
-	int32 PermeationRayCount = 0;
-
-	// Number of bounces per permeation ray
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
-	int32 PermeationBounceCount = 0;
-
-	// Percentage of permeation energy required for the emitter to be at full volume. Defaults to 15% of the other emitter's PermeationRayCount * PermeationBounceCount
+	// Percentage of permeation energy required for this emitter to be at full volume. Defaults to 15% of the other emitter's PermeationRayCount * PermeationBounceCount
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float PermeationEnergyCap = 0.15f;
-
-	// Energy threshold below which permeation rays are cancelled to prevent unnecessary traversal
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
-	float MinimumPermeationEnergy = 0.01f;
 
 	// --- Ambient ---
 
@@ -171,10 +155,6 @@ protected:
 	// per-frame work here (raytracing target registration, filter application, etc).
 	virtual void TickTypeSpecific(float DeltaTime) {}
 
-	// Creates the VA emitter and wires up audio components. Safe to call repeatedly:
-	// no-ops (returns true) if already initialized, returns false if AudioWorld's
-	// VAWorld isn't ready yet (actor BeginPlay order isn't guaranteed).
-	bool TryInitializeEmitter();
 
 	// On-screen warning, keyed by GetUniqueID() so each actor gets its own message slot
 	// (see VANonEmitterSourceMessageBase in VADebugMessageKeys.h). Subclasses use this for
@@ -182,8 +162,10 @@ protected:
 	void DisplayWarning(const TCHAR* fmt, ...) const;
 
 	// Pushes the ray-related UPROPERTYs above onto Emitter. Subclasses call this from
-	// InitializeTypeSpecific() and (if WITH_EDITOR) PostEditChangeProperty().
-	void ApplyRayPropertiesToEmitter();
+	// InitializeTypeSpecific() and (if WITH_EDITOR) PostEditChangeProperty(), and may override
+	// it (calling Super::UpdateVAEmitter() first) to push their own additional
+	// vaEmitterSet* calls at the same two call sites - see AVAudioListener.
+	virtual void UpdateVAEmitter();
 
 	VAEmitter* Emitter = nullptr;
 

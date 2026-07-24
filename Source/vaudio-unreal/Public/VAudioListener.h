@@ -20,6 +20,7 @@ public:
 protected:
 	virtual void InitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
+	virtual void UpdateVAEmitter() override;
 
 public:
 	// Automatically move this emitter (and the VA listener position) to the first player controller's camera every frame
@@ -45,12 +46,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float RelativeReverbOuterThreshold = 0.8f;
 
+	// --- Muffling ---
+
+	// Number of occlusion rays cast
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
+	int32 OcclusionRayCount = 0;
+
+	// Maximum number of bounces per occlusion ray
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
+	int32 OcclusionBounceCount = 0;
+
+	// Number of permeation rays cast
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
+	int32 PermeationRayCount = 0;
+
+	// Number of bounces per permeation ray
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
+	int32 PermeationBounceCount = 0;
+
+	// Energy threshold below which permeation rays are cancelled to prevent unnecessary traversal
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
+	float MinimumPermeationEnergy = 0.01f;
+
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
 private:
-	bool bTargetsRegistered = false;
 	TSet<AVAudioEmitterBase*> RegisteredTargets;
 
 	// Transient: created via NewObject() in BeginPlay/TryInitializeEmitter and torn down in
@@ -61,5 +84,4 @@ private:
 	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;
 
 	void ApplyListenerReverb();
-	void ApplyGroupedEAXReverb();
 };

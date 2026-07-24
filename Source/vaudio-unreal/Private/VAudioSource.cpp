@@ -28,6 +28,11 @@ void AVAudioSource::InitializeTypeSpecific()
 		return;
 	}
 
+	if (bAffectsGroupedEAX && (ReverbRayCount == 0 || ReverbBounceCount == 0))
+	{
+		DisplayWarning(TEXT("[VA] Source '%s' has affectsGroupedEAX=true, but does not cast reverb rays"), *GetActorNameOrLabel());
+	}
+
 	// Build the source effect chain (LPF only on the dry path; reverb submix taps the pre-effect signal).
 	SourceLPFPreset = NewObject<USourceEffectFilterPreset>(this);
 
@@ -253,6 +258,7 @@ void AVAudioSource::UpdateSourceSubmix()
 		VALog(L"Unable to access grouped EAX data as vaWorldGetReverbCalculated() is false");
 	}
 
+	// TODO - can we control the overall send level of the submix, rather than filtering how much each sound sends to the submix?
 	SourceAudioComponent->SetSubmixSend(Submix, SendLevel);
 }
 

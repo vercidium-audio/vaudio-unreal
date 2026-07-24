@@ -5,6 +5,7 @@
 #include "VAudioListener.h"
 #include "VAudioMaterial.h"
 #include "VAudioMaterialComponent.h"
+#include "VAudioReverbConversion.h"
 #include "Components/BillboardComponent.h"
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
@@ -21,6 +22,8 @@
 extern "C" {
 #include "vaudio.h"
 }
+
+#include "VAConstants.h"
 
 #include "VARawLog.h"
 #include "VADebugMessageKeys.h"
@@ -96,6 +99,15 @@ void AVAudioWorld::BeginPlay()
 
 	RunningWorlds.Add(this);
 
+	InitializeVAWorld();
+}
+
+void AVAudioWorld::InitializeVAWorld()
+{
+	// Already initialised, all is good
+	if (World)
+		return;
+
 	World = vaWorldCreate();
 	vaWorldSetLogMemoryAllocationWarnings(World, true);
 	vaWorldSetCoordinateSystem(World, VACoordinateSystemUnreal);
@@ -146,6 +158,42 @@ void AVAudioWorld::BeginPlay()
 	ApplyMaterials();
 	ScanAndAddPrimitives();
 }
+
+
+void AVAudioWorld::ApplyGroupedEAXReverb()
+{
+	// Wait for raytracing to run at least once
+	if (vaWorldGetInitialising(World))
+		return;
+
+	const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
+	int32 Count = vaWorldGetGroupedEAXCount(World);
+
+	for (int32 i = 0; i < Count; ++i)
+	{
+		USubmixEffectReverbPreset* Preset = GetGroupedEAXPreset(i);
+
+		// GetGroupedEAXPreset(i) is only valid for i < GroupedEAXSubmixes.Num() on the VAudioWorld
+		// actor, but Count (the SDK's grouped EAX count) is always >= 2 - if fewer than 2 submixes
+		// are configured, indices in between have no preset.
+		if (!Preset)
+		{
+			VALog(L"no reverb preset configured at GroupedEAX index %d - add more entries to GroupedEAXSubmixes on the VAudioWorld actor (needs at least 2).", i);
+			continue;
+		}
+
+		const VAEAXReverb* EAX = GroupedEAX[i];
+
+		// EAX itself comes straight from the SDK's GroupedEAX array (sized to Count), so it
+		// should always be populated for i < Count once reverb has been calculated.
+		if (!ensureMsgf(EAX, TEXT("VAudioListener '%s': GroupedEAX[%d] is null after reverb was calculated"), *GetActorNameOrLabel(), i))
+			continue;
+
+		FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
+		Preset->SetSettings(settings);
+	}
+}
+
 
 #if WITH_EDITOR
 void AVAudioWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
@@ -212,6 +260,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 	if (World)
 	{
 		vaWorldUpdate(World);
+		ApplyGroupedEAXReverb();
 
 		static float TimeSinceHeartbeat = 0.0f;
 		TimeSinceHeartbeat += DeltaTime;
@@ -331,44 +380,6 @@ void AVAudioWorld::Tick(float DeltaTime)
 							FString::Printf(TEXT("[VA] %s Emitter %d '%s': (%.1f, %.1f, %.1f), %s [No EAX]"), *typeString, i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
 					}
 				}
-			}
-
-			// Per-source-emitter submix send level (mirrors the gain UpdateSourceSubmix() sends to
-			// the grouped EAX submix - recomputed here purely for display, doesn't affect audio).
-			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
-			{
-				AVAudioContinuous* emitter = Cast<AVAudioContinuous>(RegisteredEmitters[i]);
-				if (!emitter)
-					continue;
-
-				VAEmitter* vaEmitter = emitter->GetVAEmitter();
-
-				if (!vaEmitter || !emitter->bAffectsGroupedEAX)
-					continue;
-
-				int32 groupedEAXIndex = vaEmitterGetGroupedEAXIndex(vaEmitter);
-				if (groupedEAXIndex < 0)
-					continue;
-
-				float SendLevel = 1.0f;
-
-				if (vaWorldGetInitialising(World) == false)
-				{
-					const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
-					AVAudioListener* Listener = GetMainListener();
-
-					if (GroupedEAX && GroupedEAX[groupedEAXIndex] && Listener && Listener->GetVAEmitter())
-					{
-						// UE-LIMITATION - only relative gain is supported. Can't do directional reverb
-						float* Gain = vaEAXReverbGetRelativeGain(GroupedEAX[groupedEAXIndex], Listener->GetVAEmitter());
-						if (Gain)
-							SendLevel = *Gain;
-					}
-				}
-
-				uint64 messageID = VAEmitterMessageBase + emitter->GetEmitterIndex() * VAEmitterMessageStride + VAEmitterSubmixStatus;
-				GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-					FString::Printf(TEXT("[VA] Submix '%s': sendLevel=%.2f"), *emitter->GetActorNameOrLabel(), SendLevel));
 			}
 
 			// Per-target LPF applied by the main listener (mirrors the filter AVAudioListener::TickTypeSpecific()
@@ -802,7 +813,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				FVector Center = CompTransform.GetTranslation();
 
 				VASpherePrimitive* Sp = vaSpherePrimitiveCreate();
-				vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
+				vaSpherePrimitiveSetCenterUnreal(Sp, Center);
 				vaSpherePrimitiveSetRadius(Sp,   Sphere->GetScaledSphereRadius());
 				vaSpherePrimitiveSetMaterial(Sp, Material);
 
@@ -898,7 +909,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 					float   Radius = Sphere.Radius * Scale.GetAbsMax();
 
 					VASpherePrimitive* Sp = vaSpherePrimitiveCreate();
-					vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
+					vaSpherePrimitiveSetCenterUnreal(Sp, Center);
 					vaSpherePrimitiveSetRadius(Sp,   Radius);
 					vaSpherePrimitiveSetMaterial(Sp, Material);
 
@@ -1107,7 +1118,7 @@ void AVAudioWorld::RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& Bind
 		USphereComponent* Sphere = CastChecked<USphereComponent>(Component);
 		FVector Center = WorldTransform.GetTranslation();
 		VASpherePrimitive* Sp = static_cast<VASpherePrimitive*>(Binding.Primitive);
-		vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
+		vaSpherePrimitiveSetCenterUnreal(Sp, Center);
 		vaSpherePrimitiveSetRadius(Sp, Sphere->GetScaledSphereRadius());
 		break;
 	}
@@ -1138,7 +1149,7 @@ void AVAudioWorld::RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& Bind
 		FVector Scale = Component->GetComponentTransform().GetScale3D();
 		FVector Center = WorldTransform.GetTranslation();
 		VASpherePrimitive* Sp = static_cast<VASpherePrimitive*>(Binding.Primitive);
-		vaSpherePrimitiveSetCenter(Sp, vaVectorCreate((float)Center.X, (float)Center.Y, (float)Center.Z));
+		vaSpherePrimitiveSetCenterUnreal(Sp, Center);
 		vaSpherePrimitiveSetRadius(Sp, Binding.LocalExtent.X * Scale.GetAbsMax());
 		break;
 	}

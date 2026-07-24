@@ -5,6 +5,7 @@ extern "C" {
 #include "vaudio.h"
 }
 
+#include "VAConstants.h"
 #include "VARawLog.h"
 #include "VADebugMessageKeys.h"
 
@@ -54,11 +55,11 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 	if (!AudioWorld)
 		return false;
 
-	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+	// AVAudioWorld's own BeginPlay may not have run yet (actor BeginPlay order isn't guaranteed) e.g. if the AudioWorld is a child actor of an Emitter, the Emitter actor initialises first.
+	// So initialise it here anyway, rather than doing a deferred creation in Tick()
+	AudioWorld->InitializeVAWorld();
 
-	// AVAudioWorld's own BeginPlay hasn't run yet (actor BeginPlay order isn't guaranteed)
-	if (!vaWorld)
-		return false;
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 
 	Emitter = vaEmitterCreate();
 
@@ -66,7 +67,7 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 	vaEmitterSetLogErrorCallback(Emitter, &VASdkLogCallback);
 
 	FVector Pos = GetActorLocation();
-	vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Y, (float)Pos.Z));
+	vaEmitterSetPositionUnreal(Emitter, Pos);
 
 	InitializeTypeSpecific();
 
@@ -127,7 +128,7 @@ void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 }
 
-void AVAudioEmitterBase::ApplyRayPropertiesToEmitter()
+void AVAudioEmitterBase::UpdateVAEmitter()
 {
 	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
 	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
@@ -135,12 +136,8 @@ void AVAudioEmitterBase::ApplyRayPropertiesToEmitter()
 	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
 	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
 
-	vaEmitterSetOcclusionRayCount(Emitter, OcclusionRayCount);
-	vaEmitterSetOcclusionBounceCount(Emitter, OcclusionBounceCount);
 	vaEmitterSetOcclusionEnergyCap(Emitter, OcclusionEnergyCap);
 
-	vaEmitterSetPermeationRayCount(Emitter, PermeationRayCount);
-	vaEmitterSetPermeationBounceCount(Emitter, PermeationBounceCount);
 	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
 
 	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
@@ -160,37 +157,14 @@ void AVAudioEmitterBase::ApplyRayPropertiesToEmitter()
 	vaEmitterSetType(Emitter, EmitterType);
 	vaEmitterSetClampPosition(Emitter, bClampPosition);
 	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
-	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
 }
 
 void AVAudioEmitterBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (!Emitter)
-	{
-		VALog(L"Emitter is null");
-
-		if (!TryInitializeEmitter())
-		{
-			VALog(L"Emitter init failed");
-
-			static float TimeSinceLastNullLog = 0.0f;
-			TimeSinceLastNullLog += DeltaTime;
-			if (TimeSinceLastNullLog >= 2.0f)
-			{
-				TimeSinceLastNullLog = 0.0f;
-				VALog(L"Emitter still NULL, waiting on AudioWorld");
-			}
-
-			return;
-		}
-
-		VALog(L"Emitter init succeeded");
-	}
-
 	FVector Pos = GetActorLocation();
-	vaEmitterSetPosition(Emitter, vaVectorCreate((float)Pos.X, (float)Pos.Y, (float)Pos.Z));
+	vaEmitterSetPositionUnreal(Emitter, Pos);
 
 	TickTypeSpecific(DeltaTime);
 }
