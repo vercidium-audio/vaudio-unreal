@@ -103,6 +103,13 @@ void AVAudioSource::TickTypeSpecific(float DeltaTime)
 
 	if (bAffectsGroupedEAX)
 		UpdateSourceSubmix();
+
+	if (SourceAudioComponent)
+	{
+		FVector pos = GetActorLocation();
+		SourceAudioComponent->SetWorldLocationAndRotation(pos, FRotator::ZeroRotator);
+		vaEmitterSetPositionUnreal(Emitter, pos);
+	}
 }
 
 void AVAudioSource::TrySpawnSourceSound()
