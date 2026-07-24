@@ -24,8 +24,21 @@ bool AVAudioSource::InitializeTypeSpecific()
 
 	if (!SourceSound)
 	{
-		VALog(L"Source has no SourceSound assigned - it will do nothing");
+		DisplayWarning(TEXT("[VA] Source '%s' will not play as it has no SourceSound assigned"), *GetActorNameOrLabel());
 		return false;
+	}
+
+	AVAudioListener* listener = AudioWorld->GetMainListener();
+
+	if (!listener)
+	{
+		DisplayWarning(TEXT("[VA] Source '%s' will not play as the AudioWorld does not have a listener"), *GetActorNameOrLabel());
+		return false;
+	}
+
+	if (!SourceSound->IsPlayWhenSilent())
+	{
+		DisplayWarning(TEXT("[VA] Source '%s': SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *SourceSound->GetName());
 	}
 
 	if (bAffectsGroupedEAX && (ReverbRayCount == 0 || ReverbBounceCount == 0))
@@ -72,28 +85,16 @@ void AVAudioSource::DeinitializeTypeSpecific()
 
 void AVAudioSource::TickTypeSpecific(float DeltaTime)
 {
-	Super::TickTypeSpecific(DeltaTime);
+	check(AudioWorld);
+	check(Emitter);
 
-	// Configuration issue
-	if (!AudioWorld || !Emitter)
-		return;
+	Super::TickTypeSpecific(DeltaTime);
 
 	if (bSourcePendingSpawn)
 		TrySpawnSourceSound();
 
 	if (bAffectsGroupedEAX)
 		UpdateSourceSubmix();
-
-	// ApplySourceFilter() can drive this sound's volume down to 0 (occluded) and back up later as
-	// the emitter's raytraced gainLF changes - if SourceSound isn't set to play when silent, Unreal
-	// can decide the sound is inaudible at 0 volume and never resume it. Checked every tick (rather
-	// than once in TrySpawnSourceSound()) so the on-screen warning doesn't expire after one frame -
-	// AddOnScreenDebugMessage's TimeToDisplay of 0.0f means "reissue every tick to keep it alive".
-	if (SourceSound && !SourceSound->IsPlayWhenSilent())
-	{
-		uint64 messageID = VAEmitterMessageBase + GetEmitterIndex() * VAEmitterMessageStride + VAEmitterVirtualizationStatus;
-		GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source '%s': SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *GetActorNameOrLabel(), *SourceSound->GetName()));
-	}
 }
 
 void AVAudioSource::TrySpawnSourceSound()
@@ -105,18 +106,10 @@ void AVAudioSource::TrySpawnSourceSound()
 		return;
 	}
 
-	// This plugin currently assumes a single main listener - if that ever changes, spawn
-	// readiness would need to consider raytrace state from every listener targeting this emitter.
 	AVAudioListener* Listener = AudioWorld->GetMainListener();
-
-	// World doesn't have a listener, this sound will not play
-	if (!Listener)
-		return;
-
 	VAEmitter* vaListener = Listener->GetVAEmitter();
 
-	// Wait until the listener has raytraced this emitter at least once, so the LPF has a real
-	// gain value to start from instead of momentarily playing at full volume/unfiltered.
+	// Wait until raytracing completes
 	if (!vaEmitterHasRaytracedTarget(vaListener, Emitter))
 		return;
 
@@ -156,7 +149,7 @@ void AVAudioSource::TrySpawnSourceSound()
 	}
 	else
 	{
-		// TODO - why could CreateComponent return null?
+		DisplayWarning(TEXT("[VA] Source '%s' play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"), *GetActorNameOrLabel());
 	}
 }
 
@@ -225,7 +218,7 @@ void AVAudioSource::SetDryOutputEnabled(bool bEnabled)
 	if (bEnabled == bCurrentDryEnabled)
 		return;
 
-	// Sound was never initialised due to a configuration issue above
+	// Sound not played yet - still waiting for raytracing
 	if (!SourceAudioComponent)
 		return;
 

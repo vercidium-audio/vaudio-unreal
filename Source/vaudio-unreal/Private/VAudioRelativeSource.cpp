@@ -166,7 +166,7 @@ void AVAudioRelativeSource::TrySpawnSourceSound()
 	}
 	else
 	{
-		DisplayWarning(TEXT("[VA] RelativeSource '%s' play failed. Check if this actor was correctly spawned, or if the Unreal World does not allow audio playback"), *GetActorNameOrLabel());
+		DisplayWarning(TEXT("[VA] RelativeSource '%s' play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"), *GetActorNameOrLabel());
 	}
 }
 
