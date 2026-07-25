@@ -59,6 +59,7 @@ void AVAudioWorld::BindPrimitiveToComponent(void* primitive, EVAudioPrimitiveKin
 		return;
 	}
 
+	int32 bindingIndex = PrimitiveBindings.Num();
 	FVAudioPrimitiveBinding& binding = PrimitiveBindings.AddDefaulted_GetRef();
 	binding.Component    = component;
 	binding.Primitive    = primitive;
@@ -66,6 +67,8 @@ void AVAudioWorld::BindPrimitiveToComponent(void* primitive, EVAudioPrimitiveKin
 	binding.LocalOffset  = localOffset;
 	binding.LocalExtent  = localExtent;
 	binding.Handle       = component->TransformUpdated.AddUObject(this, &AVAudioWorld::OnPrimitiveComponentMoved);
+
+	PrimitiveBindingsByComponent.FindOrAdd(component).Add(bindingIndex);
 }
 
 void AVAudioWorld::RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& binding)
@@ -152,20 +155,43 @@ void AVAudioWorld::RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& bind
 
 void AVAudioWorld::OnPrimitiveComponentMoved(USceneComponent* updatedComponent, EUpdateTransformFlags updateTransformFlags, ETeleportType teleport)
 {
-	for (int32 i = PrimitiveBindings.Num() - 1; i >= 0; --i)
-	{
-		FVAudioPrimitiveBinding& binding = PrimitiveBindings[i];
+	TArray<int32>* bindingIndices = PrimitiveBindingsByComponent.Find(updatedComponent);
 
-		// If the actor was deleted during PIE while the world is alive, kill the component
+	if (!bindingIndices)
+		return;
+
+	// Loop over the bindings owned by this component (not all components!)
+	for (int32 i = bindingIndices->Num() - 1; i >= 0; --i)
+	{
+		int32 bindingIndex = (*bindingIndices)[i];
+		FVAudioPrimitiveBinding& binding = PrimitiveBindings[bindingIndex];
+
+		// If the actor was deleted during PIE while the world is alive, kill the binding
 		if (!binding.Component.IsValid())
 		{
-			PrimitiveBindings.RemoveAtSwap(i);
+			// RemoveAtSwap moves the last binding into bindingIndex, so PrimitiveBindingsByComponent's
+			// entry for whichever component that last binding belongs to must point at its new index.
+			int32 lastIndex = PrimitiveBindings.Num() - 1;
+
+			if (bindingIndex != lastIndex)
+			{
+				if (USceneComponent* movedComponent = PrimitiveBindings[lastIndex].Component.Get())
+				{
+					TArray<int32>& movedIndices = PrimitiveBindingsByComponent[movedComponent];
+					movedIndices[movedIndices.Find(lastIndex)] = bindingIndex;
+				}
+			}
+
+			PrimitiveBindings.RemoveAtSwap(bindingIndex);
+			bindingIndices->RemoveAtSwap(i);
 			continue;
 		}
 
-		if (binding.Component.Get() == updatedComponent)
-			RefreshPrimitiveTransform(binding);
+		RefreshPrimitiveTransform(binding);
 	}
+
+	if (bindingIndices->IsEmpty())
+		PrimitiveBindingsByComponent.Remove(updatedComponent);
 }
 
 void AVAudioWorld::UnbindPrimitiveComponents()
@@ -177,4 +203,5 @@ void AVAudioWorld::UnbindPrimitiveComponents()
 	}
 
 	PrimitiveBindings.Empty();
+	PrimitiveBindingsByComponent.Empty();
 }

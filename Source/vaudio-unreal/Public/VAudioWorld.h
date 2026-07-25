@@ -320,6 +320,13 @@ private:
 	// static mesh's simple collision can contain several sphyl/sphere/box elements).
 	TArray<FVAudioPrimitiveBinding> PrimitiveBindings;
 
+	// Indices into PrimitiveBindings owned by each bound component, so OnPrimitiveComponentMoved()
+	// can jump straight to the bindings that moved instead of scanning all of PrimitiveBindings.
+	// Keyed by raw pointer rather than TWeakObjectPtr since it's only ever looked up from that same
+	// component's own TransformUpdated callback (component is guaranteed alive at that point), and
+	// is fully cleared by UnbindPrimitiveComponents() before any entry could go stale.
+	TMap<USceneComponent*, TArray<int32>> PrimitiveBindingsByComponent;
+
 	TArray<AVAudioEmitterBase*> RegisteredEmitters;
 
 	// Cached from RegisteredEmitters whenever an AVAudioListener is (un)registered, so
@@ -360,9 +367,9 @@ private:
 	static void RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& Binding);
 
 	// Fired by TransformUpdated (a non-dynamic multicast event, bound via AddUObject - see
-	// BindPrimitiveToComponent) on any component we bound. Recomputes and re-applies the
-	// transform (and, for shape primitives, the scale-derived size) of every primitive bound to
-	// UpdatedComponent.
+	// BindPrimitiveToComponent) on a component we bound. Looks UpdatedComponent up in
+	// PrimitiveBindingsByComponent and recomputes/re-applies the transform (and, for shape
+	// primitives, the scale-derived size) of just the primitives bound to it.
 	void OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
 
 	// Unbinds every TransformUpdated delegate registered in PrimitiveBindings and empties it.
