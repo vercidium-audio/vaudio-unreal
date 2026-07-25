@@ -278,6 +278,9 @@ public:
 	// constructor and PostEditChangeProperty whenever either property changes in the editor.
 	void RefreshWorldBounds();
 
+	// Update the vaWorld with the latest properties
+	void UpdateVAWorld();
+
 	VAWorld* GetVAWorld() const { return World; }
 	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
@@ -333,7 +336,7 @@ private:
 	// only runs on the tick where it actually changes.
 	bool bWasReverbOnly = false;
 
-	void ApplyMaterials();
+	void InitialiseMaterials();
 	void ScanAndAddPrimitives();
 	void DestroyPrimitives();
 	void ApplyGroupedEAXReverb();
