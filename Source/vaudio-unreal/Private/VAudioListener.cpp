@@ -207,6 +207,60 @@ void AVAudioListener::ApplyListenerReverb()
 		FString::Printf(TEXT("[VA] Listener EAX: decayTime=%.2f gainLF=%.2f gainHF=%.2f"), EAX->decayTime, EAX->gainLF, EAX->gainHF));
 }
 
+void AVAudioListener::GetReverbResult(bool& bSuccess, FVAEAXReverbResult& Result) const
+{
+	VAEAXReverb* EAX = Emitter ? vaEmitterGetEAX(Emitter) : nullptr;
+
+	// Raytracing has not completed at least once yet
+	if (!EAX)
+	{
+		bSuccess = false;
+		Result = FVAEAXReverbResult();
+		return;
+	}
+
+	bSuccess = true;
+	Result.ReflectionsDelay = EAX->reflectionsDelay;
+	Result.Density = EAX->density;
+	Result.Diffusion = EAX->diffusion;
+	Result.GainLF = EAX->gainLF;
+	Result.GainHF = EAX->gainHF;
+	Result.Gain = EAX->gain;
+	Result.DecayTime = EAX->decayTime;
+	Result.DecayLFRatio = EAX->decayLFRatio;
+	Result.DecayHFRatio = EAX->decayHFRatio;
+	Result.ReflectionsGain = EAX->reflectionsGain;
+	Result.LateReverbGain = EAX->lateReverbGain;
+	Result.LateReverbDelay = EAX->lateReverbDelay;
+	Result.EchoTime = EAX->echoTime;
+	Result.EchoDepth = EAX->echoDepth;
+	Result.ModulationTime = EAX->modulationTime;
+	Result.ModulationDepth = EAX->modulationDepth;
+	Result.AirAbsorptionGainHF = EAX->airAbsorptionGainHF;
+	Result.HFReference = EAX->hfReference;
+	Result.LFReference = EAX->lfReference;
+	Result.RoomRolloffFactor = EAX->roomRolloffFactor;
+	Result.bDecayHFLimit = EAX->decayHFLimit != 0;
+}
+
+void AVAudioListener::GetAmbientFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
+{
+	VALowPassFilter* AmbientFilter = Emitter ? vaEmitterGetAmbientFilter(Emitter) : nullptr;
+
+	// Raytracing has not completed at least once yet
+	if (!AmbientFilter)
+	{
+		bSuccess = false;
+		GainLF = 0.0f;
+		GainHF = 0.0f;
+		return;
+	}
+
+	bSuccess = true;
+	GainLF = AmbientFilter->gainLF;
+	GainHF = AmbientFilter->gainHF;
+}
+
 #if WITH_EDITOR
 void AVAudioListener::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {

@@ -2,9 +2,12 @@
 
 ~\vaudiofps2\ThirdParty\vaudio\include\vaudio.h is the public header for Vercidium Audio.
 
+Don't attempt to build the plugin yourself. The user will build it and inform you of any errors.
+
 Coding guidelines:
 - Use DisplayWarning() to surface errors to the user on the screen. I used to use VALog() instead
 - Use camelCase for variable names
+- Use camelCase for field and parameter names, e.g. 'result' instead of 'Result'
 - Don't use single capitalised acronyms for variable names - use position instead of P, vaWorld instead of VAW, etc.
 
 ## Actor Initialisation
