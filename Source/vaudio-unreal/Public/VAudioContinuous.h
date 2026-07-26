@@ -51,6 +51,11 @@ public:
 	// emitter's muffling instead of raytracing again for every attached one-shot sound.
 	VALowPassFilter* GetMufflingResult() const;
 
+	// Reads this emitter's raytraced muffling result. bSuccess is false (and GainLF/GainHF are
+	// zeroed) until the listener has raytraced this emitter at least once
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Muffling")
+	void GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const;
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif

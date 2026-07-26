@@ -60,6 +60,24 @@ VALowPassFilter* AVAudioContinuous::GetMufflingResult() const
 	return vaEmitterGetTargetFilter(Listener->GetVAEmitter(), Emitter);
 }
 
+void AVAudioContinuous::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
+{
+	VALowPassFilter* MufflingFilter = GetMufflingResult();
+
+	// Raytracing has not completed at least once yet
+	if (!MufflingFilter)
+	{
+		bSuccess = false;
+		GainLF = 0.0f;
+		GainHF = 0.0f;
+		return;
+	}
+
+	bSuccess = true;
+	GainLF = MufflingFilter->gainLF;
+	GainHF = MufflingFilter->gainHF;
+}
+
 #if WITH_EDITOR
 void AVAudioContinuous::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
