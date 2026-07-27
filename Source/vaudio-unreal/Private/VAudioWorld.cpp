@@ -327,7 +327,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 						else if (!source->SourceAudioComponent) // SourceAudioComponent is set when it actually plays
 						{
 							uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
-							GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' cannot play its sound as it is not a target of the listener emitter"), i, *continuousEmitter->GetActorNameOrLabel()));
+							GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has not played its sound yet"), i, *continuousEmitter->GetActorNameOrLabel()));
 						}
 					}
 
@@ -555,13 +555,6 @@ AVAudioListener* AVAudioWorld::GetMainListener()
 
 		// The listener will initialise its targets, which will fail if the listener isn't set, so MainListener needs to be set here
 		MainListener = Listener;
-
-		// HACK - when the listener initialises before the world, it'll initialise its targets (e.g. VAudioSource), which calls this GetMainListener() from its own TryInitializeEmitter, which
-		//  then calls the listener's TryInitializeEmitter again below, but luckily it exits early rather than stack-overflows, because the listener's Emitter is already set.
-		//  However, this allows actors to be defined in any order / hierarchy
-		bool pass = Listener->TryInitializeEmitter();
-		check(pass);
-
 		break;
 	}
 

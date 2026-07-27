@@ -100,6 +100,8 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 	}
 
 	// Create the emitter
+	check(!Emitter);
+
 	Emitter = vaEmitterCreate();
 	vaEmitterSetLogCallback(Emitter, &VASdkLogCallback);
 	vaEmitterSetLogErrorCallback(Emitter, &VASdkLogCallback);

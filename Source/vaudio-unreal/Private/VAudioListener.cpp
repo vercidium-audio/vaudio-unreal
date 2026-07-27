@@ -113,11 +113,12 @@ void AVAudioListener::InitializeTypeSpecific()
 			continue;
 		}
 
-		VAEmitter* vaEmitter = target->GetVAEmitter();
+		VAEmitter* vaTarget = target->GetVAEmitter();
 
-		VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());
+		VAResult result = vaEmitterAddTarget(Emitter, vaTarget);
 
 		check(result == VA_SUCCESS);
+		check(vaEmitterHasTarget(Emitter, vaTarget));
 
 		if (result == VA_FEATURE_DISABLED)
 		{

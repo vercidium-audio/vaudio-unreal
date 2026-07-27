@@ -128,6 +128,14 @@ void AVAudioSource::TrySpawnSourceSound()
 	AVAudioListener* Listener = AudioWorld->GetMainListener();
 	VAEmitter* vaListener = Listener->GetVAEmitter();
 
+	VAVector emitterPos = vaEmitterGetPosition(Emitter);
+
+	// Target not configured correctly
+	if (!vaEmitterHasTarget(vaListener, Emitter))
+	{
+		return;
+	}
+
 	// Wait until raytracing completes
 	if (!vaEmitterHasRaytracedTarget(vaListener, Emitter))
 		return;
