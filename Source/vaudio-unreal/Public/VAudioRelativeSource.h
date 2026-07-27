@@ -43,18 +43,22 @@ public:
 
 	// The sound(s) to play - one is chosen at random each time this actor spawns its sound, so
 	// e.g. footsteps can cycle through variations instead of repeating the same clip.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	// ExposeOnSpawn so Blueprint's Spawn Actor from Class node can set this before BeginPlay runs -
+	// BeginPlay validates SourceSounds immediately, before a Blueprint graph gets a chance to Set it
+	// on the returned actor reference.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	TArray<USoundBase*> SourceSounds;
 
 	// Whether the sound is spawned attached to this actor (following its position) or as a plain
 	// 2D sound. Attached playback still has no directionality/attenuation of its own - VA-driven
 	// reverb/muffling here is always non-directional, matching today's ApplyListenerReverb().
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	bool bAttachToSelf = true;
 
 	// Either an AVAudioListener (reuse its own non-directional reverb) or an AVAudioContinuous
 	// (reuse that emitter's already-raytraced muffling result). Validated on BeginPlay.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	// ExposeOnSpawn for the same reason as SourceSounds above.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	AVAudioEmitterBase* ReverbSource = nullptr;
 
 	UPROPERTY(Transient)
