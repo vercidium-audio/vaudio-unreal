@@ -5,7 +5,7 @@ Unreal Engine plugin for Vercidium Audio — raytraced audio simulation with rea
 > [!WARNING]
 > This plugin is experimental and requires much testing and feedback
 
-This repository requires Vercidium Audio v1.4.1 and OpenAL Soft to run:
+This repository requires Vercidium Audio v1.5.0 and OpenAL Soft to run:
 - Download the Vercidium Audio SDK from [vercidium.com](https://vercidium.com)
 
 > Please note that the Vercidium Audio SDK is not free for commercial use. See [vercidium.com/eula](https://vercidium.com/eula)
@@ -76,7 +76,7 @@ Once the plugin is enabled, several new actor/component types are available in t
 - **VA Audio Ambient Source** (`AVAudioAmbientSource`) — for ambient rain/wind/room-tone sounds that reuse the listener's ambient filter without raytracing or reverb.
 
 You can also create material assets in the Content Browser and add them to the `AVAudioWorld`'s `Materials` array:
-- **VA Audio Material** (`UVAudioMaterialAsset`) — overrides the default properties (absorption, scattering, transmission) of one of the 23 built-in materials. Pick its name from the `MaterialType` dropdown and use **Reset To Defaults** to pull in the SDK's base values, then tweak as needed.
+- **VA Audio Default Material** (`UVAudioDefaultMaterialAsset`) — overrides the default properties (absorption, scattering, transmission) of one of the 23 built-in materials. Pick its name from the `MaterialType` dropdown and use **Reset To Defaults** to pull in the SDK's base values, then tweak as needed.
 - **VA Audio Custom Material** (`UVAudioCustomMaterialAsset`) — defines a brand new material with its own free-form (unique) `MaterialName` and an SDK-assigned ID. Assign it to a `UVAudioMaterialComponent`'s `MaterialAsset` field to use it on geometry.
 
 ## References
