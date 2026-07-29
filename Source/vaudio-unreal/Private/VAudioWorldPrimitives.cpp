@@ -17,39 +17,6 @@ extern "C" {
 #include "vaudio.h"
 }
 
-static VAMatrix MakeTranslationMatrix(const FVector& P)
-{
-	return vaMatrixCreateTranslation((float)P.X, (float)P.Y, (float)P.Z);
-}
-
-// Rotation + translation only, no scale - used for primitives whose SetTransform doc explicitly disallows scale components (capsule/prism/etc - see vaudio.h).
-// Non-uniform scale on these shapes is instead applied via their own dedicated SetRadius/SetLength/SetSize calls.
-static VAMatrix MakeRotTransMatrix(const FTransform& T)
-{
-	FQuat Q = T.GetRotation();
-	FVector P = T.GetTranslation();
-
-	FVector AxX = Q.GetAxisX();
-	FVector AxY = Q.GetAxisY();
-	FVector AxZ = Q.GetAxisZ();
-
-	return vaMatrixCreate(
-		(float)AxX.X, (float)AxX.Y, (float)AxX.Z, 0.f,
-		(float)AxY.X, (float)AxY.Y, (float)AxY.Z, 0.f,
-		(float)AxZ.X, (float)AxZ.Y, (float)AxZ.Z, 0.f,
-		(float)P.X,   (float)P.Y,   (float)P.Z,   1.f
-	);
-}
-
-// Scale + rotation + translation - only VAMeshPrimitive's SetTransform supports a scale  component (see vaMatrixCreateScale's comment in vaudio.h), so this is not safe to use for any other primitive type.
-static VAMatrix MakeScaleRotTransMatrix(const FTransform& T)
-{
-	VAMatrix RotTrans = MakeRotTransMatrix(T);
-	FVector Scale = T.GetScale3D();
-	VAMatrix ScaleMat = vaMatrixCreateScale((float)Scale.X, (float)Scale.Y, (float)Scale.Z);
-	return vaMatrixMultiply(&ScaleMat, &RotTrans);
-}
-
 // vaudio.h defines VAResult codes as plain #defines (not an enum), so there's no reflection -
 // only the codes vaWorldAddPrimitive_ can actually return are named here.
 static const TCHAR* VAResultToString(VAResult Result)
@@ -82,7 +49,7 @@ static UVAudioMaterialComponent* FindMaterialInChain(AActor* Actor)
 	return nullptr;
 }
 
-// True if this mesh would use its simple collision (sphyl/sphere/box) rather than the
+// True if this mesh would use its simple collision (sphyl/vaSphere/box) rather than the
 // triangle-mesh fallback, matching the bAddedSimple check in ScanAndAddPrimitives.
 static bool HasSimpleCollision(UStaticMesh* Mesh)
 {
@@ -178,317 +145,310 @@ bool AVAudioWorld::TryAddPrimitive(void* Primitive, const TCHAR* PrimitiveTypeNa
 
 void AVAudioWorld::ScanAndAddPrimitives()
 {
-	UWorld* UEWorld = GetWorld();
+	UWorld* ueWorld = GetWorld();
 
 	// Null if this actor isn't in a live level (e.g. called outside BeginPlay/PIE).
-	if (!UEWorld)
+	if (!ueWorld)
 		return;
 
-	int32 SimpleCount = 0;
-	int32 MeshCount = 0;
-	int32 SkippedCount = 0;
+	int32 meshCount = 0;
+	int32 skippedCount = 0;
 
 	ActorsWithInvalidMaterials.Empty();
 
-	for (TActorIterator<AActor> ActorIt(UEWorld); ActorIt; ++ActorIt)
+	for (TActorIterator<AActor> actorIterator(ueWorld); actorIterator; ++actorIterator)
 	{
-		AActor* Actor = *ActorIt;
+		AActor* actor = *actorIterator;
 
-		UVAudioMaterialComponent* MatComp = FindMaterialInChain(Actor);
-		if (!MatComp)
+		UVAudioMaterialComponent* materialComp = FindMaterialInChain(actor);
+		if (!materialComp)
 		{
-			++SkippedCount;
+			++skippedCount;
 			continue;
 		}
 
-		FString ActorName = Actor->GetActorNameOrLabel();
+		FString actorName = actor->GetActorNameOrLabel();
 
-		// Unassigned AudioWorld is a config problem worth its own warning, same as a wrong-world
-		// assignment below - both mean this actor's geometry won't be added to raytracing.
-		if (!MatComp->AudioWorld)
+		// Validate materials
+		if (!materialComp->AudioWorld)
 		{
-			VALog(L"'%s' has a VAudioMaterialComponent with no AudioWorld assigned - its geometry will not be added to raytracing until one is set.", *ActorName);
-			ActorsWithInvalidMaterials.AddUnique(ActorName);
-			++SkippedCount;
+			ActorsWithInvalidMaterials.AddUnique(actorName);
+			++skippedCount;
 			continue;
 		}
 
-		if (MatComp->AudioWorld != this)
+		// Ignore materials assigned to other worlds
+		if (materialComp->AudioWorld != this)
 		{
-			++SkippedCount;
+			++skippedCount;
 			continue;
 		}
 
 		int32 MaterialId;
-		if (!MatComp->GetMaterialId(MaterialId))
+		if (!materialComp->GetMaterialId(MaterialId))
 		{
-			// GetMaterialId() already logged the specific reason (e.g. MaterialAsset isn't in
-			// this world's Materials array) - this actor is a config problem, not a normal
-			// "no material component" skip, so it gets its own on-screen warning (see Tick()).
-			ActorsWithInvalidMaterials.AddUnique(ActorName);
-			++SkippedCount;
+			ActorsWithInvalidMaterials.AddUnique(actorName);
+			++skippedCount;
 			continue;
 		}
 
-		VAMaterialType Material = (VAMaterialType)MaterialId;
+		VAMaterialType vaMaterialType = (VAMaterialType)MaterialId;
 
-		TArray<UShapeComponent*> ShapeComps;
-		Actor->GetComponents<UShapeComponent>(ShapeComps);
+		TArray<UShapeComponent*> shapeComponents;
+		actor->GetComponents<UShapeComponent>(shapeComponents);
 
-		for (UShapeComponent* ShapeComp : ShapeComps)
+		for (UShapeComponent* shapeComp : shapeComponents)
 		{
-			FTransform CompTransform = ShapeComp->GetComponentTransform();
+			FTransform shapeCompTransform = shapeComp->GetComponentTransform();
 
-			if (UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(ShapeComp))
+			if (USphereComponent* sphereComp = Cast<USphereComponent>(shapeComp))
 			{
-				VAMatrix Mat = MakeRotTransMatrix(CompTransform);
+				VASpherePrimitive* vaSphere = vaSpherePrimitiveCreate();
 
-				VACapsulePrimitive* Cap = vaCapsulePrimitiveCreate();
-				vaCapsulePrimitiveSetRadius(Cap,   Capsule->GetScaledCapsuleRadius());
-				vaCapsulePrimitiveSetLength(Cap,   Capsule->GetScaledCapsuleHalfHeight_WithoutHemisphere() * 2.0f);
-				vaCapsulePrimitiveSetMaterial(Cap, Material);
-				vaCapsulePrimitiveSetTransform(Cap, &Mat);
+				vaSpherePrimitiveSetCenterUnreal(vaSphere, shapeCompTransform.GetTranslation());
+				vaSpherePrimitiveSetRadius(vaSphere, sphereComp->GetScaledSphereRadius());
+				vaSpherePrimitiveSetMaterial(vaSphere, vaMaterialType);
 
-				if (!TryAddPrimitive(Cap, TEXT("capsule"), ActorName))
+				if (!TryAddPrimitive(vaSphere, TEXT("sphere"), actorName))
 				{
-					vaCapsulePrimitiveDestroy(Cap);
+					vaSpherePrimitiveDestroy(vaSphere);
 					continue;
 				}
 
-				CapsulePrimitives.Add(Cap);
-				BindPrimitiveToComponent(Cap, EVAudioPrimitiveKind::Capsule, ShapeComp);
-				++SimpleCount;
+				SpherePrimitives.Add(vaSphere);
+				BindPrimitiveToComponent(vaSphere, EVAudioPrimitiveKind::Sphere, shapeComp);
 			}
-			else if (USphereComponent* Sphere = Cast<USphereComponent>(ShapeComp))
+			else if (UCapsuleComponent* capsuleComp = Cast<UCapsuleComponent>(shapeComp))
 			{
-				FVector Center = CompTransform.GetTranslation();
+				VACapsulePrimitive* vaCapsule = vaCapsulePrimitiveCreate();
 
-				VASpherePrimitive* Sp = vaSpherePrimitiveCreate();
-				vaSpherePrimitiveSetCenterUnreal(Sp, Center);
-				vaSpherePrimitiveSetRadius(Sp,   Sphere->GetScaledSphereRadius());
-				vaSpherePrimitiveSetMaterial(Sp, Material);
+				vaCapsulePrimitiveSetRadius(vaCapsule, capsuleComp->GetScaledCapsuleRadius());
+				vaCapsulePrimitiveSetLength(vaCapsule, capsuleComp->GetScaledCapsuleHalfHeight_WithoutHemisphere() * 2.0f);
+				vaCapsulePrimitiveSetMaterial(vaCapsule, vaMaterialType);
+				vaCapsulePrimitiveSetTransformUnreal(vaCapsule, shapeCompTransform);
 
-				if (!TryAddPrimitive(Sp, TEXT("sphere"), ActorName))
+				if (!TryAddPrimitive(vaCapsule, TEXT("capsule"), actorName))
 				{
-					vaSpherePrimitiveDestroy(Sp);
+					vaCapsulePrimitiveDestroy(vaCapsule);
 					continue;
 				}
 
-				SpherePrimitives.Add(Sp);
-				BindPrimitiveToComponent(Sp, EVAudioPrimitiveKind::Sphere, ShapeComp);
-				++SimpleCount;
-			}
-			else if (UBoxComponent* Box = Cast<UBoxComponent>(ShapeComp))
+				CapsulePrimitives.Add(vaCapsule);
+				BindPrimitiveToComponent(vaCapsule, EVAudioPrimitiveKind::Capsule, shapeComp);
+			}			 
+			else if (UBoxComponent* boxComp = Cast<UBoxComponent>(shapeComp))
 			{
-				VAMatrix Mat = MakeRotTransMatrix(CompTransform);
-				FVector Extent = Box->GetScaledBoxExtent();
+				FVector extents = boxComp->GetScaledBoxExtent();
 
-				VAPrismPrimitive* Prism = vaPrismPrimitiveCreate();
-				vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Extent.X * 2.0f, Extent.Y * 2.0f, Extent.Z * 2.0f));
-				vaPrismPrimitiveSetMaterial(Prism, Material);
-				vaPrismPrimitiveSetTransform(Prism, &Mat);
+				VAPrismPrimitive* vaPrism = vaPrismPrimitiveCreate();
+				vaPrismPrimitiveSetSize(vaPrism, vaVectorCreate(extents.X * 2.0f, extents.Y * 2.0f, extents.Z * 2.0f));
+				vaPrismPrimitiveSetMaterial(vaPrism, vaMaterialType);
+				vaPrismPrimitiveSetTransformUnreal(vaPrism, shapeCompTransform);
 
-				if (!TryAddPrimitive(Prism, TEXT("box"), ActorName))
+				if (!TryAddPrimitive(vaPrism, TEXT("box"), actorName))
 				{
-					vaPrismPrimitiveDestroy(Prism);
+					vaPrismPrimitiveDestroy(vaPrism);
 					continue;
 				}
 
-				PrismPrimitives.Add(Prism);
-				BindPrimitiveToComponent(Prism, EVAudioPrimitiveKind::Prism, ShapeComp);
-				++SimpleCount;
+				PrismPrimitives.Add(vaPrism);
+				BindPrimitiveToComponent(vaPrism, EVAudioPrimitiveKind::Prism, shapeComp);
 			}
 		}
 
-		TArray<UStaticMeshComponent*> MeshComps;
-		Actor->GetComponents<UStaticMeshComponent>(MeshComps);
+		TArray<UStaticMeshComponent*> meshComps;
+		actor->GetComponents<UStaticMeshComponent>(meshComps);
 
-		if (MeshComps.IsEmpty())
+		for (UStaticMeshComponent* meshComp : meshComps)
 		{
-			continue;
-		}
+			UStaticMesh* staticMesh = meshComp->GetStaticMesh();
 
-		for (UStaticMeshComponent* MeshComp : MeshComps)
-		{
-			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
-
-			// Null if the component has no mesh assigned; simple collision shapes on
-			// mesh-less actors are picked up separately via UShapeComponent above.
-			if (!Mesh)
+			// Ignore components with no meshes
+			if (!staticMesh)
 				continue;
 
-			FTransform CompTransform = MeshComp->GetComponentTransform();
-			FVector Scale = CompTransform.GetScale3D();
+			FTransform meshCompTransform = meshComp->GetComponentTransform();
+			FVector scale = meshCompTransform.GetScale3D();
 
 			bool bAddedSimple = false;
-			UBodySetup* BodySetup = Mesh->GetBodySetup();
+			UBodySetup* bodySetup = staticMesh->GetBodySetup();
 
-			if (BodySetup)
+			// If this mesh is composed of multiple prisms/capsules/spheres, add them all
+			if (bodySetup)
 			{
-				const FKAggregateGeom& Agg = BodySetup->AggGeom;
+				const FKAggregateGeom& agg = bodySetup->AggGeom;
 
-				for (const FKSphylElem& Sphyl : Agg.SphylElems)
+				for (const FKSphereElem& sphereElem : agg.SphereElems)
 				{
-					FQuat   WorldRot    = Sphyl.GetTransform().GetRotation() * CompTransform.GetRotation();
-					FVector WorldCenter = CompTransform.TransformPosition(Sphyl.GetTransform().GetTranslation());
-					FTransform WT(WorldRot, WorldCenter, FVector::OneVector);
-					VAMatrix Mat = MakeRotTransMatrix(WT);
+					FVector center = meshCompTransform.TransformPosition(sphereElem.GetTransform().GetTranslation());
+					float radius = sphereElem.Radius * scale.GetAbsMax();
 
-					VACapsulePrimitive* Cap = vaCapsulePrimitiveCreate();
-					vaCapsulePrimitiveSetRadius(Cap,   Sphyl.Radius * FMath::Max(Scale.X, Scale.Y));
-					vaCapsulePrimitiveSetLength(Cap,   Sphyl.Length * Scale.Z);
-					vaCapsulePrimitiveSetMaterial(Cap, Material);
-					vaCapsulePrimitiveSetTransform(Cap, &Mat);
+					VASpherePrimitive* vaSphere = vaSpherePrimitiveCreate();
+					vaSpherePrimitiveSetCenterUnreal(vaSphere, center);
+					vaSpherePrimitiveSetRadius(vaSphere, radius);
+					vaSpherePrimitiveSetMaterial(vaSphere, vaMaterialType);
 
-					if (!TryAddPrimitive(Cap, TEXT("capsule"), ActorName))
+					if (!TryAddPrimitive(vaSphere, TEXT("sphere"), actorName))
 					{
-						vaCapsulePrimitiveDestroy(Cap);
+						vaSpherePrimitiveDestroy(vaSphere);
 						continue;
 					}
 
-					CapsulePrimitives.Add(Cap);
-					BindPrimitiveToComponent(Cap, EVAudioPrimitiveKind::CapsuleFromMesh, MeshComp,
-						FTransform(Sphyl.GetTransform().GetRotation(), Sphyl.GetTransform().GetTranslation()),
-						FVector(Sphyl.Radius, 0.f, Sphyl.Length));
 					bAddedSimple = true;
-					++SimpleCount;
+					SpherePrimitives.Add(vaSphere);
+
+					BindPrimitiveToComponent(vaSphere, EVAudioPrimitiveKind::SphereFromMesh, meshComp,
+						FTransform(sphereElem.GetTransform().GetTranslation()),
+						FVector(sphereElem.Radius, 0.f, 0.f));
 				}
 
-				for (const FKSphereElem& Sphere : Agg.SphereElems)
+				for (const FKBoxElem& boxElem : agg.BoxElems)
 				{
-					FVector Center = CompTransform.TransformPosition(Sphere.GetTransform().GetTranslation());
-					float   Radius = Sphere.Radius * Scale.GetAbsMax();
-
-					VASpherePrimitive* Sp = vaSpherePrimitiveCreate();
-					vaSpherePrimitiveSetCenterUnreal(Sp, Center);
-					vaSpherePrimitiveSetRadius(Sp,   Radius);
-					vaSpherePrimitiveSetMaterial(Sp, Material);
-
-					if (!TryAddPrimitive(Sp, TEXT("sphere"), ActorName))
-					{
-						vaSpherePrimitiveDestroy(Sp);
-						continue;
-					}
-
-					SpherePrimitives.Add(Sp);
-					BindPrimitiveToComponent(Sp, EVAudioPrimitiveKind::SphereFromMesh, MeshComp,
-						FTransform(Sphere.GetTransform().GetTranslation()),
-						FVector(Sphere.Radius, 0.f, 0.f));
-					bAddedSimple = true;
-					++SimpleCount;
-				}
-
-				for (const FKBoxElem& Box : Agg.BoxElems)
-				{
-					FQuat   WorldRot    = Box.GetTransform().GetRotation() * CompTransform.GetRotation();
-					FVector WorldCenter = CompTransform.TransformPosition(Box.GetTransform().GetTranslation());
-					FTransform WT(WorldRot, WorldCenter, FVector::OneVector);
-					VAMatrix Mat = MakeRotTransMatrix(WT);
+					FQuat rot = boxElem.GetTransform().GetRotation() * meshCompTransform.GetRotation();
+					FVector center = meshCompTransform.TransformPosition(boxElem.GetTransform().GetTranslation());
+					FTransform worldTransform(rot, center, FVector::OneVector);
 
 					VAPrismPrimitive* Prism = vaPrismPrimitiveCreate();
-					vaPrismPrimitiveSetSize(Prism, vaVectorCreate(Box.X * Scale.X, Box.Y * Scale.Y, Box.Z * Scale.Z));
-					vaPrismPrimitiveSetMaterial(Prism, Material);
-					vaPrismPrimitiveSetTransform(Prism, &Mat);
+					vaPrismPrimitiveSetSize(Prism, vaVectorCreate(boxElem.X * scale.X, boxElem.Y * scale.Y, boxElem.Z * scale.Z));
+					vaPrismPrimitiveSetMaterial(Prism, vaMaterialType);
+					vaPrismPrimitiveSetTransformUnreal(Prism, worldTransform);
 
-					if (!TryAddPrimitive(Prism, TEXT("box"), ActorName))
+					if (!TryAddPrimitive(Prism, TEXT("box"), actorName))
 					{
 						vaPrismPrimitiveDestroy(Prism);
 						continue;
 					}
 
-					PrismPrimitives.Add(Prism);
-					BindPrimitiveToComponent(Prism, EVAudioPrimitiveKind::PrismFromMesh, MeshComp,
-						FTransform(Box.GetTransform().GetRotation(), Box.GetTransform().GetTranslation()),
-						FVector(Box.X, Box.Y, Box.Z));
 					bAddedSimple = true;
-					++SimpleCount;
+					PrismPrimitives.Add(Prism);
+
+					BindPrimitiveToComponent(Prism, EVAudioPrimitiveKind::PrismFromMesh, meshComp,
+						FTransform(boxElem.GetTransform().GetRotation(), boxElem.GetTransform().GetTranslation()),
+						FVector(boxElem.X, boxElem.Y, boxElem.Z));
 				}
+				for (const FKSphylElem& capsuleElem : agg.SphylElems)
+				{
+					FQuat rot = capsuleElem.GetTransform().GetRotation() * meshCompTransform.GetRotation();
+					FVector center = meshCompTransform.TransformPosition(capsuleElem.GetTransform().GetTranslation());
+					FTransform worldTransform(rot, center, FVector::OneVector);
+
+					VACapsulePrimitive* vaCapsule = vaCapsulePrimitiveCreate();
+
+					vaCapsulePrimitiveSetRadius(vaCapsule, capsuleElem.Radius * FMath::Max(scale.X, scale.Y));
+					vaCapsulePrimitiveSetLength(vaCapsule, capsuleElem.Length * scale.Z);
+					vaCapsulePrimitiveSetMaterial(vaCapsule, vaMaterialType);
+					vaCapsulePrimitiveSetTransformUnreal(vaCapsule, worldTransform);
+
+					if (!TryAddPrimitive(vaCapsule, TEXT("capsule"), actorName))
+					{
+						vaCapsulePrimitiveDestroy(vaCapsule);
+						continue;
+					}
+
+					bAddedSimple = true;
+					CapsulePrimitives.Add(vaCapsule);
+
+					BindPrimitiveToComponent(vaCapsule, EVAudioPrimitiveKind::CapsuleFromMesh, meshComp,
+						FTransform(capsuleElem.GetTransform().GetRotation(), capsuleElem.GetTransform().GetTranslation()),
+						FVector(capsuleElem.Radius, 0.f, capsuleElem.Length));
+				}
+
 			}
 
 			if (bAddedSimple)
 				continue;
 
-			// Fall back to triangle mesh: prefer baked geometry (reliable in shipping builds
-			// regardless of bAllowCPUAccess/cook quirks), otherwise use the mesh's live render
-			// data (always up to date, but may be unavailable in cooked builds).
-			const FVAudioBakedMesh* Baked = nullptr;
+			// Attempt to use baked geometry. Fall back to mesh data (may be unavailable in cooked builds)
+			const FVAudioBakedMesh* bakedMesh = nullptr;
 
-			for (const FVAudioBakedMesh& bakedMesh : BakedMeshes)
+			for (const FVAudioBakedMesh& bakedMeshTemp : BakedMeshes)
 			{
-				if (bakedMesh.ComponentName == MeshComp->GetFName() && bakedMesh.ActorName == Actor->GetName())
+				if (bakedMeshTemp.ComponentName == meshComp->GetFName() && bakedMeshTemp.ActorName == actor->GetName())
 				{
-					Baked = &bakedMesh;
+					bakedMesh = &bakedMeshTemp;
 					break;
 				}
 			}
 
-			TArray<FVector3f> LocalPositions;
-			if (Baked)
+			TArray<FVector3f> localVertices;
+
+			if (bakedMesh)
 			{
-				LocalPositions = Baked->Vertices;
+				localVertices = bakedMesh->Vertices;
 			}
 			else
 			{
-				if (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.IsEmpty())
+				if (!staticMesh->GetRenderData() || staticMesh->GetRenderData()->LODResources.IsEmpty())
 				{
-					VALog(L"Mesh '%s' has no render data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *Mesh->GetName());
+					VALog(L"Mesh '%s' will not affect raytracing as it has no baked geometry and no render mesh data. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *staticMesh->GetName());
 					continue;
 				}
 
-				FStaticMeshLODResources& LOD = Mesh->GetRenderData()->LODResources[0];
-				FPositionVertexBuffer& PosBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+				// Attempt to access index and position data
+				// TODO - which LOD to use? we don't need full-quality meshes for audio raytracing. Maybe let the user decide? Also need to check baking - need to let the user decide which LOD to use for each mesh, or set a default LOD for all meshes
+				FStaticMeshLODResources& lod = staticMesh->GetRenderData()->LODResources[0];
+				FPositionVertexBuffer& positionBuffer = lod.VertexBuffers.PositionVertexBuffer;
 
-				TArray<uint32> Indices;
-				LOD.IndexBuffer.GetCopy(Indices);
-				if (Indices.IsEmpty())
+				TArray<uint32> indices;
+				lod.IndexBuffer.GetCopy(indices);
+
+				if (indices.IsEmpty())
 				{
-					VALog(L"Mesh '%s' has no index data and no baked geometry, skipping. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *Mesh->GetName());
+					VALog(L"Mesh '%s' will not affect raytracing as it has no baked geometry and no render mesh data. Run 'Bake Geometry For Shipping' on the VA World and save the level.", *staticMesh->GetName());
 					continue;
 				}
 
-				LocalPositions.Reserve(Indices.Num());
-				for (uint32 Idx : Indices)
-					LocalPositions.Add(PosBuffer.VertexPosition(Idx));
+				localVertices.Reserve(indices.Num());
+
+				for (uint32 i : indices)
+					localVertices.Add(positionBuffer.VertexPosition(i));
 			}
 
-			// Kept in pure local (component) space, with no rotation/scale baked in - unlike the
-			// simple-collision primitives above, VAMeshPrimitive's transform matrix supports a
-			// full scale component (see MakeScaleRotTransMatrix), so rotation/scale/translation
-			// can all be driven live through vaMeshPrimitiveSetTransform instead of requiring the
-			// vertex buffer to be rebuilt whenever the actor moves.
-			TArray<VAVector> VAVerts;
-			VAVerts.Reserve(LocalPositions.Num());
-			VAVector MinB = VECTOR_MAX;
-			VAVector MaxB = VECTOR_MIN;
+			// Iterate over all vertices and extract min/max bounds
+			TArray<VAVector> vaVertices;
+			vaVertices.Reserve(localVertices.Num());
 
-			for (const FVector3f& LocalPos : LocalPositions)
+			VAVector minBounds = VECTOR_MAX;
+			VAVector maxBounds = VECTOR_MIN;
+
+			for (const FVector3f& localPosition : localVertices)
 			{
-				VAVector V = vaVectorCreate(LocalPos.X, LocalPos.Y, LocalPos.Z);
-				VAVerts.Add(V);
-				MinB = vaVectorMin(MinB, V);
-				MaxB = vaVectorMax(MaxB, V);
+				VAVector vaPosition = vaVectorCreate(localPosition.X, localPosition.Y, localPosition.Z);
+				vaVertices.Add(vaPosition);
+
+				minBounds = vaVectorMin(minBounds, vaPosition);
+				maxBounds = vaVectorMax(maxBounds, vaPosition);
 			}
 
-			VAMatrix Transform = MakeScaleRotTransMatrix(CompTransform);
-			VAMeshPrimitive* MeshPrim;
+			// Create the prism
+			VAMatrix vaTransform = MakeScaleRotTransMatrix(meshCompTransform);
+			VAMeshPrimitive* vaMeshPrimitive;
 
-			VAResult result = vaMeshPrimitiveCreate(
-				Material, VAVerts.GetData(), VAVerts.Num(), MinB, MaxB, &Transform, &MeshPrim
-			);
+			VAResult result = vaMeshPrimitiveCreate(vaMaterialType, vaVertices.GetData(), vaVertices.Num(), minBounds, maxBounds, &vaTransform, &vaMeshPrimitive);
 
-			vaMeshPrimitiveSetSupports3DPermeation(MeshPrim, MatComp->bSupports3DPermeation);
-
-			if (!TryAddPrimitive(MeshPrim, TEXT("mesh"), ActorName))
+			if (result == VA_SUCCESS)
 			{
-				vaMeshPrimitiveDestroy(MeshPrim);
-				continue;
-			}
+				// TODO - supports3DPermeation should be a per-mesh thing? e.g. a rock terrain heightmap doesnt support permeation, but a 3D watertight rock mesh does
+				vaMeshPrimitiveSetSupports3DPermeation(vaMeshPrimitive, materialComp->bSupports3DPermeation);
 
-			MeshPrimitives.Add(MeshPrim);
-			BindPrimitiveToComponent(MeshPrim, EVAudioPrimitiveKind::Mesh, MeshComp);
-			++MeshCount;
+				if (!TryAddPrimitive(vaMeshPrimitive, TEXT("mesh"), actorName))
+				{
+					vaMeshPrimitiveDestroy(vaMeshPrimitive);
+					continue;
+				}
+
+				MeshPrimitives.Add(vaMeshPrimitive);
+				BindPrimitiveToComponent(vaMeshPrimitive, EVAudioPrimitiveKind::Mesh, meshComp);
+				meshCount++;
+			}
+			else
+			{
+				// TODO - error codes
+			}
 		}
 	}
 
-	VALog(L"Added %d simple + %d mesh primitives (%d actors skipped, no material)", SimpleCount, MeshCount, SkippedCount);
+	int32 simpleCount = PrismPrimitives.Num() + CapsulePrimitives.Num() + SpherePrimitives.Num();
+
+	VALog(L"Added %d simple + %d mesh primitives (%d actors skipped, no material)", simpleCount, meshCount, skippedCount);
 }

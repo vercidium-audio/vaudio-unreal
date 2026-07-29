@@ -18,9 +18,9 @@ AVAudioSource::AVAudioSource()
 {
 }
 
-bool AVAudioSource::InitializeTypeSpecific()
+bool AVAudioSource::ValidateConfig()
 {
-	Super::InitializeTypeSpecific();
+	Super::ValidateConfig();
 
 	if (!SourceSound)
 	{
@@ -35,6 +35,19 @@ bool AVAudioSource::InitializeTypeSpecific()
 		DisplayWarning(TEXT("[VA] Source '%s' will not play as the AudioWorld does not have a listener"), *GetActorNameOrLabel());
 		return false;
 	}
+
+	return true;
+}
+
+void AVAudioSource::InitializeTypeSpecific()
+{
+	Super::InitializeTypeSpecific();
+
+	AVAudioListener* listener = AudioWorld->GetMainListener();
+
+	// Already validated by ValidateConfig() above
+	check(SourceSound);
+	check(listener);
 
 	if (!SourceSound->IsPlayWhenSilent())
 	{
@@ -66,8 +79,6 @@ bool AVAudioSource::InitializeTypeSpecific()
 	// this emitter at least once - otherwise the sound starts clear (LPF fully open) and pops
 	// to muffled a few frames later once the first real filter result arrives.
 	bSourcePendingSpawn = true;
-
-	return true;
 }
 
 void AVAudioSource::DeinitializeTypeSpecific()
@@ -116,6 +127,14 @@ void AVAudioSource::TrySpawnSourceSound()
 {
 	AVAudioListener* Listener = AudioWorld->GetMainListener();
 	VAEmitter* vaListener = Listener->GetVAEmitter();
+
+	VAVector emitterPos = vaEmitterGetPosition(Emitter);
+
+	// Target not configured correctly
+	if (!vaEmitterHasTarget(vaListener, Emitter))
+	{
+		return;
+	}
 
 	// Wait until raytracing completes
 	if (!vaEmitterHasRaytracedTarget(vaListener, Emitter))
@@ -216,8 +235,25 @@ void AVAudioSource::UpdateSourceSubmix()
 	// Only relative gain is supported. Can't do directional reverb in Unreal :(
 	float SendLevel = *vaEAXReverbGetRelativeGain(EAX, ListenerVA);
 
-	// TODO - can we control the overall send level of the submix to the headphones/speaker, rather than filtering how much each sound sends to the submix?
-	SourceAudioComponent->SetSubmixSend(Submix, SendLevel);
+	// UAudioComponent::SetSubmixSend() always sends post-distance-attenuation, so the reverb
+	// send would fade out along with the dry signal's attenuation curve as the listener moves
+	// away - defeating the point of hearing reverb from further away than the dry sound.
+	// Send the pre-attenuation signal instead, via FSoundSubmixSendInfo, so SendLevel is the
+	// only thing controlling the reverb volume.
+	FSoundSubmixSendInfo SubmixSendInfo;
+	SubmixSendInfo.SoundSubmix = Submix;
+	SubmixSendInfo.SendLevel = SendLevel;
+	SubmixSendInfo.SendLevelControlMethod = ESendLevelControlMethod::Manual;
+	SubmixSendInfo.SendStage = ESubmixSendStage::PreDistanceAttenuation;
+
+	if (FAudioDevice* AudioDevice = SourceAudioComponent->GetAudioDevice())
+	{
+		uint64 AudioComponentID = SourceAudioComponent->GetAudioComponentID();
+		AudioDevice->SendCommandToActiveSounds(AudioComponentID, [SubmixSendInfo](FActiveSound& ActiveSound)
+		{
+			ActiveSound.SetSubmixSend(SubmixSendInfo);
+		});
+	}
 }
 
 // Toggle whether we only hear reverb

@@ -19,7 +19,8 @@ public:
 	AVAudioSource();
 
 protected:
-	virtual bool InitializeTypeSpecific() override;
+	virtual bool ValidateConfig() override;
+	virtual void InitializeTypeSpecific() override;
 	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 

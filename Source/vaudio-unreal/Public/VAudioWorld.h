@@ -16,6 +16,7 @@ struct VAPrismPrimitive;
 class AVAudioEmitterBase;
 class AVAudioListener;
 class UVAudioMaterialAssetBase;
+class USubmixEffectDirectionalPanPreset;
 
 // Plain UBoxComponent, except its BoxExtent always shows greyed-out in the details panel.
 // AVAudioWorld's WorldBounds is a read-only visualisation re-derived from WorldPosition/WorldSize
@@ -277,6 +278,9 @@ public:
 	// constructor and PostEditChangeProperty whenever either property changes in the editor.
 	void RefreshWorldBounds();
 
+	// Update the vaWorld with the latest properties
+	void UpdateVAWorld();
+
 	VAWorld* GetVAWorld() const { return World; }
 	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
@@ -299,6 +303,12 @@ private:
 	UPROPERTY(Transient)
 	TArray<USubmixEffectReverbPreset*> GroupedEAXPresets;
 
+	// Parallel to GroupedEAXPresets, one per grouped-EAX zone - added after the reverb preset in
+	// each submix's effect chain so it pans the wet reverb tail rather than dry input. Same
+	// Transient treatment/reasoning as GroupedEAXPresets above.
+	UPROPERTY(Transient)
+	TArray<USubmixEffectDirectionalPanPreset*> GroupedEAXPanPresets;
+
 	TArray<VAMeshPrimitive*>    MeshPrimitives;
 	TArray<VACapsulePrimitive*> CapsulePrimitives;
 	TArray<VASpherePrimitive*>  SpherePrimitives;
@@ -309,6 +319,13 @@ private:
 	// OnPrimitiveComponentMoved(). A single component can own more than one primitive (e.g. a
 	// static mesh's simple collision can contain several sphyl/sphere/box elements).
 	TArray<FVAudioPrimitiveBinding> PrimitiveBindings;
+
+	// Indices into PrimitiveBindings owned by each bound component, so OnPrimitiveComponentMoved()
+	// can jump straight to the bindings that moved instead of scanning all of PrimitiveBindings.
+	// Keyed by raw pointer rather than TWeakObjectPtr since it's only ever looked up from that same
+	// component's own TransformUpdated callback (component is guaranteed alive at that point), and
+	// is fully cleared by UnbindPrimitiveComponents() before any entry could go stale.
+	TMap<USceneComponent*, TArray<int32>> PrimitiveBindingsByComponent;
 
 	TArray<AVAudioEmitterBase*> RegisteredEmitters;
 
@@ -326,7 +343,7 @@ private:
 	// only runs on the tick where it actually changes.
 	bool bWasReverbOnly = false;
 
-	void ApplyMaterials();
+	void InitialiseMaterials();
 	void ScanAndAddPrimitives();
 	void DestroyPrimitives();
 	void ApplyGroupedEAXReverb();
@@ -350,9 +367,9 @@ private:
 	static void RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& Binding);
 
 	// Fired by TransformUpdated (a non-dynamic multicast event, bound via AddUObject - see
-	// BindPrimitiveToComponent) on any component we bound. Recomputes and re-applies the
-	// transform (and, for shape primitives, the scale-derived size) of every primitive bound to
-	// UpdatedComponent.
+	// BindPrimitiveToComponent) on a component we bound. Looks UpdatedComponent up in
+	// PrimitiveBindingsByComponent and recomputes/re-applies the transform (and, for shape
+	// primitives, the scale-derived size) of just the primitives bound to it.
 	void OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
 
 	// Unbinds every TransformUpdated delegate registered in PrimitiveBindings and empties it.

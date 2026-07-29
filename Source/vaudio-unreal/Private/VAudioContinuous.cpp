@@ -11,7 +11,7 @@ AVAudioContinuous::AVAudioContinuous()
 {
 }
 
-bool AVAudioContinuous::InitializeTypeSpecific()
+void AVAudioContinuous::InitializeTypeSpecific()
 {
 	if (bAffectsGroupedEAX && (ReverbRayCount == 0 || ReverbBounceCount == 0))
 	{
@@ -23,8 +23,6 @@ bool AVAudioContinuous::InitializeTypeSpecific()
 	vaEmitterSetMaxVolume(Emitter, MaxVolume);
 	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
 	vaEmitterSetHasRelativeReverb(Emitter, false);
-
-	return true;
 }
 
 void AVAudioContinuous::DeinitializeTypeSpecific()
@@ -60,6 +58,24 @@ VALowPassFilter* AVAudioContinuous::GetMufflingResult() const
 		return nullptr;
 
 	return vaEmitterGetTargetFilter(Listener->GetVAEmitter(), Emitter);
+}
+
+void AVAudioContinuous::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
+{
+	VALowPassFilter* MufflingFilter = GetMufflingResult();
+
+	// Raytracing has not completed at least once yet
+	if (!MufflingFilter)
+	{
+		bSuccess = false;
+		GainLF = 0.0f;
+		GainHF = 0.0f;
+		return;
+	}
+
+	bSuccess = true;
+	GainLF = MufflingFilter->gainLF;
+	GainHF = MufflingFilter->gainHF;
 }
 
 #if WITH_EDITOR

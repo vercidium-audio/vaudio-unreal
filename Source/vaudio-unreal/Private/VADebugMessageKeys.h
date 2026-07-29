@@ -23,6 +23,12 @@ inline void DisplayDebugWarning(uint64 messageID, const TCHAR* fmt, ...)
 	va_end(args);
 }
 
+inline void ClearDebugWarning(uint64 messageID)
+{
+	if (GEngine)
+		GEngine->RemoveOnScreenDebugMessage(messageID);
+}
+
 enum EVADebugMessageKey : uint64
 {
 	VAKeyBase						= 0x5641554400000000ULL,

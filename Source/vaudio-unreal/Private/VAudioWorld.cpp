@@ -1,10 +1,15 @@
 #include "VAudioWorld.h"
+#include "VAudioSubmixEffectDirectionalPan.h"
 #include "VAudioEmitterBase.h"
 #include "VAudioSource.h"
 #include "VAudioContinuous.h"
 #include "VAudioListener.h"
 #include "VAudioMaterial.h"
 #include "VAudioReverbConversion.h"
+#include "VAConstants.h"
+#include "VARawLog.h"
+#include "VADebugMessageKeys.h"
+
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
 #include "AudioMixerBlueprintLibrary.h"
@@ -13,34 +18,24 @@ extern "C" {
 #include "vaudio.h"
 }
 
-#include "VAConstants.h"
 
-#include "VARawLog.h"
-#include "VADebugMessageKeys.h"
-
-// List of worlds that Material assets use to reverse-lookup the world(s) they belong to
+// List of worlds used by Material assets to reverse-lookup the world(s) they belong to
 TArray<TWeakObjectPtr<AVAudioWorld>> AVAudioWorld::RunningWorlds;
 
 AVAudioWorld::AVAudioWorld()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	// Allow components to be attached to this AudioWorld
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
-	// Purely a visual aid, not the root - it must never move independently of WorldPosition/
-	// WorldSize, so it's not selectable/movable via its own gizmo (see RefreshWorldBounds, which
-	// re-derives its transform every time either property changes).
+	// Display the world bounds in the editor via a component
 	WorldBounds = CreateDefaultSubobject<UVAudioWorldBoundsComponent>(TEXT("WorldBounds"));
 	WorldBounds->SetupAttachment(Root);
 	WorldBounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	WorldBounds->SetGenerateOverlapEvents(false);
 	WorldBounds->SetHiddenInGame(false);
-
-	// Not RefreshWorldBounds() here - the constructor only ever sees CDO defaults for
-	// WorldPosition/WorldSize (a placed instance's saved values haven't been applied yet at this
-	// point), so it would just build the box from the wrong numbers. OnConstruction() below runs
-	// after those values are loaded and is what actually sizes/places WorldBounds.
 }
 
 void AVAudioWorld::OnConstruction(const FTransform& Transform)
@@ -52,23 +47,52 @@ void AVAudioWorld::OnConstruction(const FTransform& Transform)
 
 void AVAudioWorld::RefreshWorldBounds()
 {
-	// WorldPosition/WorldSize are an absolute world-space min-corner + size (see InitializeVAWorld's
-	// vaWorldSetPosition/vaWorldSetSize calls), completely independent of this actor's own transform
-	// - moving/placing the actor is just for organisational convenience and must not affect them.
-	// WorldBounds is parented to the actor though, so its transform has to cancel out the actor's
-	// current transform to land on the same absolute location regardless of where the actor sits.
+	// Convert position + size to location + extent
 	WorldBounds->SetWorldLocation(WorldPosition + WorldSize * 0.5f);
-	WorldBounds->SetWorldRotation(FQuat::Identity);
 	WorldBounds->SetBoxExtent(WorldSize * 0.5f);
+
+	// No rotation
+	WorldBounds->SetWorldRotation(FQuat::Identity);
+}
+
+void AVAudioWorld::UpdateVAWorld()
+{
+	// World bounds
+	vaWorldSetPositionUnreal(World, WorldPosition);
+	vaWorldSetSizeUnreal(World, WorldSize);
+
+	// World config
+	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
+	vaWorldSetMetersPerUnit(World, FMath::Max(0.0001f, MetersPerUnit));
+	vaWorldSetWorldIsIndoors(World, bIsIndoors);
+	vaWorldSetEpsilon(World, Epsilon);
+	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
+
+	// Threading
+	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
+	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
+	vaWorldSetPendingShutdown(World, bPendingShutdown);
+
+	// Air absorption
+	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
+	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
+
+	if (bAirAbsorptionEnabled)
+	{
+		vaWorldSetAirAbsorptionHumidity(World, Humidity);
+		vaWorldSetAirAbsorptionTemperature(World, Temperature);
+		vaWorldSetAirAbsorptionPressure(World, Pressure);
+	}
+	else
+	{
+		vaWorldSetAirAbsorption(World, nullptr);
+	}
 }
 
 #if WITH_EDITOR
 bool UVAudioWorldBoundsComponent::CanEditChange(const FProperty* InProperty) const
 {
-	// BoxExtent is re-derived from the owning AVAudioWorld's WorldSize every time it changes (see
-	// RefreshWorldBounds) - greyed out rather than hidden, since a native component's own details
-	// sub-tree isn't reachable via the owning actor's UCLASS(HideCategories=...). Transform is left
-	// editable even though RefreshWorldBounds also overwrites it, purely so it doesn't look broken.
+	// Grey out the readonly Box Extents fields
 	static const FName BoxExtentPropertyName(TEXT("BoxExtent"));
 
 	if (InProperty && InProperty->GetFName() == BoxExtentPropertyName)
@@ -85,40 +109,11 @@ void AVAudioWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChanged
 	// before BeginPlay (or after EndPlay), since World is null until then.
 	RefreshWorldBounds();
 
-	// Null before BeginPlay (or after EndPlay) - editing properties on a placed actor in the
-	// editor (not PIE) hits this every time.
+	// Ignore edits before pressing Play
 	if (!World)
 		return;
 
-	vaWorldSetPosition(World, vaVectorCreate(
-		(float)WorldPosition.X,
-		(float)WorldPosition.Y,
-		(float)WorldPosition.Z));
-	vaWorldSetSize(World, vaVectorCreate(
-		(float)WorldSize.X,
-		(float)WorldSize.Y,
-		(float)WorldSize.Z));
-	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
-	vaWorldSetMetersPerUnit(World, FMath::Max(0.0001f, MetersPerUnit));
-	vaWorldSetWorldIsIndoors(World, bIsIndoors);
-	vaWorldSetEpsilon(World, Epsilon);
-	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
-	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
-	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
-	vaWorldSetPendingShutdown(World, bPendingShutdown);
-	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
-	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
-
-	if (bAirAbsorptionEnabled)
-	{
-		vaWorldSetAirAbsorptionHumidity(World, Humidity);
-		vaWorldSetAirAbsorptionTemperature(World, Temperature);
-		vaWorldSetAirAbsorptionPressure(World, Pressure);
-	}
-	else
-	{
-		vaWorldSetAirAbsorption(World, nullptr);
-	}
+	UpdateVAWorld();
 }
 #endif
 
@@ -131,6 +126,7 @@ void AVAudioWorld::BeginPlay()
 	InitializeVAWorld();
 }
 
+// This can also be called by other VA emitters, as they might initialise first (actor init order not guaranteed)
 void AVAudioWorld::InitializeVAWorld()
 {
 	// Already initialised, all is good
@@ -138,39 +134,18 @@ void AVAudioWorld::InitializeVAWorld()
 		return;
 
 	World = vaWorldCreate();
-	vaWorldSetLogMemoryAllocationWarnings(World, true);
-	vaWorldSetCoordinateSystem(World, VACoordinateSystemUnreal);
+
+	// Logging
 	vaWorldSetLogCallback(World, &VASdkLogCallback);
-	vaWorldSetPosition(World, vaVectorCreate(
-		(float)WorldPosition.X,
-		(float)WorldPosition.Y,
-		(float)WorldPosition.Z));
-	vaWorldSetSize(World, vaVectorCreate(
-		(float)WorldSize.X,
-		(float)WorldSize.Y,
-		(float)WorldSize.Z));
-	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
-	vaWorldSetMetersPerUnit(World, FMath::Max(0.0001f, MetersPerUnit));
-	vaWorldSetWorldIsIndoors(World, bIsIndoors);
-	vaWorldSetEpsilon(World, Epsilon);
-	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
-	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
-	vaWorldSetMaximumConcurrencyLevel(World, FMath::Max(1, MaximumConcurrencyLevel));
-	vaWorldSetPendingShutdown(World, bPendingShutdown);
-	vaWorldSetReferenceFrequencyLF(World, ReferenceFrequencyLF);
-	vaWorldSetReferenceFrequencyHF(World, ReferenceFrequencyHF);
+	vaWorldSetLogMemoryAllocationWarnings(World, true);
 
-	if (bAirAbsorptionEnabled)
-	{
-		vaWorldSetAirAbsorptionHumidity(World, Humidity);
-		vaWorldSetAirAbsorptionTemperature(World, Temperature);
-		vaWorldSetAirAbsorptionPressure(World, Pressure);
-	}
-	else
-	{
-		vaWorldSetAirAbsorption(World, nullptr);
-	}
+	// Coordinate system
+	vaWorldSetCoordinateSystem(World, VACoordinateSystemUnreal);
 
+	// Size / air absorption / etc
+	UpdateVAWorld();
+
+	// Create presets for each submix
 	int32 GroupedEAXCount = GroupedEAXSubmixes.Num();
 	vaWorldSetMaximumGroupedEAXCount(World, GroupedEAXCount);
 
@@ -178,16 +153,24 @@ void AVAudioWorld::InitializeVAWorld()
 	{
 		USoundSubmix* Sub = GroupedEAXSubmixes[i];
 		USubmixEffectReverbPreset* Preset = NewObject<USubmixEffectReverbPreset>(this);
+		USubmixEffectDirectionalPanPreset* PanPreset = NewObject<USubmixEffectDirectionalPanPreset>(this);
 
 		if (Sub)
+		{
+			// Pan effect must be added after the reverb preset so it operates on the wet reverb
+			// output rather than dry input - see directional_reverb_plan.md's "Effect chain
+			// insertion API" note.
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, Preset);
+			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, PanPreset);
+		}
 		else
 			DisplayDebugWarning(VANullGroupedEAXMessage, TEXT("[VA] World '%s' has a null grouped EAX submix at index %d. Please assign a submix"), *GetActorNameOrLabel(), i);
 
 		GroupedEAXPresets.Add(Preset);
+		GroupedEAXPanPresets.Add(PanPreset);
 	}
 
-	ApplyMaterials();
+	InitialiseMaterials();
 	ScanAndAddPrimitives();
 }
 
@@ -199,6 +182,9 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 
 	const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
 	int32 Count = vaWorldGetGroupedEAXCount(World);
+
+	AVAudioListener* Listener = GetMainListener();
+	VAEmitter* ListenerVA = Listener ? Listener->GetVAEmitter() : nullptr;
 
 	for (int32 i = 0; i < Count; ++i)
 	{
@@ -212,6 +198,26 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 
 		FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
 		Preset->SetSettings(settings);
+
+		// Direction == nullptr means "no entry for this emitter" (vaudio.h:384) - e.g. the listener
+		// hasn't been raytraced against this zone yet, or lacks hasRelativeReverb. Leave pan holding
+		// its last value rather than forcing it to 0 every such tick.
+		if (ListenerVA)
+		{
+			VAVector* Direction = vaEAXReverbGetRelativeDirection(EAX, ListenerVA);
+
+			if (Direction)
+			{
+				FVector directionUnreal(Direction->x, Direction->y, Direction->z);
+
+				// Magnitude IS strength (OpenAL Soft EAX style) - do not normalize.
+				float pan = FVector::DotProduct(directionUnreal, Listener->GetActorRightVector());
+				pan = FMath::Clamp(pan, -1.0f, 1.0f);
+
+				if (USubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr)
+					PanPreset->SetPan(pan);
+			}
+		}
 	}
 }
 
@@ -222,6 +228,7 @@ void AVAudioWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	RunningWorlds.RemoveSingleSwap(this);
 
 	GroupedEAXPresets.Empty();
+	GroupedEAXPanPresets.Empty();
 
 	if (World)
 	{
@@ -320,7 +327,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 						else if (!source->SourceAudioComponent) // SourceAudioComponent is set when it actually plays
 						{
 							uint64 errorMessageID = VAEmitterMessageBase + i * VAEmitterMessageStride + VAEmitterSourceStatus;
-							GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' cannot play its sound as it is not a target of the listener emitter"), i, *continuousEmitter->GetActorNameOrLabel()));
+							GEngine->AddOnScreenDebugMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has not played its sound yet"), i, *continuousEmitter->GetActorNameOrLabel()));
 						}
 					}
 
@@ -422,8 +429,11 @@ void AVAudioWorld::Tick(float DeltaTime)
 							continue;
 						}
 
+						USubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr;
+						float pan = PanPreset ? PanPreset->GetSettings().Pan : 0.0f;
+
 						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-							FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f gainLF=%.2f gainHF=%.2f"), i, EAX->decayTime, EAX->gainLF, EAX->gainHF));
+							FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f gainLF=%.2f gainHF=%.2f pan=%.2f"), i, EAX->decayTime, EAX->gainLF, EAX->gainHF, pan));
 					}
 				}
 			}
@@ -458,7 +468,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 			}
 			else
 				GEngine->AddOnScreenDebugMessage(VAListenerStatusMessage, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] There is no main listener. Ensure an AVAudioListener actor is placed and assigned to a World")));
-
+			
 			GEngine->AddOnScreenDebugMessage(VAPrimitiveStatusMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Primitives: prisms=%d spheres=%d capsules=%d meshes=%d"), PrismPrimitives.Num(), SpherePrimitives.Num(), CapsulePrimitives.Num(), MeshPrimitives.Num()));
 			GEngine->AddOnScreenDebugMessage(VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.2f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
 
@@ -545,13 +555,6 @@ AVAudioListener* AVAudioWorld::GetMainListener()
 
 		// The listener will initialise its targets, which will fail if the listener isn't set, so MainListener needs to be set here
 		MainListener = Listener;
-
-		// HACK - when the listener initialises before the world, it'll initialise its targets (e.g. VAudioSource), which calls this GetMainListener() from its own TryInitializeEmitter, which
-		//  then calls the listener's TryInitializeEmitter again below, but luckily it exits early rather than stack-overflows, because the listener's Emitter is already set.
-		//  However, this allows actors to be defined in any order / hierarchy
-		bool pass = Listener->TryInitializeEmitter();
-		check(pass);
-
 		break;
 	}
 
@@ -570,16 +573,14 @@ void AVAudioWorld::ExportWorld()
 	vaWorldExport(World, TCHAR_TO_UTF8(*Path));
 }
 
-void AVAudioWorld::ApplyMaterials()
+void AVAudioWorld::InitialiseMaterials()
 {
-	int32 AppliedCount = 0;
-
 	for (UVAudioMaterialAssetBase* Mat : Materials)
 	{
+		// Ignore null materials
 		if (Mat)
 		{
 			Mat->ApplyToWorld(this);
-			++AppliedCount;
 		}
 	}
 }

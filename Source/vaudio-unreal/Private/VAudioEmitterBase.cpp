@@ -10,6 +10,27 @@ extern "C" {
 #include "VARawLog.h"
 #include "VADebugMessageKeys.h"
 
+// vaEmitterSetUserData() stashes the owning actor on the VAEmitter* itself, so these trampolines
+// can resolve identity directly instead of needing a side registry.
+static void VAOnRaytracingCompleteTrampoline(VAEmitter* emitter)
+{
+	if (AVAudioEmitterBase* Owner = static_cast<AVAudioEmitterBase*>(vaEmitterGetUserData(emitter)))
+		Owner->OnRaytracingComplete.Broadcast();
+}
+
+static void VAOnRaytracedByAnotherEmitterTrampoline(VAEmitter* source, VAEmitter* target)
+{
+	AVAudioEmitterBase* Owner = static_cast<AVAudioEmitterBase*>(vaEmitterGetUserData(target));
+
+	if (!Owner)
+		return;
+
+	VALowPassFilter* Filter = vaEmitterGetTargetFilter(source, target);
+
+	if (Filter)
+		Owner->OnRaytracedByListener.Broadcast(Filter->gainLF, Filter->gainHF);
+}
+
 void AVAudioEmitterBase::DisplayWarning(const TCHAR* fmt, ...) const
 {
 	// Format the string
@@ -20,6 +41,11 @@ void AVAudioEmitterBase::DisplayWarning(const TCHAR* fmt, ...) const
 	va_end(args);
 
 	DisplayDebugWarning(VAEmitterMessageBase + GetUniqueID(), TEXT("%s"), buffer);
+}
+
+void AVAudioEmitterBase::ClearWarning() const
+{
+	ClearDebugWarning(VAEmitterMessageBase + GetUniqueID());
 }
 
 AVAudioEmitterBase::AVAudioEmitterBase()
@@ -62,65 +88,50 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 	AudioWorld->InitializeVAWorld();
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 
+	bool configPass = ValidateConfig();
+
+	if (!configPass)
+	{
+		// Failed validation, disable this actor
+		SetActorTickEnabled(false);
+
+		failedInitialisation = true;
+		return false;
+	}
 
 	// Create the emitter
+	check(!Emitter);
+
 	Emitter = vaEmitterCreate();
 	vaEmitterSetLogCallback(Emitter, &VASdkLogCallback);
 	vaEmitterSetLogErrorCallback(Emitter, &VASdkLogCallback);
 	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
 
+	// Lets the callback trampolines below resolve this actor from the VAEmitter* alone
+	vaEmitterSetUserData(Emitter, this);
+	vaEmitterSetOnRaytracingCompleteCallback(Emitter, &VAOnRaytracingCompleteTrampoline);
+	vaEmitterSetOnRaytracedByAnotherEmitterCallback(Emitter, &VAOnRaytracedByAnotherEmitterTrampoline);
 
-	// Initialise the specific emitter type (Source, Continuous, etc)
-	bool pass = InitializeTypeSpecific();
+	// Add the emitter to the world
+	VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
 
-	if (pass)
+	check(result == VA_SUCCESS);
+
+	if (result == VA_ALREADY_EXISTS)
 	{
-		// Add the emitter to the world
-		VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
-
-		// HACK - if this is a listener, it should say VA_ALREADY_EXISTS because the listener initialises itself
-		if (AVAudioListener* listener = Cast<AVAudioListener>(this))
-		{
-			check(result == VA_ALREADY_EXISTS);
-
-			AudioWorld->RegisterEmitter(this);
-			registered = true;
-			return true;
-		}
-		else
-		{
-			if (result == VA_ALREADY_EXISTS)
-			{
-				DisplayWarning(TEXT("[VA] '%s' was added to AudioWorld '%s' twice"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
-			}
-			else if (result == VA_WORLD_CONFLICT)
-			{
-				DisplayWarning(TEXT("[VA] '%s' cannot be added to AudioWorld '%s' as it is already added to another world"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
-			}
-			else
-			{
-				check(result == VA_SUCCESS);
-			}
-		}
-
-		if (result == VA_SUCCESS)
-		{
-			AudioWorld->RegisterEmitter(this);
-			registered = true;
-			return true;
-		}
+		DisplayWarning(TEXT("[VA] '%s' was added to AudioWorld '%s' twice"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
+	}
+	else if (result == VA_WORLD_CONFLICT)
+	{
+		DisplayWarning(TEXT("[VA] '%s' cannot be added to AudioWorld '%s' as it is already added to another world"), *GetActorNameOrLabel(), *AudioWorld->GetActorNameOrLabel());
 	}
 
-	// Failed validation, disable this actor
-	SetActorTickEnabled(false);
+	// Initialise the specific emitter type (e.g. Listener adds targets, Source, Continuous, etc)
+	InitializeTypeSpecific();
 
-	// The listener calls this function when iterating its targets, so ensure we set everything here
-	vaEmitterDestroy(Emitter);
-	Emitter = nullptr;
-	failedInitialisation = true;
-
-	return false;
-
+	AudioWorld->RegisterEmitter(this);
+	registered = true;
+	return true;
 }
 
 void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -137,6 +148,10 @@ void AVAudioEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (Emitter)
 	{
+		// The emitter can outlive this actor (see TODO below), so clear the userData pointer now
+		// to stop the callback trampolines from resolving a dangling actor.
+		vaEmitterSetUserData(Emitter, nullptr);
+
 		// TODO - Can't just kill it here - need to wait for world pendingshutdown
 		//vaEmitterDestroy(Emitter);
 		//Emitter = nullptr;
@@ -187,4 +202,58 @@ void AVAudioEmitterBase::UpdateVAEmitter()
 	vaEmitterSetType(Emitter, EmitterType);
 	vaEmitterSetClampPosition(Emitter, bClampPosition);
 	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
+}
+
+void AVAudioEmitterBase::GetReverbResult(bool& bSuccess, FVAEAXReverbResult& Result) const
+{
+	VAEAXReverb* EAX = Emitter ? vaEmitterGetEAX(Emitter) : nullptr;
+
+	// Raytracing has not completed at least once yet
+	if (!EAX)
+	{
+		bSuccess = false;
+		Result = FVAEAXReverbResult();
+		return;
+	}
+
+	bSuccess = true;
+	Result.ReflectionsDelay = EAX->reflectionsDelay;
+	Result.Density = EAX->density;
+	Result.Diffusion = EAX->diffusion;
+	Result.GainLF = EAX->gainLF;
+	Result.GainHF = EAX->gainHF;
+	Result.Gain = EAX->gain;
+	Result.DecayTime = EAX->decayTime;
+	Result.DecayLFRatio = EAX->decayLFRatio;
+	Result.DecayHFRatio = EAX->decayHFRatio;
+	Result.ReflectionsGain = EAX->reflectionsGain;
+	Result.LateReverbGain = EAX->lateReverbGain;
+	Result.LateReverbDelay = EAX->lateReverbDelay;
+	Result.EchoTime = EAX->echoTime;
+	Result.EchoDepth = EAX->echoDepth;
+	Result.ModulationTime = EAX->modulationTime;
+	Result.ModulationDepth = EAX->modulationDepth;
+	Result.AirAbsorptionGainHF = EAX->airAbsorptionGainHF;
+	Result.HFReference = EAX->hfReference;
+	Result.LFReference = EAX->lfReference;
+	Result.RoomRolloffFactor = EAX->roomRolloffFactor;
+	Result.bDecayHFLimit = EAX->decayHFLimit != 0;
+}
+
+void AVAudioEmitterBase::GetAmbientFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
+{
+	VALowPassFilter* AmbientFilter = Emitter ? vaEmitterGetAmbientFilter(Emitter) : nullptr;
+
+	// Raytracing has not completed at least once yet
+	if (!AmbientFilter)
+	{
+		bSuccess = false;
+		GainLF = 0.0f;
+		GainHF = 0.0f;
+		return;
+	}
+
+	bSuccess = true;
+	GainLF = AmbientFilter->gainLF;
+	GainHF = AmbientFilter->gainHF;
 }

@@ -25,7 +25,7 @@ public:
 	AVAudioContinuous();
 
 protected:
-	virtual bool InitializeTypeSpecific() override;
+	virtual void InitializeTypeSpecific() override;
 	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 
@@ -50,6 +50,11 @@ public:
 	// listener hasn't raytraced it yet. Used by AVAudioRelativeSource (item 4) to reuse this
 	// emitter's muffling instead of raytracing again for every attached one-shot sound.
 	VALowPassFilter* GetMufflingResult() const;
+
+	// Reads this emitter's raytraced muffling result. bSuccess is false (and GainLF/GainHF are
+	// zeroed) until the listener has raytraced this emitter at least once
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Muffling")
+	void GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;

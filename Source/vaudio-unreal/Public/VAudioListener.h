@@ -18,7 +18,8 @@ public:
 	AVAudioListener();
 
 protected:
-	virtual bool InitializeTypeSpecific() override;
+	virtual bool ValidateConfig() override;
+	virtual void InitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 	virtual void UpdateVAEmitter() override;
 
@@ -67,7 +68,6 @@ public:
 	// Energy threshold below which permeation rays are cancelled to prevent unnecessary traversal
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float MinimumPermeationEnergy = 0.01f;
-
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;

@@ -17,7 +17,42 @@ AVAudioListener::AVAudioListener()
 {
 }
 
-bool AVAudioListener::InitializeTypeSpecific()
+bool AVAudioListener::ValidateConfig()
+{
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+
+	bool occlusionEnabled = OcclusionRayCount > 0 && OcclusionBounceCount > 0;
+	bool permeationEnabled = PermeationRayCount > 0 && PermeationBounceCount > 0;
+
+	if (!occlusionEnabled && !permeationEnabled)
+		if (TargetEmitters.Num() > 0)
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
+			return false;
+		}
+
+	// Check for null targets
+	TSet<AVAudioEmitterBase*> registeredTargets;
+
+	for (int32 i = 0; i < TargetEmitters.Num(); i++)
+	{
+		AVAudioEmitterBase* target = TargetEmitters[i];
+
+		// Fail validation if the user added a null target
+		if (!target)
+		{
+			DisplayWarning(TEXT("[VA] Listener '%s' will not cast rays as it has a null target at index %d"), *GetActorNameOrLabel(), i);
+			vaWorldRemoveEmitter(vaWorld, Emitter);
+			return false;
+		}
+
+		registeredTargets.Add(target);
+	}
+
+	return true;
+}
+
+void AVAudioListener::InitializeTypeSpecific()
 {
 	// Set ray counts and other settings
 	UpdateVAEmitter();
@@ -38,21 +73,16 @@ bool AVAudioListener::InitializeTypeSpecific()
 
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 
-	// HACK - Must add ourselves to the world first, else the vaEmitterAddTarget validation below will fail
-	VAResult listenerResult = vaWorldAddEmitter(vaWorld, Emitter);
-	check(listenerResult == VA_SUCCESS);
-
 	// Add targets
 	for (int32 i = 0; i < TargetEmitters.Num(); i++)
 	{
 		AVAudioEmitterBase* target = TargetEmitters[i];
 
-		// Fail validation if the user added a null target
 		if (!target)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' will not cast rays as it has a null target at index %d"), *GetActorNameOrLabel(), i);
-			vaWorldRemoveEmitter(vaWorld, Emitter);
-			return false;
+			// ValidateConfig() should've caught null targets
+			check(false);
+			continue;
 		}
 
 		if (registeredTargets.Contains(target))
@@ -83,33 +113,26 @@ bool AVAudioListener::InitializeTypeSpecific()
 			continue;
 		}
 
-		VAEmitter* vaEmitter = target->GetVAEmitter();
+		VAEmitter* vaTarget = target->GetVAEmitter();
 
-		VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());
+		VAResult result = vaEmitterAddTarget(Emitter, vaTarget);
+
+		check(result == VA_SUCCESS);
+		check(vaEmitterHasTarget(Emitter, vaTarget));
 
 		if (result == VA_FEATURE_DISABLED)
 		{
-			DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
-			vaWorldRemoveEmitter(vaWorld, Emitter);
-			return false;
+			// ValidateConfig() above should've caught this
+			continue;
 		}
 		else if (result == VA_NOT_ADDED_TO_WORLD)
 		{
 			// The target->AudioWorld check above should have caught this already
-			check(false);
-
-			DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that is assigned to a different world: '%s'. This target will not be raytraced"), *GetActorNameOrLabel(), *target->GetActorNameOrLabel(), *target->AudioWorld->GetActorNameOrLabel());
 			continue;
-		}
-		else
-		{
-			check(result == VA_SUCCESS);
 		}
 
 		registeredTargets.Add(target);
 	}
-
-	return true;
 }
 
 void AVAudioListener::TickTypeSpecific(float DeltaTime)
@@ -125,8 +148,9 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 		if (cameraManager && cameraManager->GetCameraCacheTime() > 0.0f)
 		{
 			FVector CamPos = cameraManager->GetCameraLocation();
+			FRotator CamRot = cameraManager->GetCameraRotation();
 			vaEmitterSetPositionUnreal(Emitter, CamPos);
-			SetActorLocation(CamPos);
+			SetActorLocationAndRotation(CamPos, CamRot);
 		}
 	}
 
