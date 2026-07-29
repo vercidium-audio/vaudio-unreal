@@ -24,6 +24,11 @@ AVAudioAmbientSource::AVAudioAmbientSource()
 	PrimaryActorTick.bCanEverTick = true;
 }
 
+AVAudioWorld* AVAudioAmbientSource::GetVAWorld() const
+{
+	return AudioWorld.Get();
+}
+
 void AVAudioAmbientSource::BeginPlay()
 {
 	Super::BeginPlay();

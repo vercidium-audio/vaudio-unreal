@@ -12,6 +12,11 @@ UVAudioMaterialComponent::UVAudioMaterialComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+AVAudioWorld* UVAudioMaterialComponent::GetVAWorld() const
+{
+	return AudioWorld.Get();
+}
+
 bool UVAudioMaterialComponent::GetMaterialId(int32& OutMaterialId)
 {
 	if (!MaterialAsset)

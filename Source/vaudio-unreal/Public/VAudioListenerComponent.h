@@ -29,7 +29,7 @@ public:
 	// Blueprints can't select VAudioListener directly in a Blueprint class's defaults (it's an
 	// instance-specific level reference), so use this to read it off a placed actor instance at runtime instead
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
-	AVAudioListener* GetVAudioListener() const { return VAudioListener.Get(); }
+	AVAudioListener* GetVAudioListener() const;
 
 protected:
 	virtual void BeginPlay() override;

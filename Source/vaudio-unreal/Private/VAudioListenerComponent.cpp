@@ -15,6 +15,11 @@ UVAudioListenerComponent::UVAudioListenerComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+AVAudioListener* UVAudioListenerComponent::GetVAudioListener() const
+{
+	return VAudioListener.Get();
+}
+
 AVAudioListener* UVAudioListenerComponent::FindListenerFromAttachedActors() const
 {
 	AActor* Owner = GetOwner();

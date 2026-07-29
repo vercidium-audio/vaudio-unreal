@@ -52,7 +52,7 @@ public:
 	// Blueprints can't select AudioWorld directly in a Blueprint class's defaults (it's an
 	// instance-specific level reference), so use this to read it off a placed actor instance at runtime instead
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
-	AVAudioWorld* GetVAWorld() const { return AudioWorld.Get(); }
+	AVAudioWorld* GetVAWorld() const;
 
 	// Optional - if set, overrides Material below with a UVAudioDefaultMaterialAsset or UVAudioCustomMaterialAsset from AudioWorld's Materials array.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
