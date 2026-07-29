@@ -47,7 +47,12 @@ public:
 
 	// Which VA Audio World this actor (and its attached children) should be added to.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	AVAudioWorld* AudioWorld = nullptr;
+	TSoftObjectPtr<AVAudioWorld> AudioWorld = nullptr;
+
+	// Blueprints can't select AudioWorld directly in a Blueprint class's defaults (it's an
+	// instance-specific level reference), so use this to read it off a placed actor instance at runtime instead
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	AVAudioWorld* GetVAWorld() const { return AudioWorld.Get(); }
 
 	// Optional - if set, overrides Material below with a UVAudioDefaultMaterialAsset or UVAudioCustomMaterialAsset from AudioWorld's Materials array.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")

@@ -36,7 +36,7 @@ bool AVAudioListener::ValidateConfig()
 
 	for (int32 i = 0; i < TargetEmitters.Num(); i++)
 	{
-		AVAudioEmitterBase* target = TargetEmitters[i];
+		AVAudioEmitterBase* target = TargetEmitters[i].Get();
 
 		// Fail validation if the user added a null target
 		if (!target)
@@ -76,7 +76,7 @@ void AVAudioListener::InitializeTypeSpecific()
 	// Add targets
 	for (int32 i = 0; i < TargetEmitters.Num(); i++)
 	{
-		AVAudioEmitterBase* target = TargetEmitters[i];
+		AVAudioEmitterBase* target = TargetEmitters[i].Get();
 
 		if (!target)
 		{
@@ -158,8 +158,13 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 		ApplyListenerReverb();
 
 	// Update filters for each target VAudioSource
-	for (AVAudioEmitterBase* Target : TargetEmitters)
+	for (const TSoftObjectPtr<AVAudioEmitterBase>& TargetPtr : TargetEmitters)
 	{
+		AVAudioEmitterBase* Target = TargetPtr.Get();
+
+		if (!Target)
+			continue;
+
 		VAEmitter* vaEmitter = Target->GetVAEmitter();
 
 		// Wait till we've raytraced the target

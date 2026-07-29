@@ -20,13 +20,15 @@ bool UVAudioMaterialComponent::GetMaterialId(int32& OutMaterialId)
 		return true;
 	}
 
-	if (!AudioWorld || !AudioWorld->Materials.Contains(MaterialAsset))
+	AVAudioWorld* vaWorld = GetVAWorld();
+
+	if (!vaWorld || !vaWorld->Materials.Contains(MaterialAsset))
 	{
 		VALogObj(L"MaterialAsset '%s' is not in AudioWorld's Materials array - assign AudioWorld first and add the asset to its Materials array.", *MaterialAsset->GetName());
 		return false;
 	}
 
-	return MaterialAsset->GetMaterialId(AudioWorld, OutMaterialId);
+	return MaterialAsset->GetMaterialId(vaWorld, OutMaterialId);
 }
 
 #if WITH_EDITOR
@@ -43,7 +45,7 @@ void UVAudioMaterialComponent::OnRegister()
 
 	// Owner is null in CDO/archetype contexts (see EnsureMeshesAllowCPUAccess above) - nothing to warn about yet.
 	AActor* Owner = GetOwner();
-	if (Owner && !AudioWorld)
+	if (Owner && AudioWorld.IsNull())
 		VALogObj(L"'%s' has no AudioWorld assigned - its geometry will not be added to raytracing until one is set.", *Owner->GetActorNameOrLabel());
 }
 

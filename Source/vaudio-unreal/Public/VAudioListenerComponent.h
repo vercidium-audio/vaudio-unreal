@@ -24,7 +24,12 @@ public:
 	// The AVAudioListener this component points to. Leave unset to auto-resolve from the owner's
 	// attached actors instead (see BeginPlay).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	AVAudioListener* VAudioListener = nullptr;
+	TSoftObjectPtr<AVAudioListener> VAudioListener = nullptr;
+
+	// Blueprints can't select VAudioListener directly in a Blueprint class's defaults (it's an
+	// instance-specific level reference), so use this to read it off a placed actor instance at runtime instead
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	AVAudioListener* GetVAudioListener() const { return VAudioListener.Get(); }
 
 protected:
 	virtual void BeginPlay() override;

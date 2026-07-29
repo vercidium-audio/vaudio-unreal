@@ -38,10 +38,10 @@ void UVAudioListenerComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!VAudioListener)
+	if (VAudioListener.IsNull())
 		VAudioListener = FindListenerFromAttachedActors();
 
-	if (!VAudioListener)
+	if (!GetVAudioListener())
 	{
 		DisplayWarning(TEXT("[VA] ListenerComponent on '%s' has no VAudioListener assigned"), *GetOwner()->GetActorNameOrLabel());
 	}

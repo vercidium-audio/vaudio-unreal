@@ -366,7 +366,7 @@ void AVAudioWorld::Tick(float DeltaTime)
 				{
 					for (int32 i = 0; i < MessageListener->TargetEmitters.Num(); ++i)
 					{
-						AVAudioEmitterBase* Target = MessageListener->TargetEmitters[i];
+						AVAudioEmitterBase* Target = MessageListener->TargetEmitters[i].Get();
 
 						uint64 messageID = VAEmitterMessageBase + MessageListener->GetEmitterIndex() * VAEmitterMessageStride + VAEmitterTargetStatus + i;
 

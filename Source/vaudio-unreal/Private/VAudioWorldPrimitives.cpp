@@ -85,7 +85,7 @@ void AVAudioWorld::BakeGeometry()
 		// Null if this actor (or its attach-parent chain) has no UVAudioMaterialComponent, or has
 		// one that belongs to a different VAudioWorld - not baked geometry for this world.
 		UVAudioMaterialComponent* MatComp = FindMaterialInChain(Actor);
-		if (!MatComp || MatComp->AudioWorld != this) continue;
+		if (!MatComp || MatComp->GetVAWorld() != this) continue;
 
 		TArray<UStaticMeshComponent*> MeshComps;
 		Actor->GetComponents<UStaticMeshComponent>(MeshComps);
@@ -170,7 +170,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		FString actorName = actor->GetActorNameOrLabel();
 
 		// Validate materials
-		if (!materialComp->AudioWorld)
+		if (!materialComp->GetVAWorld())
 		{
 			ActorsWithInvalidMaterials.AddUnique(actorName);
 			++skippedCount;
@@ -178,7 +178,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		}
 
 		// Ignore materials assigned to other worlds
-		if (materialComp->AudioWorld != this)
+		if (materialComp->GetVAWorld() != this)
 		{
 			++skippedCount;
 			continue;

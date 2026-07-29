@@ -35,7 +35,7 @@ public:
 	// Target emitters that this listener will cast occlusion and permeation rays towards.
 	// Holds both AVAudioSource and AVAudioContinuous actors - both are raytracing targets.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	TArray<AVAudioEmitterBase*> TargetEmitters;
+	TArray<TSoftObjectPtr<AVAudioEmitterBase>> TargetEmitters;
 
 	// --- Reverb ---
 

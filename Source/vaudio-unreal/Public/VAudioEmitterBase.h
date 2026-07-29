@@ -133,6 +133,12 @@ public:
 
 	// --- Runtime access ---
 
+	// The AVAudioWorld this emitter is registered to. Blueprints can't select AudioWorld directly
+	// in a Blueprint class's defaults (it's an instance-specific level reference), so use this to
+	// read it off a placed actor instance at runtime instead
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	AVAudioWorld* GetVAWorld() const { return AudioWorld; }
+
 	VAEmitter* GetVAEmitter() const { return Emitter; }
 
 	// Reads this emitter's raytraced EAX reverb result. bSuccess is false (and Result is default-constructed)
