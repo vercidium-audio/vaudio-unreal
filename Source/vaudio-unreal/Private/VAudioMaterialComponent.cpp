@@ -25,15 +25,15 @@ bool UVAudioMaterialComponent::GetMaterialId(int32& OutMaterialId)
 		return true;
 	}
 
-	AVAudioWorld* vaWorld = GetVAWorld();
+	AVAudioWorld* world = GetVAWorld();
 
-	if (!vaWorld || !vaWorld->Materials.Contains(MaterialAsset))
+	if (!world || !world->Materials.Contains(MaterialAsset))
 	{
 		VALogObj(L"MaterialAsset '%s' is not in AudioWorld's Materials array - assign AudioWorld first and add the asset to its Materials array.", *MaterialAsset->GetName());
 		return false;
 	}
 
-	return MaterialAsset->GetMaterialId(vaWorld, OutMaterialId);
+	return MaterialAsset->GetMaterialId(world, OutMaterialId);
 }
 
 #if WITH_EDITOR

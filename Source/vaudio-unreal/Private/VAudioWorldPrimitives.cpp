@@ -170,7 +170,9 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		FString actorName = actor->GetActorNameOrLabel();
 
 		// Validate materials
-		if (!materialComp->GetVAWorld())
+		AVAudioWorld* materialWorld = materialComp->GetVAWorld();
+
+		if (!materialWorld)
 		{
 			ActorsWithInvalidMaterials.AddUnique(actorName);
 			++skippedCount;
@@ -178,7 +180,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 		}
 
 		// Ignore materials assigned to other worlds
-		if (materialComp->GetVAWorld() != this)
+		if (materialWorld != this)
 		{
 			++skippedCount;
 			continue;

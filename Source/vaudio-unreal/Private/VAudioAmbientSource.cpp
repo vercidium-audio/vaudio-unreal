@@ -33,8 +33,10 @@ void AVAudioAmbientSource::BeginPlay()
 {
 	Super::BeginPlay();
 
+	AVAudioWorld* world = GetVAWorld();
+
 	// Disable the actor if validation fails
-	if (!GetVAWorld())
+	if (!world)
 	{
 		DisplayWarning(TEXT("[VA] AmbientSource '%s' will not play as it does not have an AudioWorld assigned"), *GetActorNameOrLabel());
 		SetActorTickEnabled(false);
@@ -48,7 +50,7 @@ void AVAudioAmbientSource::BeginPlay()
 		return;
 	}
 
-	AVAudioListener* listener = GetVAWorld()->GetMainListener();
+	AVAudioListener* listener = world->GetMainListener();
 
 	if (!listener)
 	{
@@ -88,15 +90,16 @@ void AVAudioAmbientSource::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// HACK - need to fix the init order madness
+	AVAudioListener* listener = GetVAWorld()->GetMainListener();
+
 	// Bail if the listener failed to initialise
-	if (!GetVAWorld()->GetMainListener() || !GetVAWorld()->GetMainListener()->GetVAEmitter())
+	if (!listener || !listener->GetVAEmitter())
 	{
 		DisplayWarning(TEXT("[VA] AmbientSource '%s' will not play as the listener failed validation"), *GetActorNameOrLabel());
 		return;
 	}
 
-	VAEmitter* vaListener = GetVAWorld()->GetMainListener()->GetVAEmitter();
+	VAEmitter* vaListener = listener->GetVAEmitter();
 	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(vaListener);
 
 	// Raytracing has not completed yet - don't play the sound

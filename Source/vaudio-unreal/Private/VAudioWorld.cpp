@@ -366,43 +366,43 @@ void AVAudioWorld::Tick(float DeltaTime)
 				{
 					for (int32 i = 0; i < MessageListener->TargetEmitters.Num(); ++i)
 					{
-						AVAudioEmitterBase* Target = MessageListener->TargetEmitters[i].Get();
+						AVAudioEmitterBase* target = MessageListener->TargetEmitters[i].Get();
 
 						uint64 messageID = VAEmitterMessageBase + MessageListener->GetEmitterIndex() * VAEmitterMessageStride + VAEmitterTargetStatus + i;
 
-						if (!Target)
+						if (!target)
 						{
 							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has a null target"), *MessageListener->GetActorNameOrLabel()));
 							continue;
 						}
 
-						if (Target == MessageListener)
+						if (target == MessageListener)
 						{
 							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has itself in its own Target Emitters list"), *MessageListener->GetActorNameOrLabel()));
 							continue;
 						}
 
-						if (!Target->GetVAEmitter())
+						if (!target->GetVAEmitter())
 						{
-							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' target '%s' has no emitter. Ensure the target emitter is assigned to the same World"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
+							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' target '%s' has no emitter. Ensure the target emitter is assigned to the same World"), *MessageListener->GetActorNameOrLabel(), *target->GetActorNameOrLabel()));
 							continue;
 						}
 
-						if (!vaEmitterHasRaytracedTarget(ListenerVA, Target->GetVAEmitter()))
+						if (!vaEmitterHasRaytracedTarget(ListenerVA, target->GetVAEmitter()))
 						{
-							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has not raytraced the '%s' emitter yet"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
+							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has not raytraced the '%s' emitter yet"), *MessageListener->GetActorNameOrLabel(), *target->GetActorNameOrLabel()));
 							continue;
 						}
 
-						VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(ListenerVA, Target->GetVAEmitter());
+						VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(ListenerVA, target->GetVAEmitter());
 
 						if (!lowPassFilter)
 						{
-							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has raytraced the '%s' emitter, but has an invalid low pass filter"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
+							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has raytraced the '%s' emitter, but has an invalid low pass filter"), *MessageListener->GetActorNameOrLabel(), *target->GetActorNameOrLabel()));
 							continue;
 						}
 
-						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green, FString::Printf(TEXT("[VA] '%s' filter: gainLF=%.2f  gainHF=%.2f"), *Target->GetActorNameOrLabel(), lowPassFilter->gainLF, lowPassFilter->gainHF));
+						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green, FString::Printf(TEXT("[VA] '%s' filter: gainLF=%.2f  gainHF=%.2f"), *target->GetActorNameOrLabel(), lowPassFilter->gainLF, lowPassFilter->gainHF));
 					}
 				}
 			}
