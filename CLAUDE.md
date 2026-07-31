@@ -1,14 +1,17 @@
 # Overview
 
+This is a public repo for the Vercidium Audio Unreal Engine plugin, which is a wrapper around the vaudionative.dll file, which is the Vercidium Audio (vaudio) C SDK.
+
 ~\vaudiofps2\ThirdParty\vaudio\include\vaudio.h is the public header for Vercidium Audio.
 
 Don't attempt to build the plugin yourself. The user will build it and inform you of any errors.
 
 Coding guidelines:
-- Use DisplayWarning() to surface errors to the user on the screen. I used to use VALog() instead
+- Use DisplayWarning() to surface errors to the user on the screen
 - Use camelCase for variable names
 - Use camelCase for field and parameter names, e.g. 'result' instead of 'Result'
-- Don't use single capitalised acronyms for variable names - use position instead of P, vaWorld instead of VAW, etc.
+- Don't use single capitalised acronyms for variable names - use position instead of P, vaWorld instead of VAW, etc
+- Don't capitalies variable names, e.g. 'listener' instead of 'Listener'
 
 ## Actor Initialisation
 
@@ -28,7 +31,6 @@ void AVAudioRelativeSource::BeginPlay()
 	}
 }
 ```
-
 
 ## VAResult Handling
 

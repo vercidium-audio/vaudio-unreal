@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 4,
-	"VersionName": "1.5.0",
+	"Version": 5,
+	"VersionName": "1.5.1",
 	"FriendlyName": "Vercidium Audio",
 	"Description": "Raytraced audio simulation, powered by the Vercidium Audio C SDK.",
 	"Category": "Audio",
