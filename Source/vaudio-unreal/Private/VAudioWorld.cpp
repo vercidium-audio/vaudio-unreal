@@ -13,6 +13,9 @@
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
 #include "AudioMixerBlueprintLibrary.h"
+#include "GameFramework/Controller.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -57,6 +60,10 @@ void AVAudioWorld::RefreshWorldBounds()
 
 void AVAudioWorld::UpdateVAWorld()
 {
+	// Rendering
+	vaWorldSetRenderingEnabled(World, bRenderingEnabled);
+	vaWorldSetCameraSpeed(World, CameraSpeed);
+
 	// World bounds
 	vaWorldSetPositionUnreal(World, WorldPosition);
 	vaWorldSetSizeUnreal(World, WorldSize);
@@ -221,6 +228,24 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 	}
 }
 
+// Prefer whichever controller is actually steering this listener's point of view, so the debug
+// camera's pitch/yaw matches what's heard regardless of controller type (player, AI, etc):
+//  1. A controller possessing the listener's attach-parent pawn (how AVAudioListener is normally
+//     set up - see UVAudioListenerComponent - e.g. a first/third-person character, or an AI pawn).
+//  2. The first local player controller, for listeners not attached to a possessed pawn.
+//  3. The listener actor's own rotation, if no controller is available at all.
+static FRotator GetListenerControlRotation(AVAudioListener* Listener)
+{
+	if (APawn* Pawn = Cast<APawn>(Listener->GetAttachParentActor()))
+		if (AController* Controller = Pawn->GetController())
+			return Controller->GetControlRotation();
+
+	if (APlayerController* PlayerController = Listener->GetWorld()->GetFirstPlayerController())
+		return PlayerController->GetControlRotation();
+
+	return Listener->GetActorRotation();
+}
+
 void AVAudioWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
@@ -245,6 +270,18 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 	if (World)
 	{
+		AVAudioListener* mainListener = GetMainListener();
+
+		// Sync the camera with the main listener. Debug window can still free fly with F1
+		if (mainListener)
+		{
+			vaWorldSetCameraPosition(World, vaEmitterGetPosition(mainListener->GetVAEmitter()));
+
+			FRotator rotation = GetListenerControlRotation(mainListener);
+			vaWorldSetCameraPitch(World, FMath::DegreesToRadians(rotation.Pitch));
+			vaWorldSetCameraYaw(World, FMath::DegreesToRadians(rotation.Yaw));
+		}
+
 		vaWorldUpdate(World);
 		ApplyGroupedEAXReverb();
 

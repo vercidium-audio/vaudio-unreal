@@ -226,6 +226,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading")
 	bool bPendingShutdown = false;
 
+	// --- Debug ---
+
+	// Whether to render the raytraced world to a separate debug window.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug")
+	bool bRenderingEnabled = true;
+
+	// Whether to render the raytraced world to a separate debug window.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|CameraSpeed", meta = (ClampMin = "0.01", ClampMax="1000"))
+	float CameraSpeed = 10;
+
 	// --- Mode ---
 
 	// Silence all direct audio but keep reverb submix sends active.

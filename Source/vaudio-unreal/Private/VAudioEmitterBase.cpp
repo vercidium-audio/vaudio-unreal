@@ -103,6 +103,8 @@ bool AVAudioEmitterBase::TryInitializeEmitter()
 	check(!Emitter);
 
 	Emitter = vaEmitterCreate();
+	vaEmitterSetName(Emitter, TCHAR_TO_UTF8(*GetActorNameOrLabel()));
+
 	vaEmitterSetLogCallback(Emitter, &VASdkLogCallback);
 	vaEmitterSetLogErrorCallback(Emitter, &VASdkLogCallback);
 	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
