@@ -176,7 +176,7 @@ public:
 
 	// The percentage of returning energy required for reverb to be at maximum volume
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float ReverbEnergyCap = 0.2f;
+	float ReverbEnergyCap = 0.15f;
 
 	// How long (in milliseconds) the echogram records data for. Returning reverb rays after this period will be ignored
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "1"))
@@ -259,6 +259,33 @@ public:
 	// Seed used to randomise scattering vectors
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced")
 	int32 ScatteringSeed = 0;
+
+	// --- Debug Rendering ---
+	// Editor/debug-window visualisation only - no effect on raytracing.
+
+	// Whether to render each trail a different colour in the debug window
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug Rendering")
+	bool bRandomTrailColor = false;
+
+	// Colour of ray trails in the debug window
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug Rendering")
+	FColor TrailColor = FColor(255, 255, 255, 25);
+
+	// Colour of reverb rays in the debug window
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug Rendering")
+	FColor ReverbColor = FColor(27, 247, 255, 51);
+
+	// Colour of occlusion rays in the debug window
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug Rendering")
+	FColor OcclusionColor = FColor(113, 255, 164, 51);
+
+	// Colour of permeation rays in the debug window
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug Rendering")
+	FColor PermeationColor = FColor(255, 127, 42, 51);
+
+	// Colour of ambient permeation rays in the debug window
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug Rendering")
+	FColor AmbientPermeationColor = FColor(255, 204, 0, 51);
 
 protected:
 	virtual bool ValidateConfig() { return true; }
