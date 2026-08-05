@@ -13,6 +13,18 @@ static inline void vaEmitterSetPositionUnreal(VAEmitter* emitter, const FVector&
 	vaEmitterSetPosition(emitter, vaVectorCreate((float)position.X, (float)position.Y, (float)position.Z));
 }
 
+// VAColor (byte RGBA) <-> FColor (byte RGBA) helpers. FColor rather than FLinearColor since these
+// are raw debug-visualisation bytes with no gamma/lighting meaning - a direct copy, no sRGB round-trip.
+static inline VAColor FColorToVA(const FColor& color)
+{
+	return vaColorCreate(color.R, color.G, color.B, color.A);
+}
+
+static inline FColor VAColorToFColor(const VAColor& color)
+{
+	return FColor(color.r, color.g, color.b, color.a);
+}
+
 static inline void vaSpherePrimitiveSetCenterUnreal(VASpherePrimitive* sphere, const FVector& center)
 {
 	vaSpherePrimitiveSetCenter(sphere, vaVectorCreate((float)center.X, (float)center.Y, (float)center.Z));

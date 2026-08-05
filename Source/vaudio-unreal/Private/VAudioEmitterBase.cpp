@@ -204,6 +204,13 @@ void AVAudioEmitterBase::UpdateVAEmitter()
 	vaEmitterSetType(Emitter, EmitterType);
 	vaEmitterSetClampPosition(Emitter, bClampPosition);
 	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
+
+	vaEmitterSetRandomTrailColor(Emitter, bRandomTrailColor);
+	vaEmitterSetTrailColor(Emitter, FColorToVA(TrailColor));
+	vaEmitterSetReverbColor(Emitter, FColorToVA(ReverbColor));
+	vaEmitterSetOcclusionColor(Emitter, FColorToVA(OcclusionColor));
+	vaEmitterSetPermeationColor(Emitter, FColorToVA(PermeationColor));
+	vaEmitterSetAmbientPermeationColor(Emitter, FColorToVA(AmbientPermeationColor));
 }
 
 void AVAudioEmitterBase::GetReverbResult(bool& bSuccess, FVAEAXReverbResult& Result) const
