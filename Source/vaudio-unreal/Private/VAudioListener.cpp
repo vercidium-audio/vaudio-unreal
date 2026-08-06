@@ -172,7 +172,7 @@ void AVAudioListener::TickTypeSpecific(float DeltaTime)
 			Source->ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 		else
 		{
-			// TODO - I think continuous / relative emitters update their own filter based on GetMufflingResult()
+			// Continuous / relative emitters update their own filter based on GetMufflingResult()
 		}
 	}
 }
