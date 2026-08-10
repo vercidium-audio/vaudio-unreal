@@ -7,7 +7,7 @@ public class VaudioUnreal : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "AudioMixer", "Synthesis" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "AudioMixer", "Synthesis", "MeshDescription", "StaticMeshDescription" });
 
 		string SDKPath = Path.Combine(ModuleDirectory, "../../../../ThirdParty/vaudio");
 
