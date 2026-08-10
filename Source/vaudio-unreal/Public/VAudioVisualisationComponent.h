@@ -20,9 +20,11 @@ class UMaterialInstanceDynamic;
 // parameters below), so nothing here does per-instance work outside the callback itself.
 //
 // DiamondMaterial contract (the plugin ships no content, so this material must be authored by
-// hand in the host project):
-// - Unlit, Translucent blend mode, two-sided (or disable backface culling) - diamonds face an
-//   arbitrary hit normal.
+// hand in the host project, or generated via the Generate Fade Nodes button below):
+// - Translucent blend mode (required - Opacity/the fade math has no effect otherwise) and
+//   two-sided (or disable backface culling), since diamonds face an arbitrary hit normal. Shading
+//   model is not constrained - Generate Fade Nodes defaults to Unlit, but Lit/other models fade
+//   the same way and are not warned about.
 // - Scalar parameters: CurrentTime, FadeInMs, FadeOutMs, DurationMs, MaxOpacity.
 // - Vector parameter: BaseColor (RGB).
 // - Reads per-instance custom data index 0 (PerInstanceCustomData material node) as SpawnTime,

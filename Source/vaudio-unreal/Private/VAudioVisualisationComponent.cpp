@@ -29,7 +29,6 @@ extern "C" {
 enum EVAVisualisationMaterialWarningOffset : uint32
 {
 	VAVisualisationWarningBlendMode = 1,
-	VAVisualisationWarningShadingModel = 2,
 	VAVisualisationWarningMissingScalarParam = 3, // + parameter index, see RequiredScalarParameterNames
 	VAVisualisationWarningMissingVectorParam = 10,
 };
@@ -89,11 +88,6 @@ void UVAudioVisualisationComponent::ValidateDiamondMaterial() const
 		DisplayMaterialWarning(VAVisualisationWarningBlendMode, TEXT("[VA] DiamondMaterial '%s' on '%s' must have Blend Mode set to Translucent - click the Generate Fade Nodes button above Diamond Material"), *DiamondMaterial->GetName(), *GetOwner()->GetActorNameOrLabel());
 	else
 		ClearMaterialWarning(VAVisualisationWarningBlendMode);
-
-	if (!DiamondMaterial->GetShadingModels().HasShadingModel(MSM_Unlit))
-		DisplayMaterialWarning(VAVisualisationWarningShadingModel, TEXT("[VA] DiamondMaterial '%s' on '%s' must have Shading Model set to Unlit - click the Generate Fade Nodes button above Diamond Material"), *DiamondMaterial->GetName(), *GetOwner()->GetActorNameOrLabel());
-	else
-		ClearMaterialWarning(VAVisualisationWarningShadingModel);
 
 	for (int32 i = 0; i < UE_ARRAY_COUNT(RequiredScalarParameterNames); i++)
 	{
@@ -405,6 +399,10 @@ void UVAudioVisualisationComponent::GenerateFadeNodes()
 		if (expression && expression->Desc == VAGeneratedNodeTag)
 			UMaterialEditingLibrary::DeleteMaterialExpression(material, expression);
 
+	// Translucent is required for Opacity (the fade math) to have any effect. Unlit is just a
+	// sane default for a diamond sprite that doesn't need to receive lighting - not required for
+	// fading, so feel free to switch it to Lit/other shading models afterwards if you want a
+	// different look; this generator won't warn about that or fight you on it.
 	material->BlendMode = BLEND_Translucent;
 	material->SetShadingModel(MSM_Unlit);
 	material->TwoSided = true;
