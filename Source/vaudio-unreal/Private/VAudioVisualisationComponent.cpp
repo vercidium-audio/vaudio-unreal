@@ -14,6 +14,29 @@ extern "C" {
 #include "VAConstants.h"
 #include "VADebugMessageKeys.h"
 
+#if WITH_EDITOR
+#include "MaterialEditingLibrary.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionPerInstanceCustomData.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#endif
+
+// Material-validation warnings each need their own on-screen message key (distinct from the
+// general DisplayWarning key below) so several problems can be shown at once instead of
+// overwriting each other - offsets stay well within VAEmitterMessageStride (1000) per component.
+enum EVAVisualisationMaterialWarningOffset : uint32
+{
+	VAVisualisationWarningBlendMode = 1,
+	VAVisualisationWarningShadingModel = 2,
+	VAVisualisationWarningMissingScalarParam = 3, // + parameter index, see RequiredScalarParameterNames
+	VAVisualisationWarningMissingVectorParam = 10,
+};
+
+static const TCHAR* RequiredScalarParameterNames[] = { TEXT("CurrentTime"), TEXT("FadeInMs"), TEXT("FadeOutMs"), TEXT("DurationMs"), TEXT("MaxOpacity") };
+static const TCHAR* RequiredVectorParameterName = TEXT("BaseColor");
+
 // vaEmitterSetUserData() stashes the owning actor on the VAEmitter* itself (see
 // VAudioEmitterBase.cpp), so this trampoline resolves the actor the same way the other
 // callback trampolines do, then forwards to whichever UVAudioVisualisationComponent is
@@ -42,6 +65,53 @@ void UVAudioVisualisationComponent::DisplayWarning(const TCHAR* fmt, ...) const
 void UVAudioVisualisationComponent::ClearWarning() const
 {
 	ClearDebugWarning(VAEmitterMessageBase + GetUniqueID());
+}
+
+void UVAudioVisualisationComponent::DisplayMaterialWarning(uint32 offset, const TCHAR* fmt, ...) const
+{
+	va_list args;
+	va_start(args, fmt);
+	DisplayDebugWarningArgs(VAEmitterMessageBase + GetUniqueID() * VAEmitterMessageStride + offset, fmt, args);
+	va_end(args);
+}
+
+void UVAudioVisualisationComponent::ClearMaterialWarning(uint32 offset) const
+{
+	ClearDebugWarning(VAEmitterMessageBase + GetUniqueID() * VAEmitterMessageStride + offset);
+}
+
+void UVAudioVisualisationComponent::ValidateDiamondMaterial() const
+{
+	if (!DiamondMaterial)
+		return;
+
+	if (DiamondMaterial->GetBlendMode() != BLEND_Translucent)
+		DisplayMaterialWarning(VAVisualisationWarningBlendMode, TEXT("[VA] DiamondMaterial '%s' on '%s' must have Blend Mode set to Translucent - click the Generate Fade Nodes button above Diamond Material"), *DiamondMaterial->GetName(), *GetOwner()->GetActorNameOrLabel());
+	else
+		ClearMaterialWarning(VAVisualisationWarningBlendMode);
+
+	if (!DiamondMaterial->GetShadingModels().HasShadingModel(MSM_Unlit))
+		DisplayMaterialWarning(VAVisualisationWarningShadingModel, TEXT("[VA] DiamondMaterial '%s' on '%s' must have Shading Model set to Unlit - click the Generate Fade Nodes button above Diamond Material"), *DiamondMaterial->GetName(), *GetOwner()->GetActorNameOrLabel());
+	else
+		ClearMaterialWarning(VAVisualisationWarningShadingModel);
+
+	for (int32 i = 0; i < UE_ARRAY_COUNT(RequiredScalarParameterNames); i++)
+	{
+		float value;
+		uint32 warningOffset = VAVisualisationWarningMissingScalarParam + i;
+
+		if (!DiamondMaterial->GetScalarParameterValue(FName(RequiredScalarParameterNames[i]), value))
+			DisplayMaterialWarning(warningOffset, TEXT("[VA] DiamondMaterial '%s' on '%s' is missing scalar parameter '%s' - click the Generate Fade Nodes button above Diamond Material"), *DiamondMaterial->GetName(), *GetOwner()->GetActorNameOrLabel(), RequiredScalarParameterNames[i]);
+		else
+			ClearMaterialWarning(warningOffset);
+	}
+
+	FLinearColor colorValue;
+
+	if (!DiamondMaterial->GetVectorParameterValue(FName(RequiredVectorParameterName), colorValue))
+		DisplayMaterialWarning(VAVisualisationWarningMissingVectorParam, TEXT("[VA] DiamondMaterial '%s' on '%s' is missing vector parameter '%s' - click the Generate Fade Nodes button above Diamond Material"), *DiamondMaterial->GetName(), *GetOwner()->GetActorNameOrLabel(), RequiredVectorParameterName);
+	else
+		ClearMaterialWarning(VAVisualisationWarningMissingVectorParam);
 }
 
 void UVAudioVisualisationComponent::OnRegister()
@@ -73,6 +143,7 @@ void UVAudioVisualisationComponent::BeginPlay()
 		return;
 	}
 
+	ValidateDiamondMaterial();
 	CreateInstancedMesh();
 	ApplyVisualisationSettings();
 
@@ -305,9 +376,109 @@ void UVAudioVisualisationComponent::OnVisualisationData(VAVisualisationData* dat
 }
 
 #if WITH_EDITOR
+// Tag applied to every node this function creates (via the base UMaterialExpression::Desc field),
+// so a repeat press can find and delete only its own previous output and rebuild cleanly, without
+// touching anything else the user has added to the material by hand.
+static const TCHAR* VAGeneratedNodeTag = TEXT("VADiamondFade (generated)");
+
+void UVAudioVisualisationComponent::GenerateFadeNodes()
+{
+	if (!DiamondMaterial)
+	{
+		DisplayWarning(TEXT("[VA] Cannot generate fade nodes on '%s' - no DiamondMaterial assigned"), *GetOwner()->GetActorNameOrLabel());
+		return;
+	}
+
+	UMaterial* material = Cast<UMaterial>(DiamondMaterial);
+
+	if (!material)
+	{
+		DisplayWarning(TEXT("[VA] DiamondMaterial '%s' on '%s' must be a Material asset, not a Material Instance, to generate fade nodes"), *DiamondMaterial->GetName(), *GetOwner()->GetActorNameOrLabel());
+		return;
+	}
+
+	// Remove only nodes this function created on a previous press, leaving anything else the user
+	// added by hand alone.
+	TArray<TObjectPtr<UMaterialExpression>> existingExpressions(material->GetExpressions());
+
+	for (const TObjectPtr<UMaterialExpression>& expression : existingExpressions)
+		if (expression && expression->Desc == VAGeneratedNodeTag)
+			UMaterialEditingLibrary::DeleteMaterialExpression(material, expression);
+
+	material->BlendMode = BLEND_Translucent;
+	material->SetShadingModel(MSM_Unlit);
+	material->TwoSided = true;
+
+	bool bNeedsRecompile = false;
+	UMaterialEditingLibrary::SetMaterialUsage(material, MATUSAGE_InstancedStaticMeshes, bNeedsRecompile);
+
+	auto createExpression = [&](TSubclassOf<UMaterialExpression> expressionClass, int32 posX, int32 posY) -> UMaterialExpression*
+	{
+		UMaterialExpression* expression = UMaterialEditingLibrary::CreateMaterialExpression(material, expressionClass, posX, posY);
+		expression->Desc = VAGeneratedNodeTag;
+		return expression;
+	};
+
+	UMaterialExpressionPerInstanceCustomData* spawnTimeExpression = Cast<UMaterialExpressionPerInstanceCustomData>(createExpression(UMaterialExpressionPerInstanceCustomData::StaticClass(), -600, 0));
+	spawnTimeExpression->DataIndex = 0;
+
+	UMaterialExpressionScalarParameter* currentTimeExpression = Cast<UMaterialExpressionScalarParameter>(createExpression(UMaterialExpressionScalarParameter::StaticClass(), -600, 100));
+	currentTimeExpression->ParameterName = TEXT("CurrentTime");
+
+	UMaterialExpressionScalarParameter* fadeInExpression = Cast<UMaterialExpressionScalarParameter>(createExpression(UMaterialExpressionScalarParameter::StaticClass(), -600, 200));
+	fadeInExpression->ParameterName = TEXT("FadeInMs");
+
+	UMaterialExpressionScalarParameter* fadeOutExpression = Cast<UMaterialExpressionScalarParameter>(createExpression(UMaterialExpressionScalarParameter::StaticClass(), -600, 300));
+	fadeOutExpression->ParameterName = TEXT("FadeOutMs");
+
+	UMaterialExpressionScalarParameter* durationExpression = Cast<UMaterialExpressionScalarParameter>(createExpression(UMaterialExpressionScalarParameter::StaticClass(), -600, 400));
+	durationExpression->ParameterName = TEXT("DurationMs");
+
+	UMaterialExpressionScalarParameter* maxOpacityExpression = Cast<UMaterialExpressionScalarParameter>(createExpression(UMaterialExpressionScalarParameter::StaticClass(), -600, 500));
+	maxOpacityExpression->ParameterName = TEXT("MaxOpacity");
+
+	UMaterialExpressionVectorParameter* baseColorExpression = Cast<UMaterialExpressionVectorParameter>(createExpression(UMaterialExpressionVectorParameter::StaticClass(), -600, 650));
+	baseColorExpression->ParameterName = TEXT("BaseColor");
+
+	UMaterialExpressionCustom* fadeExpression = Cast<UMaterialExpressionCustom>(createExpression(UMaterialExpressionCustom::StaticClass(), -200, 300));
+	fadeExpression->OutputType = CMOT_Float1;
+	fadeExpression->Code = TEXT(
+		"float elapsedMs = (CurrentTime - SpawnTime) * 1000.0;\n"
+		"float fadeIn = FadeInMs > 0.0 ? saturate(elapsedMs / FadeInMs) : 1.0;\n"
+		"float fadeOut = FadeOutMs > 0.0 ? saturate((DurationMs - elapsedMs) / FadeOutMs) : 1.0;\n"
+		"return (elapsedMs < 0.0 || elapsedMs > DurationMs) ? 0.0 : MaxOpacity * min(fadeIn, fadeOut);");
+
+	fadeExpression->Inputs.SetNum(6);
+	fadeExpression->Inputs[0].InputName = TEXT("SpawnTime");
+	fadeExpression->Inputs[1].InputName = TEXT("CurrentTime");
+	fadeExpression->Inputs[2].InputName = TEXT("FadeInMs");
+	fadeExpression->Inputs[3].InputName = TEXT("FadeOutMs");
+	fadeExpression->Inputs[4].InputName = TEXT("DurationMs");
+	fadeExpression->Inputs[5].InputName = TEXT("MaxOpacity");
+	fadeExpression->RebuildOutputs(); // populates Outputs - CreateMaterialExpression doesn't call PostEditChangeProperty, so this never runs implicitly
+
+	UMaterialEditingLibrary::ConnectMaterialExpressions(spawnTimeExpression, TEXT(""), fadeExpression, TEXT("SpawnTime"));
+	UMaterialEditingLibrary::ConnectMaterialExpressions(currentTimeExpression, TEXT(""), fadeExpression, TEXT("CurrentTime"));
+	UMaterialEditingLibrary::ConnectMaterialExpressions(fadeInExpression, TEXT(""), fadeExpression, TEXT("FadeInMs"));
+	UMaterialEditingLibrary::ConnectMaterialExpressions(fadeOutExpression, TEXT(""), fadeExpression, TEXT("FadeOutMs"));
+	UMaterialEditingLibrary::ConnectMaterialExpressions(durationExpression, TEXT(""), fadeExpression, TEXT("DurationMs"));
+	UMaterialEditingLibrary::ConnectMaterialExpressions(maxOpacityExpression, TEXT(""), fadeExpression, TEXT("MaxOpacity"));
+
+	UMaterialEditingLibrary::ConnectMaterialProperty(fadeExpression, TEXT(""), MP_Opacity);
+	UMaterialEditingLibrary::ConnectMaterialProperty(baseColorExpression, TEXT(""), MP_EmissiveColor);
+
+	UMaterialEditingLibrary::LayoutMaterialExpressions(material);
+	UMaterialEditingLibrary::RecompileMaterial(material);
+
+	ValidateDiamondMaterial();
+}
+
 void UVAudioVisualisationComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UVAudioVisualisationComponent, DiamondMaterial))
+		ValidateDiamondMaterial();
 
 	// InstancedMesh only exists while PIE/game is running, so ignore edits when we haven't hit Play yet
 	if (!InstancedMesh)

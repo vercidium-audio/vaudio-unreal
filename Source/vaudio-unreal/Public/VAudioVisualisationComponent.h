@@ -93,6 +93,16 @@ public:
 	// results, always on the main thread during vaWorldUpdate() - safe to touch UObjects directly
 	void OnVisualisationData(VAVisualisationData* data, int32 count);
 
+#if WITH_EDITOR
+	// Programmatically builds the fade graph documented above onto DiamondMaterial, so a
+	// material-editor beginner never has to wire nodes by hand - sets Blend Mode/Shading Model
+	// and creates+wires the parameter/custom-HLSL nodes described in the class comment. Requires
+	// DiamondMaterial to be a plain UMaterial asset (not a Material Instance); warns and does
+	// nothing otherwise. Safe to press repeatedly - only regenerates nodes it previously created.
+	UFUNCTION(CallInEditor, Category = "Vercidium Audio|Visualisation")
+	void GenerateFadeNodes();
+#endif
+
 protected:
 	virtual void OnRegister() override;
 	virtual void BeginPlay() override;
@@ -133,6 +143,14 @@ private:
 	void ApplyVisualisationSettings() const;
 	void TeardownVisualisation();
 
+	// Checks DiamondMaterial's blend mode, shading model, and required parameters against the
+	// contract documented above, and raises a distinct on-screen DisplayWarning for each problem
+	// found (cleared automatically once the problem is fixed and PostEditChangeProperty/BeginPlay
+	// re-validates). Does not detect a parameter that exists but isn't wired to Opacity/EmissiveColor.
+	void ValidateDiamondMaterial() const;
+
 	void DisplayWarning(const TCHAR* fmt, ...) const;
 	void ClearWarning() const;
+	void DisplayMaterialWarning(uint32 offset, const TCHAR* fmt, ...) const;
+	void ClearMaterialWarning(uint32 offset) const;
 };
