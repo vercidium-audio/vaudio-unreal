@@ -25,6 +25,11 @@ static inline FColor VAColorToFColor(const VAColor& color)
 	return FColor(color.r, color.g, color.b, color.a);
 }
 
+static inline FVector VAVectorToFVector(const VAVector& vector)
+{
+	return FVector(vector.x, vector.y, vector.z);
+}
+
 static inline void vaSpherePrimitiveSetCenterUnreal(VASpherePrimitive* sphere, const FVector& center)
 {
 	vaSpherePrimitiveSetCenter(sphere, vaVectorCreate((float)center.X, (float)center.Y, (float)center.Z));

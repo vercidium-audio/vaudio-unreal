@@ -197,10 +197,6 @@ void AVAudioEmitterBase::UpdateVAEmitter()
 	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
 	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
 
-	vaEmitterSetVisualisationRayCount(Emitter, VisualisationRayCount);
-	vaEmitterSetVisualisationBounceCount(Emitter, VisualisationBounceCount);
-	vaEmitterSetVisualisationUpdateFrequency(Emitter, VisualisationUpdateFrequency);
-
 	vaEmitterSetType(Emitter, EmitterType);
 	vaEmitterSetClampPosition(Emitter, bClampPosition);
 	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);

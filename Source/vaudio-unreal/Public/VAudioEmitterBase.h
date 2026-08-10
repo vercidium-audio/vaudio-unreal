@@ -7,6 +7,7 @@
 
 struct VAEmitter;
 class AVAudioWorld;
+class UVAudioVisualisationComponent;
 
 // Mirrors every field of the SDK's VAEAXReverb for Blueprint consumption
 USTRUCT(BlueprintType)
@@ -234,17 +235,10 @@ public:
 
 	// --- Visualisation ---
 
-	// Number of visualisation rays cast
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0"))
-	int32 VisualisationRayCount = 0;
-
-	// Number of bounces per visualisation ray
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0"))
-	int32 VisualisationBounceCount = 0;
-
-	// How often to cast visualisation rays (milliseconds)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "1"))
-	int32 VisualisationUpdateFrequency = 500;
+	// Set by UVAudioVisualisationComponent::BeginPlay/EndPlay when one is attached, so the
+	// visualisation callback trampoline (VAudioVisualisationComponent.cpp) can resolve it from the
+	// VAEmitter* alone via vaEmitterGetUserData, the same way the other callback trampolines do.
+	UVAudioVisualisationComponent* VisualisationComponent = nullptr;
 
 	// --- Advanced ---
 
