@@ -81,7 +81,8 @@ You can also create material assets in the Content Browser and add them to the `
 
 ## References
 - [Vercidium Audio documentation](https://vercidium.com/docs)
-- [vaudio-godot-openal](https://github.com/vercidium-audio/godot-openal) — equivalent plugin for Godot
+- [vaudio-godot-native-openal-3d-source](https://github.com/vercidium-audio/vaudio-godot-native-openal-3d-source) — equivalent plugin for Godot (native C)
+- [vaudio-godot-mono-openal-3d](https://github.com/vercidium-audio/vaudio-godot-mono-openal-3d) — equivalent plugin for Godot (C#)
 
 ## Licencing
 
