@@ -304,7 +304,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 				for (const FKBoxElem& boxElem : agg.BoxElems)
 				{
-					FQuat rot = boxElem.GetTransform().GetRotation() * meshCompTransform.GetRotation();
+					FQuat rot = meshCompTransform.GetRotation() * boxElem.GetTransform().GetRotation();
 					FVector center = meshCompTransform.TransformPosition(boxElem.GetTransform().GetTranslation());
 					FTransform worldTransform(rot, center, FVector::OneVector);
 
@@ -328,7 +328,7 @@ void AVAudioWorld::ScanAndAddPrimitives()
 				}
 				for (const FKSphylElem& capsuleElem : agg.SphylElems)
 				{
-					FQuat rot = capsuleElem.GetTransform().GetRotation() * meshCompTransform.GetRotation();
+					FQuat rot = meshCompTransform.GetRotation() * capsuleElem.GetTransform().GetRotation();
 					FVector center = meshCompTransform.TransformPosition(capsuleElem.GetTransform().GetTranslation());
 					FTransform worldTransform(rot, center, FVector::OneVector);
 

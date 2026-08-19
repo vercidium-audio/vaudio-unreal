@@ -252,6 +252,20 @@ void AVAudioWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	RunningWorlds.RemoveSingleSwap(this);
 
+	for (int32 i = 0; i < GroupedEAXPresets.Num(); i++)
+	{
+		USoundSubmix* Sub = GroupedEAXSubmixes.IsValidIndex(i) ? GroupedEAXSubmixes[i] : nullptr;
+
+		if (!Sub)
+			continue;
+
+		if (USubmixEffectReverbPreset* Preset = GroupedEAXPresets[i])
+			UAudioMixerBlueprintLibrary::RemoveSubmixEffect(this, Sub, Preset);
+
+		if (USubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets[i])
+			UAudioMixerBlueprintLibrary::RemoveSubmixEffect(this, Sub, PanPreset);
+	}
+
 	GroupedEAXPresets.Empty();
 	GroupedEAXPanPresets.Empty();
 

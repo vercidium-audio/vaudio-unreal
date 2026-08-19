@@ -227,7 +227,7 @@ public:
 
 	// Number of trails rebuilt from scratch each frame to prevent staleness when the emitter moves
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Refresh", meta = (ClampMin = "0"))
-	int32 RefreshRayCount = 0;
+	int32 RefreshRayCount = 16;
 
 	// A ray trail will be re-created if an old ray bounce position is too far away from the new ray bounce position. This setting controls the allowed distance between old and new ray bounce positions
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Refresh", meta = (ClampMin = "0.0"))

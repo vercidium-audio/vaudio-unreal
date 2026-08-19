@@ -20,6 +20,7 @@ public:
 protected:
 	virtual bool ValidateConfig() override;
 	virtual void InitializeTypeSpecific() override;
+	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 	virtual void UpdateVAEmitter() override;
 
