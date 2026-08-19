@@ -5,7 +5,7 @@ Unreal Engine plugin for Vercidium Audio — raytraced audio simulation with rea
 > [!WARNING]
 > This plugin is experimental and requires much testing and feedback
 
-This repository requires Vercidium Audio v1.6.3 and OpenAL Soft to run:
+This repository requires Vercidium Audio v1.7.0 and OpenAL Soft to run:
 - Download the Vercidium Audio SDK from [vercidium.com](https://vercidium.com)
 
 > Please note that the Vercidium Audio SDK is not free for commercial use. See [vercidium.com/eula](https://vercidium.com/eula)
@@ -81,7 +81,8 @@ You can also create material assets in the Content Browser and add them to the `
 
 ## References
 - [Vercidium Audio documentation](https://vercidium.com/docs)
-- [vaudio-godot-openal](https://github.com/vercidium-audio/godot-openal) — equivalent plugin for Godot
+- [vaudio-godot-native-openal-3d-source](https://github.com/vercidium-audio/vaudio-godot-native-openal-3d-source) — equivalent plugin for Godot (native C)
+- [vaudio-godot-mono-openal-3d](https://github.com/vercidium-audio/vaudio-godot-mono-openal-3d) — equivalent plugin for Godot (C#)
 
 ## Licencing
 

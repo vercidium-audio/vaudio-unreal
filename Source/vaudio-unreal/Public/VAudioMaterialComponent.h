@@ -58,9 +58,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (EditCondition = "MaterialAsset == nullptr", EditConditionHides))
 	EVAudioMaterial Material = EVAudioMaterial::Concrete;
 
-	// Whether sound rays can permeate (pass through) this surface. Disable for solid opaque surfaces like glass.
+	// Whether rays lose a flat percentage of energy the moment they touch this surface, instead of
+	// calculating how long the ray spent inside it. Enable for surfaces with no meaningful interior
+	// (e.g. thin/non-watertight geometry); leave disabled for solid, watertight meshes.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	bool bSupports3DPermeation = true;
+	bool bUseFlatTransmission = false;
 
 	// Resolves this component's effective SDK material ID: MaterialAsset if set, otherwise the
 	// built-in Material enum. Returns false (logs why) if resolution fails - e.g. MaterialAsset

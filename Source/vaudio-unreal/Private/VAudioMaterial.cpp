@@ -11,8 +11,8 @@ void UVAudioMaterialAssetBase::LoadDefaultsFromSDK(VAWorld* World, int32 Materia
 	Scattering          = vaWorldGetMaterialScattering(World, MaterialId);
 	TransmissionLF      = vaWorldGetMaterialTransmissionLF(World, MaterialId);
 	TransmissionHF      = vaWorldGetMaterialTransmissionHF(World, MaterialId);
-	PlaneTransmissionLF = vaWorldGetMaterialPlaneTransmissionLF(World, MaterialId);
-	PlaneTransmissionHF = vaWorldGetMaterialPlaneTransmissionHF(World, MaterialId);
+	FlatTransmissionLF = vaWorldGetMaterialFlatTransmissionLF(World, MaterialId);
+	FlatTransmissionHF = vaWorldGetMaterialFlatTransmissionHF(World, MaterialId);
 }
 
 void UVAudioMaterialAssetBase::ApplyToWorld(AVAudioWorld* Owner)
@@ -40,8 +40,8 @@ void UVAudioMaterialAssetBase::ApplyToWorld(AVAudioWorld* Owner)
 	vaWorldSetMaterialScattering(World,          MaterialId, Scattering);
 	vaWorldSetMaterialTransmissionLF(World,      MaterialId, TransmissionLF);
 	vaWorldSetMaterialTransmissionHF(World,      MaterialId, TransmissionHF);
-	vaWorldSetMaterialPlaneTransmissionLF(World, MaterialId, PlaneTransmissionLF);
-	vaWorldSetMaterialPlaneTransmissionHF(World, MaterialId, PlaneTransmissionHF);
+	vaWorldSetMaterialFlatTransmissionLF(World, MaterialId, FlatTransmissionLF);
+	vaWorldSetMaterialFlatTransmissionHF(World, MaterialId, FlatTransmissionHF);
 }
 
 AVAudioWorld* UVAudioMaterialAssetBase::FindOwningWorldActor()

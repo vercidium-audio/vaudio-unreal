@@ -428,8 +428,8 @@ void AVAudioWorld::ScanAndAddPrimitives()
 
 			if (result == VA_SUCCESS)
 			{
-				// TODO - supports3DPermeation should be a per-mesh thing? e.g. a rock terrain heightmap doesnt support permeation, but a 3D watertight rock mesh does
-				vaMeshPrimitiveSetSupports3DPermeation(vaMeshPrimitive, materialComp->bSupports3DPermeation);
+				// TODO - useFlatTransmission should be a per-mesh thing? e.g. a rock terrain heightmap has no interior (should use flat transmission), but a 3D watertight rock mesh does
+				vaMeshPrimitiveSetUseFlatTransmission(vaMeshPrimitive, materialComp->bUseFlatTransmission);
 
 				if (!TryAddPrimitive(vaMeshPrimitive, TEXT("mesh"), actorName))
 				{

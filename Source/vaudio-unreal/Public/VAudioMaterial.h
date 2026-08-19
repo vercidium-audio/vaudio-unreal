@@ -41,13 +41,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01"))
 	float TransmissionHF = 5;
 
-	// Low-frequency energy lost when a permeation ray passes through a flat primitive (0.0 to 1.0)
+	// Percentage of low-frequency energy lost when a ray touches a Plane, Disk, Triangle, Line, non-watertight Mesh, non-enclosed Polygon or open Path primitive, instead of calculating how long the ray spent inside it (0.0 to 1.0)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float PlaneTransmissionLF = 0.1f;
+	float FlatTransmissionLF = 0.1f;
 
-	// High-frequency energy lost when a permeation ray passes through a flat primitive (0.0 to 1.0)
+	// Percentage of high-frequency energy lost when a ray touches a Plane, Disk, Triangle, Line, non-watertight Mesh, non-enclosed Polygon or open Path primitive, instead of calculating how long the ray spent inside it (0.0 to 1.0)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float PlaneTransmissionHF = 0.25f;
+	float FlatTransmissionHF = 0.25f;
 
 	// Returns the SDK material ID this asset applies to (built-in or custom, see subclasses).
 	// Returns false (logs why) if the ID can't be resolved.
