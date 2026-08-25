@@ -85,23 +85,41 @@ bool UVAudioDefaultMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutM
 
 void UVAudioDefaultMaterialAsset::ResetToDefaults()
 {
+	int32 MaterialId = (int32)EVAudioMaterialToVA(MaterialType);
+
 	AVAudioWorld* Owner = FindOwningWorldActor();
 	VAWorld* World = Owner ? Owner->GetVAWorld() : nullptr;
 
-	if (!World)
+	if (World)
 	{
-		// TODO - can we raise an official warning somewhere? Show it in the editor?
-		VALogObj(L"not assigned to a running VAudioWorld's Materials array - can't read defaults.");
-		return;
+		// A world is already running (e.g. PIE) - read its live defaults for this material.
+		LoadDefaultsFromSDK(World, MaterialId);
 	}
-
-	int32 MaterialId = (int32)EVAudioMaterialToVA(MaterialType);
-	LoadDefaultsFromSDK(World, MaterialId);
+	else
+	{
+		// No running AVAudioWorld (e.g. editing this asset outside PIE) - spin up a scratch
+		// world purely to read the SDK's built-in defaults, then throw it away. Matches
+		// VADefaultMaterial::get_material_defaults() in the native Godot plugin.
+		VAWorld* ScratchWorld = vaWorldCreate();
+		LoadDefaultsFromSDK(ScratchWorld, MaterialId);
+		vaWorldDestroy(ScratchWorld);
+	}
 
 #if WITH_EDITOR
 	Modify();
 #endif
 }
+
+#if WITH_EDITOR
+void UVAudioDefaultMaterialAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UVAudioDefaultMaterialAsset, MaterialType))
+		ResetToDefaults();
+
+	// Applies to the world (base class implementation)
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // UVAudioCustomMaterialAsset - a brand new material with an SDK-assigned ID

@@ -22,31 +22,31 @@ class VAUDIOUNREAL_API UVAudioMaterialAssetBase : public UDataAsset
 
 public:
 	// Percentage of low-frequency energy lost when a ray bounces (0.0 to 1.0)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float AbsorptionLF = 0.02f;
 
 	// Percentage of high-frequency energy lost when a ray bounces (0.0 to 1.0)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float AbsorptionHF = 0.1f;
 
 	// Scattering strength (0.0 = mirror, 1.0 = skews up to 90 degrees)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float Scattering = 0.1f;
 
 	// How many meters a ray must travel through a primitive before it loses all low-frequency energy (0.01 to max)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01", Delta = "0.1"))
 	float TransmissionLF = 10.0f;
 
 	// How many meters a ray must travel through a primitive before it loses all high-frequency energy (0.01 to max)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01", Delta = "0.1"))
 	float TransmissionHF = 5;
 
 	// Percentage of low-frequency energy lost when a ray touches a Plane, Disk, Triangle, Line, non-watertight Mesh, non-enclosed Polygon or open Path primitive, instead of calculating how long the ray spent inside it (0.0 to 1.0)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float FlatTransmissionLF = 0.1f;
 
 	// Percentage of high-frequency energy lost when a ray touches a Plane, Disk, Triangle, Line, non-watertight Mesh, non-enclosed Polygon or open Path primitive, instead of calculating how long the ray spent inside it (0.0 to 1.0)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float FlatTransmissionHF = 0.25f;
 
 	// Returns the SDK material ID this asset applies to (built-in or custom, see subclasses).
@@ -89,6 +89,11 @@ public:
 	// Call this from the editor to reset to built-in defaults.
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio")
 	void ResetToDefaults();
+
+#if WITH_EDITOR
+	// Changing MaterialType resets the other properties to that material's SDK defaults, matching the Godot plugin's VADefaultMaterial.
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 };
 
 // Defines a brand new custom material (not one of the 23 built-ins), with an SDK-assigned ID
