@@ -185,7 +185,7 @@ public:
 
 	// The length (in milliseconds) of each entry in the echogram
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "1"))
-	int32 EchogramGranularity = 200;
+	int32 EchogramGranularity = 100;
 
 	// --- Muffling ---
 
