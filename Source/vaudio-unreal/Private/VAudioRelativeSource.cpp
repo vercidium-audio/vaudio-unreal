@@ -95,9 +95,6 @@ void AVAudioRelativeSource::BeginPlay()
 		return;
 	}
 
-	// If attached to a ContinuousEmitter, the low pass filter must be primed from that emitter's
-	// muffling result before Play() - Tick()/ApplyReverbSource() defers spawning until that result
-	// is available. Otherwise (Listener or misconfigured) there is nothing to wait for.
 	bSourcePendingSpawn = true;
 
 	if (!ContinuousEmitter)

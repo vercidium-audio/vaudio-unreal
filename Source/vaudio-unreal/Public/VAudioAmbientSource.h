@@ -8,15 +8,6 @@
 class AVAudioWorld;
 struct VALowPassFilter;
 
-// For rain/wind/room-tone sounds. NOT raytraced, NO reverb - plays SourceSound in 2D and applies
-// a low-pass filter driven by the main listener's ambient filter (vaEmitterGetAmbientFilter()),
-// same mechanism as AVAudioListener::Tick(). Independent instances of this actor
-// are how multiple ambient sounds are supported, unlike AVAudioListener's single WIP AmbientSound.
-//
-// This does not inherit AVAudioEmitterBase and creates no VAEmitter* of its own: it has no
-// occlusion/permeation/reverb settings and never raytraces - it only reads a filter already
-// computed against the listener's own VAEmitter, so there is nothing for a VAEmitter* of its
-// own to do. It is a thin UE audio component wrapper, same reasoning as AVAudioRelativeSource.
 UCLASS(DisplayName = "VAudio Ambient Source")
 class VAUDIOUNREAL_API AVAudioAmbientSource : public AActor
 {

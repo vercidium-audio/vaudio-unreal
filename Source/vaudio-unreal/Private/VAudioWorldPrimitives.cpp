@@ -32,10 +32,6 @@ static const TCHAR* VAResultToString(VAResult Result)
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Primitive scan — finds every actor with UVAudioMaterialComponent
-// ---------------------------------------------------------------------------
-
 // Walk the attach-parent chain to find the nearest UVAudioMaterialComponent.
 static UVAudioMaterialComponent* FindMaterialInChain(AActor* Actor)
 {
@@ -92,9 +88,6 @@ void AVAudioWorld::BakeGeometry()
 
 		for (UStaticMeshComponent* MeshComp : MeshComps)
 		{
-			// Null if the component has no mesh assigned. Simple-collision meshes are skipped
-			// here too - ScanAndAddPrimitives() already picks up their live collision shapes
-			// every run, so baking their triangle mesh as well would be redundant.
 			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
 			if (!Mesh || HasSimpleCollision(Mesh)) continue;
 

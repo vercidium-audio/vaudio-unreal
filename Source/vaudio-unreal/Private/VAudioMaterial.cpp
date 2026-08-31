@@ -73,10 +73,6 @@ void UVAudioMaterialAssetBase::PostEditChangeProperty(FPropertyChangedEvent& Pro
 }
 #endif
 
-// ---------------------------------------------------------------------------
-// UVAudioMaterialAsset - overrides one of the 23 built-in materials
-// ---------------------------------------------------------------------------
-
 bool UVAudioDefaultMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId)
 {
 	OutMaterialId = (int32)EVAudioMaterialToVA(MaterialType);
@@ -97,9 +93,6 @@ void UVAudioDefaultMaterialAsset::ResetToDefaults()
 	}
 	else
 	{
-		// No running AVAudioWorld (e.g. editing this asset outside PIE) - spin up a scratch
-		// world purely to read the SDK's built-in defaults, then throw it away. Matches
-		// VADefaultMaterial::get_material_defaults() in the native Godot plugin.
 		VAWorld* ScratchWorld = vaWorldCreate();
 		LoadDefaultsFromSDK(ScratchWorld, MaterialId);
 		vaWorldDestroy(ScratchWorld);
@@ -121,13 +114,6 @@ void UVAudioDefaultMaterialAsset::PostEditChangeProperty(FPropertyChangedEvent& 
 }
 #endif
 
-// ---------------------------------------------------------------------------
-// UVAudioCustomMaterialAsset - a brand new material with an SDK-assigned ID
-// ---------------------------------------------------------------------------
-
-// Smallest ID reserved for custom (non-built-in) materials - matches VAMaterialType's comment
-// in vaudio.h ("First 1000 values are reserved").
-// TODO - move this constant to vaudio.h
 static constexpr int32 FirstCustomMaterialId = 1000;
 
 bool UVAudioCustomMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId)

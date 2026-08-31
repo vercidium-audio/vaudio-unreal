@@ -6,9 +6,6 @@
 #include "Sound/SoundSubmix.h"
 #include "VAudioListener.generated.h"
 
-// Place exactly one of these in the level - the world's single reference point for directional
-// reverb and ambience. Every other raytracing-target actor (AVAudioSource, AVAudioContinuous)
-// is added to TargetEmitters so this listener raytraces towards it.
 UCLASS(DisplayName = "VAudio Listener")
 class VAUDIOUNREAL_API AVAudioListener : public AVAudioEmitterBase
 {
@@ -75,10 +72,6 @@ public:
 #endif
 
 private:
-	// Transient: created via NewObject() in BeginPlay/TryInitializeEmitter and torn down in
-	// EndPlay. Must never be serialized - saving the level while this is set (e.g. mid-PIE, or
-	// after a crash skips EndPlay) writes it as a real export that doesn't round-trip through a
-	// reload and corrupts the package (see FLinkerLoad::CreateExport crash).
 	UPROPERTY(Transient)
 	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;
 

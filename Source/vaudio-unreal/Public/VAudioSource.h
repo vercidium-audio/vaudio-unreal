@@ -7,9 +7,6 @@
 #include "SourceEffects/SourceEffectFilter.h"
 #include "VAudioSource.generated.h"
 
-// A raytracing target that also plays a 3D sound. Inherits all raytracing-target behaviour
-// (occlusion/permeation, grouped-EAX submix routing) from AVAudioContinuous and adds the
-// SourceSound playback/filtering on top.
 UCLASS(DisplayName = "VAudio Source")
 class VAUDIOUNREAL_API AVAudioSource : public AVAudioContinuous
 {
@@ -38,9 +35,6 @@ public:
 private:
 	bool bCurrentDryEnabled = true;
 
-	// True once TryInitializeEmitter() has built the LPF chain for SourceSound but hasn't spawned
-	// SourceAudioComponent yet - spawn is deferred until the main listener has raytraced this
-	// emitter at least once, so the source doesn't start clear and then pop to muffled (see Tick()).
 	bool bSourcePendingSpawn = false;
 
 	UPROPERTY(Transient)

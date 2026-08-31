@@ -8,13 +8,6 @@
 struct VAWorld;
 class AVAudioWorld;
 
-// Shared base class for VA Audio Material assets, assigned to an AVAudioWorld's Materials array as an asset, not a level actor.
-// 
-// Changes to properties in the editor are applied immediately to any running world that references this asset.
-// 
-// Two kinds:
-// - UVAudioDefaultMaterialAsset: overrides one of the 23 built-in materials
-// - UVAudioCustomMaterialAsset: defines a brand new material
 UCLASS(Abstract, BlueprintType)
 class VAUDIOUNREAL_API UVAudioMaterialAssetBase : public UDataAsset
 {
@@ -53,9 +46,6 @@ public:
 	// Returns false (logs why) if the ID can't be resolved.
 	virtual bool GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId) PURE_VIRTUAL(UVAudioMaterialAssetBase::GetMaterialId, return false;);
 
-	// Pushes this asset's current property values into Owner's VA world. Owner must be the
-	// AVAudioWorld whose Materials array contains this asset (needed to resolve/assign the
-	// material ID - see GetMaterialId()).
 	void ApplyToWorld(AVAudioWorld* Owner);
 
 #if WITH_EDITOR
@@ -96,9 +86,6 @@ public:
 #endif
 };
 
-// Defines a brand new custom material (not one of the 23 built-ins), with an SDK-assigned ID
-// (>= 1000, auto-assigned - unique among the other custom materials in the same AVAudioWorld's
-// Materials array). Assign this asset to a UVAudioMaterialComponent's MaterialAsset field to use it on geometry.
 UCLASS(BlueprintType, DisplayName = "VA Custom Material")
 class VAUDIOUNREAL_API UVAudioCustomMaterialAsset : public UVAudioMaterialAssetBase
 {

@@ -4,9 +4,6 @@
 #include "Factories/Factory.h"
 #include "VAudioMaterialAssetFactory.generated.h"
 
-// Lets UVAudioMaterialAsset (overrides a built-in material) be created via the Content
-// Browser's "Create Asset" (right-click) menu, and gives array/object property pickers a
-// "create new asset" option for it.
 UCLASS()
 class UVAudioDefaultMaterialAssetFactory : public UFactory
 {

@@ -75,9 +75,6 @@ void AVAudioSource::InitializeTypeSpecific()
 	ChainEntry.bBypass = false;
 	SourceEffectChain->Chain.Add(ChainEntry);
 
-	// Spawn is deferred to Tick()/TrySpawnSourceSound() until the main listener has raytraced
-	// this emitter at least once - otherwise the sound starts clear (LPF fully open) and pops
-	// to muffled a few frames later once the first real filter result arrives.
 	bSourcePendingSpawn = true;
 }
 
@@ -235,11 +232,6 @@ void AVAudioSource::UpdateSourceSubmix()
 	// Only relative gain is supported. Can't do directional reverb in Unreal :(
 	float SendLevel = *vaEAXReverbGetRelativeGain(EAX, ListenerVA);
 
-	// UAudioComponent::SetSubmixSend() always sends post-distance-attenuation, so the reverb
-	// send would fade out along with the dry signal's attenuation curve as the listener moves
-	// away - defeating the point of hearing reverb from further away than the dry sound.
-	// Send the pre-attenuation signal instead, via FSoundSubmixSendInfo, so SendLevel is the
-	// only thing controlling the reverb volume.
 	FSoundSubmixSendInfo SubmixSendInfo;
 	SubmixSendInfo.SoundSubmix = Submix;
 	SubmixSendInfo.SendLevel = SendLevel;

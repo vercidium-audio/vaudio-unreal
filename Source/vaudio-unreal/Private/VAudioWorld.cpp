@@ -164,9 +164,6 @@ void AVAudioWorld::InitializeVAWorld()
 
 		if (Sub)
 		{
-			// Pan effect must be added after the reverb preset so it operates on the wet reverb
-			// output rather than dry input - see directional_reverb_plan.md's "Effect chain
-			// insertion API" note.
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, Preset);
 			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, PanPreset);
 		}
@@ -206,9 +203,6 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 		FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
 		Preset->SetSettings(settings);
 
-		// Direction == nullptr means "no entry for this emitter" (vaudio.h:384) - e.g. the listener
-		// hasn't been raytraced against this zone yet, or lacks hasRelativeReverb. Leave pan holding
-		// its last value rather than forcing it to 0 every such tick.
 		if (ListenerVA)
 		{
 			VAVector* Direction = vaEAXReverbGetRelativeDirection(EAX, ListenerVA);
@@ -228,12 +222,6 @@ void AVAudioWorld::ApplyGroupedEAXReverb()
 	}
 }
 
-// Prefer whichever controller is actually steering this listener's point of view, so the debug
-// camera's pitch/yaw matches what's heard regardless of controller type (player, AI, etc):
-//  1. A controller possessing the listener's attach-parent pawn (how AVAudioListener is normally
-//     set up - see UVAudioListenerComponent - e.g. a first/third-person character, or an AI pawn).
-//  2. The first local player controller, for listeners not attached to a possessed pawn.
-//  3. The listener actor's own rotation, if no controller is available at all.
 static FRotator GetListenerControlRotation(AVAudioListener* Listener)
 {
 	if (APawn* Pawn = Cast<APawn>(Listener->GetAttachParentActor()))
@@ -313,16 +301,9 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 		if (GEngine)
 		{
-			// GEngine draws these on-screen messages in the reverse of the order they're added
-			// each tick (last call ends up at the top), so this block is sequenced bottom-up:
-			// whatever should appear highest on screen is called LAST.
-
 			// Per-emitter position and world-bounds check
 			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 			{
-				// This display logic (AVAudioListener vs. AVAudioContinuous/AVAudioSource) is only
-				// meaningful for raytracing-target emitters - AVAudioRelativeSource/AVAudioAmbientSource
-				// don't raytrace and get no status line here.
 				AVAudioEmitterBase* baseEmitter = RegisteredEmitters[i];
 				AVAudioListener* listener = Cast<AVAudioListener>(baseEmitter);
 				AVAudioContinuous* continuousEmitter = listener ? nullptr : Cast<AVAudioContinuous>(baseEmitter);
@@ -334,9 +315,6 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 				uint64 messageID = VAEmitterStatus + baseEmitter->GetEmitterIndex();
 
-				// Registered emitters can still have a null VAEmitter* if TryInitializeEmitter()
-				// hasn't completed yet (e.g. this world's own BeginPlay ran after theirs) - skip
-				// until it catches up on a later Tick.
 				if (!vaEmitter)
 				{
 					GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange,
@@ -523,9 +501,6 @@ void AVAudioWorld::Tick(float DeltaTime)
 			GEngine->AddOnScreenDebugMessage(VAPrimitiveStatusMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Primitives: prisms=%d spheres=%d capsules=%d meshes=%d"), PrismPrimitives.Num(), SpherePrimitives.Num(), CapsulePrimitives.Num(), MeshPrimitives.Num()));
 			GEngine->AddOnScreenDebugMessage(VARaytracingTimeMessage, 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.2f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
 
-			// Called last (renders at the top) since these actors are silently missing from
-			// raytracing entirely - the most likely warning to be missed otherwise. See
-			// ScanAndAddPrimitives()/TryAddPrimitive(), which log the specific reason per actor.
 			if (ActorsWithInvalidMaterials.Num() > 0)
 			{
 				GEngine->AddOnScreenDebugMessage(VAInvalidMaterialsMessage, 0.0f, FColor::Orange,
@@ -570,9 +545,6 @@ void AVAudioWorld::UnregisterEmitter(AVAudioEmitterBase* Emitter)
 	RegisteredEmitters.Remove(Emitter);
 	Emitter->SetEmitterIndex(-1);
 
-	// Removing shifts every later emitter's position in RegisteredEmitters - keep EmitterIndex
-	// (used to build on-screen debug message keys, see VADebugMessageKeys.h) in sync so indices
-	// stay dense and no two registered emitters ever share a key.
 	for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 		RegisteredEmitters[i]->SetEmitterIndex(i);
 
@@ -589,10 +561,6 @@ AVAudioListener* AVAudioWorld::GetMainListener()
 	if (MainListener.IsValid())
 		return MainListener.Get();
 
-	// Not registered yet - this happens when the AVAudioListener is a child actor of something
-	// whose own BeginPlay (and therefore the listener's) hasn't run yet (actor BeginPlay order
-	// isn't guaranteed - see TryInitializeEmitter()). Find it in the level and force it to
-	// initialise now, same as AVAudioListener::InitializeTypeSpecific() does for its targets.
 	UWorld* UEWorld = GetWorld();
 	if (!UEWorld)
 		return nullptr;
