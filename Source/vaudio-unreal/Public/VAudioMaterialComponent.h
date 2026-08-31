@@ -34,9 +34,6 @@ enum class EVAudioMaterial : uint8
 	WoodOutdoor      UMETA(DisplayName = "Wood (Outdoor)"),
 };
 
-// Add this component to any actor whose static mesh(es) should participate in
-// acoustic raytracing. AVAudioWorld scans for this component on BeginPlay and
-// submits the actor's collision/mesh geometry to the VA raytracing world.
 UCLASS(ClassGroup = ("Vercidium Audio"), meta = (BlueprintSpawnableComponent), DisplayName = "VA Audio Material")
 class VAUDIOUNREAL_API UVAudioMaterialComponent : public UActorComponent
 {
@@ -58,15 +55,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (EditCondition = "MaterialAsset == nullptr", EditConditionHides))
 	EVAudioMaterial Material = EVAudioMaterial::Concrete;
 
-	// Whether rays lose a flat percentage of energy the moment they touch this surface, instead of
-	// calculating how long the ray spent inside it. Enable for surfaces with no meaningful interior
-	// (e.g. thin/non-watertight geometry); leave disabled for solid, watertight meshes.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	bool bUseFlatTransmission = false;
 
-	// Resolves this component's effective SDK material ID: MaterialAsset if set, otherwise the
-	// built-in Material enum. Returns false (logs why) if resolution fails - e.g. MaterialAsset
-	// isn't in AudioWorld's Materials array.
 	bool GetMaterialId(int32& OutMaterialId);
 
 #if WITH_EDITOR

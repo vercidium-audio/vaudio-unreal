@@ -135,6 +135,17 @@ void AVAudioListener::InitializeTypeSpecific()
 	}
 }
 
+void AVAudioListener::DeinitializeTypeSpecific()
+{
+	if (ListenerReverbPreset)
+	{
+		UAudioMixerBlueprintLibrary::RemoveSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
+		ListenerReverbPreset = nullptr;
+	}
+
+	Super::DeinitializeTypeSpecific();
+}
+
 void AVAudioListener::TickTypeSpecific(float DeltaTime)
 {
 	// Follow the first person player controller

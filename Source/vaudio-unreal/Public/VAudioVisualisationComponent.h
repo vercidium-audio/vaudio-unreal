@@ -9,33 +9,6 @@ class AVAudioEmitterBase;
 class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 
-// Renders vaEmitterSetVisualisationCallback's ray-bounce results as fading diamond sprites.
-// Add as a child component of any AVAudioEmitterBase-derived actor (AVAudioListener,
-// AVAudioSource, AVAudioContinuous, AVAudioAmbientSource) - this component finds that owner,
-// registers itself as the visualisation callback target, and consumes the resulting
-// VAVisualisationData batches. Each callback invocation (every owner's
-// VisualisationUpdateFrequency ms) writes one instance per ray bounce into an
-// InstancedStaticMeshComponent; per-frame fading is entirely GPU-side (DiamondMaterial reads
-// each instance's spawn time out of its per-instance custom data plus the CurrentTime/fade
-// parameters below), so nothing here does per-instance work outside the callback itself.
-//
-// DiamondMaterial contract (the plugin ships no content, so this material must be authored by
-// hand in the host project, or generated via the Generate Fade Nodes button below):
-// - Translucent blend mode (required - Opacity/the fade math has no effect otherwise) and
-//   two-sided (or disable backface culling), since diamonds face an arbitrary hit normal. Shading
-//   model is not constrained - Generate Fade Nodes defaults to Unlit, but Lit/other models fade
-//   the same way and are not warned about.
-// - Scalar parameters: CurrentTime, FadeInMs, FadeOutMs, DurationMs, MaxOpacity.
-// - Vector parameter: BaseColor (RGB).
-// - Reads per-instance custom data index 0 (PerInstanceCustomData material node) as SpawnTime,
-//   in the same GetWorld()->GetTimeSeconds() basis as CurrentTime.
-// - Fragment logic:
-//     elapsedMs = (CurrentTime - SpawnTime) * 1000
-//     clip if elapsedMs < 0 or elapsedMs > DurationMs
-//     fadeIn  = FadeInMs  > 0 ? saturate(elapsedMs / FadeInMs)  : 1
-//     fadeOut = FadeOutMs > 0 ? saturate((DurationMs - elapsedMs) / FadeOutMs) : 1
-//     EmissiveColor = BaseColor.rgb
-//     Opacity = MaxOpacity * min(fadeIn, fadeOut)
 UCLASS(ClassGroup = ("Vercidium Audio"), meta = (BlueprintSpawnableComponent), DisplayName = "VA Visualisation")
 class VAUDIOUNREAL_API UVAudioVisualisationComponent : public USceneComponent
 {
@@ -44,9 +17,6 @@ class VAUDIOUNREAL_API UVAudioVisualisationComponent : public USceneComponent
 public:
 	UVAudioVisualisationComponent();
 
-	// Material used to render each diamond. Must be unlit + translucent and read the per-instance
-	// custom data float (index 0) as elapsed-seconds-since-spawn - see the class comment above
-	// for the full contract this material must implement.
 	UPROPERTY(EditAnywhere, Category = "Vercidium Audio|Visualisation")
 	TObjectPtr<UMaterialInterface> DiamondMaterial = nullptr;
 
@@ -96,11 +66,6 @@ public:
 	void OnVisualisationData(VAVisualisationData* data, int32 count);
 
 #if WITH_EDITOR
-	// Programmatically builds the fade graph documented above onto DiamondMaterial, so a
-	// material-editor beginner never has to wire nodes by hand - sets Blend Mode/Shading Model
-	// and creates+wires the parameter/custom-HLSL nodes described in the class comment. Requires
-	// DiamondMaterial to be a plain UMaterial asset (not a Material Instance); warns and does
-	// nothing otherwise. Safe to press repeatedly - only regenerates nodes it previously created.
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio|Visualisation")
 	void GenerateFadeNodes();
 #endif
@@ -132,10 +97,6 @@ private:
 
 	bool bCallbackRegistered = false;
 
-	// Diamonds must stay alive (fading) for DurationMilliseconds while new callbacks arrive every
-	// VisualisationUpdateFrequency ms, so the ring buffer needs room for every batch still fading
-	// at once - not just the latest one - or a new callback's writes stomp on still-visible
-	// instances from a few callbacks ago. See OnVisualisationData.
 	int32 GetRequiredInstanceCount() const;
 
 	static UStaticMesh* BuildDiamondMesh();
@@ -145,10 +106,6 @@ private:
 	void ApplyVisualisationSettings() const;
 	void TeardownVisualisation();
 
-	// Checks DiamondMaterial's blend mode, shading model, and required parameters against the
-	// contract documented above, and raises a distinct on-screen DisplayWarning for each problem
-	// found (cleared automatically once the problem is fixed and PostEditChangeProperty/BeginPlay
-	// re-validates). Does not detect a parameter that exists but isn't wired to Opacity/EmissiveColor.
 	void ValidateDiamondMaterial() const;
 
 	void DisplayWarning(const TCHAR* fmt, ...) const;

@@ -46,10 +46,6 @@ void AVAudioWorld::DestroyPrimitives()
 	MeshPrimitives.Empty();
 }
 
-// -------------------------------------------------------------------------------
-// Move tracking — keeps primitive transforms in sync with their owning components
-// -------------------------------------------------------------------------------
-
 void AVAudioWorld::BindPrimitiveToComponent(void* primitive, EVAudioPrimitiveKind kind, USceneComponent* component, const FTransform& localOffset, const FVector& localExtent)
 {
 	// Shouldn't be null but check anyway
@@ -75,9 +71,6 @@ void AVAudioWorld::RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& bind
 {
 	USceneComponent* component = binding.Component.Get();
 
-	// Null if the owning actor/component was destroyed without this world's EndPlay running yet
-	// (e.g. mid-PIE actor deletion) - OnPrimitiveComponentMoved() below already drops bindings
-	// whose component has gone stale, so this should be rare, not a normal per-call case.
 	if (!component)
 		return;
 

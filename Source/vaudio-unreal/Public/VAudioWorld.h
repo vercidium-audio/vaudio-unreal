@@ -18,12 +18,6 @@ class AVAudioListener;
 class UVAudioMaterialAssetBase;
 class USubmixEffectDirectionalPanPreset;
 
-// Plain UBoxComponent, except its BoxExtent always shows greyed-out in the details panel.
-// AVAudioWorld's WorldBounds is a read-only visualisation re-derived from WorldPosition/WorldSize
-// every time either changes (see AVAudioWorld::RefreshWorldBounds) - without this, BoxExtent would
-// look editable (and even respond to dragging) but silently snap back on the next refresh, since
-// UCLASS(HideCategories=...) on the owning actor doesn't reach into a native component's own
-// details sub-tree.
 UCLASS(NotBlueprintType, NotBlueprintable)
 class VAUDIOUNREAL_API UVAudioWorldBoundsComponent : public UBoxComponent
 {
@@ -35,17 +29,6 @@ public:
 #endif
 };
 
-// Which VAXPrimitiveSet* calls RefreshPrimitiveTransform() should use for a given entry - there's
-// no common base type across VAMeshPrimitive/VACapsulePrimitive/etc, so the primitive pointer is
-// stored as void* and this tag says how to interpret it.
-//
-// Capsule/Sphere/Prism (from a UShapeComponent directly) re-read their size live from that
-// component's own GetScaledCapsuleRadius()/GetScaledSphereRadius()/GetScaledBoxExtent(), which
-// already account for the component's current scale. CapsuleFromMesh/SphereFromMesh/PrismFromMesh
-// (simple collision baked from a UStaticMeshComponent's body setup, which has no such per-element
-// accessor) instead re-derive their size from LocalExtent scaled by the component's current
-// GetComponentTransform().GetScale3D(), matching the FMath::Max(Scale.X,Scale.Y)/GetAbsMax()/
-// per-axis conventions ScanAndAddPrimitives originally used for sphyl/sphere/box respectively.
 enum class EVAudioPrimitiveKind : uint8
 {
 	Mesh,
@@ -57,17 +40,6 @@ enum class EVAudioPrimitiveKind : uint8
 	PrismFromMesh,
 };
 
-// Tracks the live link between a moving USceneComponent (owned by some other actor in the level)
-// and the VA primitive ScanAndAddPrimitives() created from its shape/mesh at BeginPlay. Bound to
-// Component's TransformUpdated delegate so the primitive's transform (and, for shape primitives,
-// its scale-derived size) is kept in sync whenever that actor moves or rotates at runtime.
-//
-// LocalOffset is this primitive's transform relative to Component - identity for a primitive
-// built directly from a UShapeComponent, or a UStaticMeshComponent's per-element sphyl/sphere/box
-// offset (see FKSphylElem::GetTransform() etc in ScanAndAddPrimitives) for simple collision baked
-// from a mesh's body setup. The primitive's live world transform is always LocalOffset composed
-// with Component's current world transform, recomputed from scratch on every move rather than
-// incrementally, so drift can never accumulate.
 struct FVAudioPrimitiveBinding
 {
 	TWeakObjectPtr<USceneComponent> Component;
@@ -75,19 +47,11 @@ struct FVAudioPrimitiveBinding
 	EVAudioPrimitiveKind Kind = EVAudioPrimitiveKind::Mesh;
 	FTransform LocalOffset = FTransform::Identity;
 
-	// Unscaled local radius/length/size, as read from the FKSphylElem/FKSphereElem/FKBoxElem at
-	// scan time - only used by the …FromMesh kinds (see EVAudioPrimitiveKind comment above).
-	// Meaning depends on Kind: CapsuleFromMesh uses X=radius, Z=length; SphereFromMesh uses
-	// X=radius; PrismFromMesh uses X/Y/Z=full size (not half-extent).
 	FVector LocalExtent = FVector::ZeroVector;
 
 	FDelegateHandle Handle;
 };
 
-// Baked local-space triangle mesh for one UStaticMeshComponent, captured in-editor via
-// AVAudioWorld::BakeGeometry so shipping builds don't depend on the mesh's CPU-accessible
-// render data (which UStaticMesh::bAllowCPUAccess does not reliably guarantee is retained
-// after cooking for every mesh type/pipeline).
 USTRUCT()
 struct FVAudioBakedMesh
 {
@@ -106,13 +70,6 @@ struct FVAudioBakedMesh
 	TArray<FVector3f> Vertices;
 };
 
-// Place one of these in your level. It owns the VA raytracing world and scans
-// for UVAudioMaterialComponent on BeginPlay to populate the scene geometry.
-//
-// WorldBounds (see below) is a read-only visualisation re-derived from WorldPosition/WorldSize
-// every time either changes - its own Transform/Shape/Collision/Rendering/Physics/etc categories
-// are hidden here so nothing in the details panel looks editable when it isn't (dragging its
-// extent or moving it directly will just snap back on the next edit/reconstruction).
 UCLASS(DisplayName = "VAudio World", HideCategories = (Shape, Collision, Rendering, Physics, HLOD, Navigation, VirtualTexture, Tags, Cooking, LOD, AssetUserData, Mobile, RayTracing))
 class VAUDIOUNREAL_API AVAudioWorld : public AActor
 {
@@ -122,20 +79,12 @@ public:
 	AVAudioWorld();
 
 protected:
-	// Called after WorldPosition/WorldSize (and the actor's own placed transform) have been loaded
-	// onto this instance - unlike the constructor, which only ever sees CDO defaults. Also re-runs
-	// on every move in the editor and after undo/redo/paste, so it's the correct place (alongside
-	// PostEditChangeProperty) to keep WorldBounds in sync.
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 #if WITH_EDITOR
-	// Re-applies World/Physics/AirAbsorption/Threading/Emitters settings below when edited live via
-	// the details panel during PIE - without this, BeginPlay()'s one-shot vaWorldSet* calls mean
-	// edits made after play-start would otherwise silently have no effect. Mirrors the pattern used
-	// by AVAudioListener::PostEditChangeProperty.
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
@@ -150,11 +99,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
 	FVector WorldSize = FVector(6000.f, 6000.f, 6000.f);
 
-	// Visualises WorldPosition/WorldSize (an absolute world-space min-corner + size, independent of
-	// this actor's own transform) as a box in the editor viewport. Purely a read-only visual aid -
-	// its transform/extent are re-derived from WorldPosition/WorldSize every time (constructor and
-	// PostEditChangeProperty), so it is NOT the root component and is not itself editable. Move/
-	// resize the world by editing WorldPosition/WorldSize above instead.
 	UPROPERTY(VisibleInstanceOnly, Category = "Vercidium Audio|World", meta = (AllowPrivateAccess = "true"))
 	UVAudioWorldBoundsComponent* WorldBounds;
 
@@ -251,10 +195,6 @@ public:
 	// --- Baked geometry (shipping fallback) ---
 
 #if WITH_EDITOR
-	// Captures the local-space triangle mesh of every UStaticMeshComponent reachable from a
-	// UVAudioMaterialComponent actor into BakedMeshes below, so ScanAndAddPrimitives can use it
-	// in shipping builds where the live mesh render data may not be CPU-accessible. Re-run this
-	// (and save the level) whenever affected meshes or actor placements change.
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Bake Geometry For Shipping"))
 	void BakeGeometry();
 #endif
@@ -271,17 +211,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
 	TArray<UVAudioMaterialAssetBase*> Materials;
 
-	// Every AVAudioWorld currently in play, so a UVAudioMaterialAssetBase's PostEditChangeProperty
-	// can find the world(s) referencing it and re-apply live. Populated in BeginPlay, cleared in
-	// EndPlay.
 	static TArray<TWeakObjectPtr<AVAudioWorld>> RunningWorlds;
 
 	// --- Internal API used by AVAudioEmitterBase subclasses ---
 
-	// Creates World and applies all vaWorldSet* settings/materials/primitives if this hasn't already
-	// run - safe to call repeatedly (e.g. from an AVAudioEmitterBase whose own BeginPlay ran before
-	// this world's, since actor BeginPlay order is not guaranteed). Called from BeginPlay() as well
-	// as AVAudioEmitterBase::TryInitializeEmitter().
 	void InitializeVAWorld();
 
 	// Repositions/resizes WorldBounds from the current WorldPosition/WorldSize. Called from the
@@ -299,10 +232,6 @@ public:
 	void RegisterEmitter(AVAudioEmitterBase* Emitter);
 	void UnregisterEmitter(AVAudioEmitterBase* Emitter);
 
-	// Returns the first registered AVAudioListener ("first one wins", warns on duplicates - see
-	// RegisterEmitter()). If none is registered yet - e.g. the listener is a child actor of
-	// something whose BeginPlay hasn't run yet, so the listener's own BeginPlay hasn't either -
-	// finds it in the level and force-initialises it before returning (see TryInitializeEmitter()).
 	AVAudioListener* GetMainListener();
 
 private:
@@ -313,9 +242,6 @@ private:
 	UPROPERTY(Transient)
 	TArray<USubmixEffectReverbPreset*> GroupedEAXPresets;
 
-	// Parallel to GroupedEAXPresets, one per grouped-EAX zone - added after the reverb preset in
-	// each submix's effect chain so it pans the wet reverb tail rather than dry input. Same
-	// Transient treatment/reasoning as GroupedEAXPresets above.
 	UPROPERTY(Transient)
 	TArray<USubmixEffectDirectionalPanPreset*> GroupedEAXPanPresets;
 
@@ -324,17 +250,8 @@ private:
 	TArray<VASpherePrimitive*>  SpherePrimitives;
 	TArray<VAPrismPrimitive*>   PrismPrimitives;
 
-	// One entry per primitive created in ScanAndAddPrimitives, so its transform can be kept in
-	// sync if the owning component moves at runtime - see BindPrimitiveToComponent()/
-	// OnPrimitiveComponentMoved(). A single component can own more than one primitive (e.g. a
-	// static mesh's simple collision can contain several sphyl/sphere/box elements).
 	TArray<FVAudioPrimitiveBinding> PrimitiveBindings;
 
-	// Indices into PrimitiveBindings owned by each bound component, so OnPrimitiveComponentMoved()
-	// can jump straight to the bindings that moved instead of scanning all of PrimitiveBindings.
-	// Keyed by raw pointer rather than TWeakObjectPtr since it's only ever looked up from that same
-	// component's own TransformUpdated callback (component is guaranteed alive at that point), and
-	// is fully cleared by UnbindPrimitiveComponents() before any entry could go stale.
 	TMap<USceneComponent*, TArray<int32>> PrimitiveBindingsByComponent;
 
 	TArray<AVAudioEmitterBase*> RegisteredEmitters;
@@ -343,10 +260,6 @@ private:
 	// GetMainListener() and Tick() don't need to scan every frame.
 	TWeakObjectPtr<AVAudioListener> MainListener;
 
-	// Actors whose geometry failed to make it into raytracing - either a material configuration
-	// problem (e.g. MaterialAsset isn't in this world's Materials array) or vaWorldAddPrimitive_
-	// itself rejected a primitive (e.g. VA_ALREADY_EXISTS). Populated by ScanAndAddPrimitives,
-	// surfaced as a persistent on-screen warning every Tick() so it isn't missed in the log.
 	TArray<FString> ActorsWithInvalidMaterials;
 
 	// Mirrors bReverbOnly as of the last Tick(), so the dry-output loop over RegisteredEmitters
@@ -358,28 +271,13 @@ private:
 	void DestroyPrimitives();
 	void ApplyGroupedEAXReverb();
 
-	// Calls vaWorldAddPrimitive_ and checks the result. On failure, logs the actor/primitive/error
-	// code and adds ActorName to ActorsWithInvalidMaterials (see Tick()'s on-screen warning) so a
-	// rejected primitive is as visible as a material configuration problem. Returns true on success.
 	bool TryAddPrimitive(void* Primitive, const TCHAR* PrimitiveTypeName, const FString& ActorName);
 
-	// Binds Component's TransformUpdated delegate so moving/rotating it at runtime updates
-	// Primitive's transform (see OnPrimitiveComponentMoved). Called once per primitive right
-	// after TryAddPrimitive succeeds for it. LocalOffset/LocalExtent are stored as-is on the
-	// binding - see FVAudioPrimitiveBinding's comment for what they mean per Kind.
 	void BindPrimitiveToComponent(void* Primitive, EVAudioPrimitiveKind Kind, USceneComponent* Component,
 		const FTransform& LocalOffset = FTransform::Identity, const FVector& LocalExtent = FVector::ZeroVector);
 
-	// Recomputes and applies Binding's live world transform (LocalOffset composed with
-	// Binding.Component's current world transform) to its SDK primitive. Shared by both the
-	// initial ScanAndAddPrimitives() creation and OnPrimitiveComponentMoved() refreshes so the
-	// two can never compute it differently.
 	static void RefreshPrimitiveTransform(const FVAudioPrimitiveBinding& Binding);
 
-	// Fired by TransformUpdated (a non-dynamic multicast event, bound via AddUObject - see
-	// BindPrimitiveToComponent) on a component we bound. Looks UpdatedComponent up in
-	// PrimitiveBindingsByComponent and recomputes/re-applies the transform (and, for shape
-	// primitives, the scale-derived size) of just the primitives bound to it.
 	void OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
 
 	// Unbinds every TransformUpdated delegate registered in PrimitiveBindings and empties it.

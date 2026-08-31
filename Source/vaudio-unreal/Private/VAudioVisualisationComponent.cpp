@@ -23,9 +23,6 @@ extern "C" {
 #include "Materials/MaterialExpressionVectorParameter.h"
 #endif
 
-// Material-validation warnings each need their own on-screen message key (distinct from the
-// general DisplayWarning key below) so several problems can be shown at once instead of
-// overwriting each other - offsets stay well within VAEmitterMessageStride (1000) per component.
 enum EVAVisualisationMaterialWarningOffset : uint32
 {
 	VAVisualisationWarningBlendMode = 1,
@@ -36,10 +33,6 @@ enum EVAVisualisationMaterialWarningOffset : uint32
 static const TCHAR* RequiredScalarParameterNames[] = { TEXT("CurrentTime"), TEXT("FadeInMs"), TEXT("FadeOutMs"), TEXT("DurationMs"), TEXT("MaxOpacity") };
 static const TCHAR* RequiredVectorParameterName = TEXT("BaseColor");
 
-// vaEmitterSetUserData() stashes the owning actor on the VAEmitter* itself (see
-// VAudioEmitterBase.cpp), so this trampoline resolves the actor the same way the other
-// callback trampolines do, then forwards to whichever UVAudioVisualisationComponent is
-// currently attached to it (see AVAudioEmitterBase::VisualisationComponent).
 static void VAVisualisationCallbackTrampoline(VAEmitter* emitter, VAVisualisationData* data, int32 count)
 {
 	if (AVAudioEmitterBase* Owner = static_cast<AVAudioEmitterBase*>(vaEmitterGetUserData(emitter)))
@@ -191,9 +184,6 @@ void UVAudioVisualisationComponent::TickComponent(float DeltaTime, ELevelTick Ti
 
 UStaticMesh* UVAudioVisualisationComponent::BuildDiamondMesh()
 {
-	// Unit diamond in the local XY plane - orientated per-instance to the ray hit normal via
-	// each ISMC instance's transform (see OnVisualisationData). World size is applied entirely
-	// via the per-instance transform's scale (Size), so this base mesh is always unit-sized.
 	FMeshDescription meshDescription;
 	FStaticMeshAttributes attributes(meshDescription);
 	attributes.Register();
@@ -253,14 +243,6 @@ void UVAudioVisualisationComponent::CreateInstancedMesh()
 
 	InstancedMesh = NewObject<UInstancedStaticMeshComponent>(GetOwner(), TEXT("VADiamonds"), RF_Transient);
 
-	// Each diamond's transform is written in world space once (see OnVisualisationData) and must
-	// stay fixed in world space from then on - it marks a ray-bounce hit point, not something that
-	// should follow the owning emitter/listener around. Attaching to `this` would normally make
-	// InstancedMesh's own component-to-world transform track the parent (the emitter/listener) as
-	// it moves, which would silently drag every already-placed instance along with it, since
-	// per-instance transforms are stored relative to the component. Absolute location/rotation/
-	// scale pins InstancedMesh's component-to-world transform to identity regardless of the
-	// parent's movement, so bWorldSpace writes in OnVisualisationData stay put once written.
 	InstancedMesh->SetUsingAbsoluteLocation(true);
 	InstancedMesh->SetUsingAbsoluteRotation(true);
 	InstancedMesh->SetUsingAbsoluteScale(true);
@@ -370,9 +352,6 @@ void UVAudioVisualisationComponent::OnVisualisationData(VAVisualisationData* dat
 }
 
 #if WITH_EDITOR
-// Tag applied to every node this function creates (via the base UMaterialExpression::Desc field),
-// so a repeat press can find and delete only its own previous output and rebuild cleanly, without
-// touching anything else the user has added to the material by hand.
 static const TCHAR* VAGeneratedNodeTag = TEXT("VADiamondFade (generated)");
 
 void UVAudioVisualisationComponent::GenerateFadeNodes()
@@ -399,10 +378,6 @@ void UVAudioVisualisationComponent::GenerateFadeNodes()
 		if (expression && expression->Desc == VAGeneratedNodeTag)
 			UMaterialEditingLibrary::DeleteMaterialExpression(material, expression);
 
-	// Translucent is required for Opacity (the fade math) to have any effect. Unlit is just a
-	// sane default for a diamond sprite that doesn't need to receive lighting - not required for
-	// fading, so feel free to switch it to Lit/other shading models afterwards if you want a
-	// different look; this generator won't warn about that or fight you on it.
 	material->BlendMode = BLEND_Translucent;
 	material->SetShadingModel(MSM_Unlit);
 	material->TwoSided = true;

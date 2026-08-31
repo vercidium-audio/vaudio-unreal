@@ -73,10 +73,6 @@ void UVAudioMaterialAssetBase::PostEditChangeProperty(FPropertyChangedEvent& Pro
 }
 #endif
 
-// ---------------------------------------------------------------------------
-// UVAudioMaterialAsset - overrides one of the 23 built-in materials
-// ---------------------------------------------------------------------------
-
 bool UVAudioDefaultMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId)
 {
 	OutMaterialId = (int32)EVAudioMaterialToVA(MaterialType);
@@ -85,31 +81,39 @@ bool UVAudioDefaultMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutM
 
 void UVAudioDefaultMaterialAsset::ResetToDefaults()
 {
+	int32 MaterialId = (int32)EVAudioMaterialToVA(MaterialType);
+
 	AVAudioWorld* Owner = FindOwningWorldActor();
 	VAWorld* World = Owner ? Owner->GetVAWorld() : nullptr;
 
-	if (!World)
+	if (World)
 	{
-		// TODO - can we raise an official warning somewhere? Show it in the editor?
-		VALogObj(L"not assigned to a running VAudioWorld's Materials array - can't read defaults.");
-		return;
+		// A world is already running (e.g. PIE) - read its live defaults for this material.
+		LoadDefaultsFromSDK(World, MaterialId);
 	}
-
-	int32 MaterialId = (int32)EVAudioMaterialToVA(MaterialType);
-	LoadDefaultsFromSDK(World, MaterialId);
+	else
+	{
+		VAWorld* ScratchWorld = vaWorldCreate();
+		LoadDefaultsFromSDK(ScratchWorld, MaterialId);
+		vaWorldDestroy(ScratchWorld);
+	}
 
 #if WITH_EDITOR
 	Modify();
 #endif
 }
 
-// ---------------------------------------------------------------------------
-// UVAudioCustomMaterialAsset - a brand new material with an SDK-assigned ID
-// ---------------------------------------------------------------------------
+#if WITH_EDITOR
+void UVAudioDefaultMaterialAsset::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	if (PropertyChangedEvent.GetPropertyName() == GET_MEMBER_NAME_CHECKED(UVAudioDefaultMaterialAsset, MaterialType))
+		ResetToDefaults();
 
-// Smallest ID reserved for custom (non-built-in) materials - matches VAMaterialType's comment
-// in vaudio.h ("First 1000 values are reserved").
-// TODO - move this constant to vaudio.h
+	// Applies to the world (base class implementation)
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+}
+#endif
+
 static constexpr int32 FirstCustomMaterialId = 1000;
 
 bool UVAudioCustomMaterialAsset::GetMaterialId(AVAudioWorld* Owner, int32& OutMaterialId)

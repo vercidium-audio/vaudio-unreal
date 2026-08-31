@@ -10,22 +10,6 @@ class AVAudioEmitterBase;
 class AVAudioListener;
 class AVAudioContinuous;
 
-// For footsteps/gunshots/one-shot sounds that should reuse another emitter's already-computed
-// reverb/muffling rather than raytracing independently. NOT a raytracing target itself - it is
-// never added to a listener's TargetEmitters and has no occlusion/permeation UPROPERTYs.
-//
-// ReverbSource resolves the reverb/muffling to reuse:
-//  - AVAudioListener: this actor's own non-directional reverb (vaEmitterGetEAX), same mechanism
-//    as AVAudioListener::ApplyListenerReverb(). Use for sounds relative to the player (footsteps).
-//  - AVAudioContinuous: that emitter's already-raytraced muffling result
-//    (AVAudioContinuous::GetMufflingResult()), so many relative sounds on one actor (e.g. an
-//    enemy's footsteps and barks) share a single raytrace instead of each running its own.
-//
-// This does not inherit AVAudioEmitterBase and creates no VAEmitter*: everything it reads
-// (vaEmitterGetEAX on the listener, GetMufflingResult() on a continuous target) is already
-// computed by the SDK against the ReverbSource's own emitter, and this actor skips raytracing
-// entirely - so there is nothing for a VAEmitter* of its own to do. It is a thin UE audio
-// component wrapper that reads the ReverbSource's current result and applies it every tick.
 UCLASS(DisplayName = "VAudio Relative Source")
 class VAUDIOUNREAL_API AVAudioRelativeSource : public AActor
 {
@@ -41,23 +25,12 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
-	// The sound(s) to play - one is chosen at random each time this actor spawns its sound, so
-	// e.g. footsteps can cycle through variations instead of repeating the same clip.
-	// ExposeOnSpawn so Blueprint's Spawn Actor from Class node can set this before BeginPlay runs -
-	// BeginPlay validates SourceSounds immediately, before a Blueprint graph gets a chance to Set it
-	// on the returned actor reference.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	TArray<USoundBase*> SourceSounds;
 
-	// Whether the sound is spawned attached to this actor (following its position) or as a plain
-	// 2D sound. Attached playback still has no directionality/attenuation of its own - VA-driven
-	// reverb/muffling here is always non-directional, matching today's ApplyListenerReverb().
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	bool bAttachToSelf = true;
 
-	// Either an AVAudioListener (reuse its own non-directional reverb) or an AVAudioContinuous
-	// (reuse that emitter's already-raytraced muffling result). Validated on BeginPlay.
-	// ExposeOnSpawn for the same reason as SourceSounds above.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	AVAudioEmitterBase* ReverbSource = nullptr;
 
@@ -78,9 +51,6 @@ private:
 	UPROPERTY(Transient)
 	AVAudioContinuous* ContinuousEmitter = nullptr;
 
-	// True from BeginPlay() until TrySpawnSourceSound() succeeds. When attached to a
-	// ContinuousEmitter, spawning is deferred until that emitter has a raytraced muffling result,
-	// so the low pass filter can be primed before Play() instead of popping from clear to muffled.
 	bool bSourcePendingSpawn = false;
 
 	void TrySpawnSourceSound();

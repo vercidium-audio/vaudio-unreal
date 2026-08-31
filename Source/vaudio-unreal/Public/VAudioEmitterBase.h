@@ -104,15 +104,8 @@ struct FVAEAXReverbResult
 // vaEmitterSetOnRaytracingCompleteCallback)
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FVAOnRaytracingComplete);
 
-// Broadcast when another emitter (typically the listener) raytraces this emitter for the first
-// time. GainLF/GainHF are this emitter's target low-pass filter as seen by that other emitter
-// (mirrors the SDK's vaEmitterSetOnRaytracedByAnotherEmitterCallback)
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FVAOnRaytracedByListener, float, GainLF, float, GainHF);
 
-// Common base for every VA actor type (listener, source, relative source, ambient source).
-// Owns the VAEmitter* lifecycle, position sync, and AVAudioWorld registration - the plumbing
-// shared regardless of role. Subclasses fill in InitializeTypeSpecific()/DeinitializeTypeSpecific()
-// for their own setup and override TickTypeSpecific() for their own per-frame behaviour.
 UCLASS(Abstract)
 class VAUDIOUNREAL_API AVAudioEmitterBase : public AActor
 {
@@ -155,9 +148,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio")
 	FVAOnRaytracedByListener OnRaytracedByListener;
 
-	// This emitter's index within its AVAudioWorld's RegisteredEmitters, assigned by
-	// AVAudioWorld::RegisterEmitter/UnregisterEmitter. Used to build collision-free
-	// GEngine->AddOnScreenDebugMessage keys - see VADebugMessageKeys.h.
 	int32 GetEmitterIndex() const { return EmitterIndex; }
 	void SetEmitterIndex(int32 Index) { EmitterIndex = Index; }
 
@@ -185,7 +175,7 @@ public:
 
 	// The length (in milliseconds) of each entry in the echogram
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "1"))
-	int32 EchogramGranularity = 200;
+	int32 EchogramGranularity = 100;
 
 	// --- Muffling ---
 
@@ -227,7 +217,7 @@ public:
 
 	// Number of trails rebuilt from scratch each frame to prevent staleness when the emitter moves
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Refresh", meta = (ClampMin = "0"))
-	int32 RefreshRayCount = 0;
+	int32 RefreshRayCount = 16;
 
 	// A ray trail will be re-created if an old ray bounce position is too far away from the new ray bounce position. This setting controls the allowed distance between old and new ray bounce positions
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Refresh", meta = (ClampMin = "0.0"))
@@ -235,9 +225,6 @@ public:
 
 	// --- Visualisation ---
 
-	// Set by UVAudioVisualisationComponent::BeginPlay/EndPlay when one is attached, so the
-	// visualisation callback trampoline (VAudioVisualisationComponent.cpp) can resolve it from the
-	// VAEmitter* alone via vaEmitterGetUserData, the same way the other callback trampolines do.
 	UVAudioVisualisationComponent* VisualisationComponent = nullptr;
 
 	// --- Advanced ---
@@ -284,9 +271,6 @@ public:
 protected:
 	virtual bool ValidateConfig() { return true; }
 
-	// Called once per subclass after the base VAEmitter* is created and added to the vaWorld,
-	// but before AudioWorld->RegisterEmitter(). Subclasses build their own audio components/
-	// submix presets here and apply their own vaEmitterSet* calls.
 	virtual void InitializeTypeSpecific() { }
 
 	// Called from EndPlay before the VAEmitter* is destroyed and removed from the vaWorld.
@@ -297,17 +281,9 @@ protected:
 	// per-frame work here (raytracing target registration, filter application, etc).
 	virtual void TickTypeSpecific(float DeltaTime) {}
 
-
-	// On-screen warning, keyed by GetUniqueID() so each actor gets its own message slot
-	// (see VANonEmitterSourceMessageBase in VADebugMessageKeys.h). Subclasses use this for
-	// their own configuration warnings (missing sound file, etc), not just the AudioWorld check below.
 	void DisplayWarning(const TCHAR* fmt, ...) const;
 	void ClearWarning() const;
 
-	// Pushes the ray-related UPROPERTYs above onto Emitter. Subclasses call this from
-	// InitializeTypeSpecific() and (if WITH_EDITOR) PostEditChangeProperty(), and may override
-	// it (calling Super::UpdateVAEmitter() first) to push their own additional
-	// vaEmitterSet* calls at the same two call sites - see AVAudioListener.
 	virtual void UpdateVAEmitter();
 
 	VAEmitter* Emitter = nullptr;
