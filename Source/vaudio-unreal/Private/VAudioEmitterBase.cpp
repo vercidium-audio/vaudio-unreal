@@ -194,7 +194,7 @@ void AVAudioEmitterBase::UpdateVAEmitter()
 	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
 	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
 
-	vaEmitterSetRefreshRayCount(Emitter, RefreshRayCount);
+	vaEmitterSetTrailRefreshCount(Emitter, TrailRefreshCount);
 	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
 
 	vaEmitterSetType(Emitter, EmitterType);
