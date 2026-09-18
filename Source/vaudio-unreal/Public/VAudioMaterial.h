@@ -14,11 +14,11 @@ class VAUDIOUNREAL_API UVAudioMaterialAssetBase : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	// Percentage of low-frequency energy lost when a ray bounces (0.0 to 1.0)
+	// Percentage of low-frequency energy lost when a ray bounces
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float AbsorptionLF = 0.02f;
 
-	// Percentage of high-frequency energy lost when a ray bounces (0.0 to 1.0)
+	// Percentage of high-frequency energy lost when a ray bounces
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float AbsorptionHF = 0.1f;
 
@@ -26,19 +26,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float Scattering = 0.1f;
 
-	// How many meters a ray must travel through a primitive before it loses all low-frequency energy (0.01 to max)
+	// How many meters a ray must travel through a primitive before it loses all low-frequency energy
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01", Delta = "0.1"))
 	float TransmissionLF = 10.0f;
 
-	// How many meters a ray must travel through a primitive before it loses all high-frequency energy (0.01 to max)
+	// How many meters a ray must travel through a primitive before it loses all high-frequency energy
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.01", Delta = "0.1"))
 	float TransmissionHF = 5;
 
-	// Percentage of low-frequency energy lost when a ray touches a Plane, Disk, Triangle, Line, non-watertight Mesh, non-enclosed Polygon or open Path primitive, instead of calculating how long the ray spent inside it (0.0 to 1.0)
+	// Percentage of low-frequency energy lost when a ray touches a Plane, Disk, Triangle, Line, non-watertight Mesh, non-enclosed Polygon or open Path primitive, instead of calculating how long the ray spent inside it
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float FlatTransmissionLF = 0.1f;
 
-	// Percentage of high-frequency energy lost when a ray touches a Plane, Disk, Triangle, Line, non-watertight Mesh, non-enclosed Polygon or open Path primitive, instead of calculating how long the ray spent inside it (0.0 to 1.0)
+	// Percentage of high-frequency energy lost when a ray touches a Plane, Disk, Triangle, Line, non-watertight Mesh, non-enclosed Polygon or open Path primitive, instead of calculating how long the ray spent inside it
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float FlatTransmissionHF = 0.25f;
 

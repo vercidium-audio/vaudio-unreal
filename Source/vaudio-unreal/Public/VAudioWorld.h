@@ -116,7 +116,7 @@ public:
 
 	// --- Air Absorption ---
 
-	// Relative humidity as a percentage (0–1).
+	// Relative humidity as a percentage.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float Humidity = 0.1f;
 
