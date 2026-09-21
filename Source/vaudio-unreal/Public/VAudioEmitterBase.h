@@ -215,11 +215,11 @@ public:
 
 	// --- Refresh ---
 
-	// Number of trails rebuilt from scratch each frame to prevent staleness when the emitter moves
+	// Controls the number of trails that are 'refreshed' each frame. Refreshing a trail involves re-casting the first ray, and if it hits a different position than last time, the entire trail will be trimmed and recalculated. See RefreshDistanceThreshold for the allowed distance between old and new bounce positions.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Refresh", meta = (ClampMin = "0"))
-	int32 RefreshRayCount = 16;
+	int32 TrailRefreshCount = 16;
 
-	// A ray trail will be re-created if an old ray bounce position is too far away from the new ray bounce position. This setting controls the allowed distance between old and new ray bounce positions
+	// The allowed distance between new and old bounce positions when refreshing trails. See TrailRefreshCount for more information.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Refresh", meta = (ClampMin = "0.0"))
 	float RefreshDistanceThreshold = 1.0f;
 

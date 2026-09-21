@@ -71,7 +71,6 @@ void AVAudioWorld::UpdateVAWorld()
 	// World config
 	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
 	vaWorldSetMetersPerUnit(World, FMath::Max(0.0001f, MetersPerUnit));
-	vaWorldSetWorldIsIndoors(World, bIsIndoors);
 	vaWorldSetEpsilon(World, Epsilon);
 	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
 

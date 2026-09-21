@@ -110,16 +110,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001", Delta = "1.0"))
 	float SpeedOfSound = 343.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
-	bool bIsIndoors = false;
-
 	// Epsilon value used for ray offsets, world bounds clamping and line-of-sight tests.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
 	float Epsilon = 0.01f;
 
 	// --- Air Absorption ---
 
-	// Relative humidity as a percentage (0–1).
+	// Relative humidity as a percentage.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|AirAbsorption", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float Humidity = 0.1f;
 

@@ -4,8 +4,7 @@
 #include "Sound/SoundEffectSubmix.h"
 #include "VAudioSubmixEffectDirectionalPan.generated.h"
 
-// Settings for FSubmixEffectDirectionalPan - currently just the pan value itself, pushed once per
-// tick from AVAudioWorld::ApplyGroupedEAXReverb() (see directional_reverb_plan.md).
+// Settings for FSubmixEffectDirectionalPan, pushed once per tick from AVAudioWorld::ApplyGroupedEAXReverb() 
 USTRUCT(BlueprintType)
 struct FSubmixEffectDirectionalPanSettings
 {
