@@ -22,6 +22,7 @@ void AVAudioContinuous::InitializeTypeSpecific()
 
 	vaEmitterSetMaxVolume(Emitter, MaxVolume);
 	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
+	vaEmitterSetKeepReverbTailAlive(Emitter, bKeepReverbTailAlive);
 	vaEmitterSetHasRelativeReverb(Emitter, false);
 }
 
@@ -92,5 +93,6 @@ void AVAudioContinuous::PostEditChangeProperty(FPropertyChangedEvent& PropertyCh
 
 	vaEmitterSetMaxVolume(Emitter, MaxVolume);
 	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
+	vaEmitterSetKeepReverbTailAlive(Emitter, bKeepReverbTailAlive);
 }
 #endif
