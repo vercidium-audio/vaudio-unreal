@@ -153,6 +153,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Emitters")
 	bool bEmittersOutsideTheWorldAreMuffled = true;
 
+	// Whether occlusion rays should be affected by the world bounds material.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Emitters")
+	bool bOcclusionRaysLoseEnergyFromWorldBounds = false;
+
 	// --- Threading ---
 
 	// Number of work items to split trails across for load balancing.

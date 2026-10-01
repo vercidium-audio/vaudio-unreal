@@ -73,6 +73,7 @@ void AVAudioWorld::UpdateVAWorld()
 	vaWorldSetMetersPerUnit(World, FMath::Max(0.0001f, MetersPerUnit));
 	vaWorldSetEpsilon(World, Epsilon);
 	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
+	vaWorldSetOcclusionRaysLoseEnergyFromWorldBounds(World, bOcclusionRaysLoseEnergyFromWorldBounds);
 
 	// Threading
 	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));

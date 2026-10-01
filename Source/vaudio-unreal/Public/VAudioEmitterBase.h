@@ -165,7 +165,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0"))
 	int32 ReverbBounceCount = 0;
 
-	// The percentage of returning energy required for reverb to be at maximum volume
+	// The percentage of returning energy required for reverb to be at full volume
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float ReverbEnergyCap = 0.15f;
 
