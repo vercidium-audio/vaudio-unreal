@@ -55,6 +55,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
 	int32 OcclusionBounceCount = 0;
 
+	// Low-frequency energy threshold below which occlusion rays stop bouncing to prevent unnecessary traversal
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
+	float MinimumOcclusionEnergy = 0.01f;
+
 	// Number of permeation rays cast
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0"))
 	int32 PermeationRayCount = 0;

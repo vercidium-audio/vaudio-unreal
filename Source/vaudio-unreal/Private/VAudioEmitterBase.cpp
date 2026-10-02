@@ -181,6 +181,7 @@ void AVAudioEmitterBase::UpdateVAEmitter()
 	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
 	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
 	vaEmitterSetReverbEnergyCap(Emitter, ReverbEnergyCap);
+	vaEmitterSetMinimumReverbEnergy(Emitter, MinimumReverbEnergy);
 	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
 	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
 
@@ -190,9 +191,11 @@ void AVAudioEmitterBase::UpdateVAEmitter()
 	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
 	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
 	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
+	vaEmitterSetMinimumAmbientOcclusionEnergy(Emitter, MinimumAmbientOcclusionEnergy);
 	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
 	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
 	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
+	vaEmitterSetMinimumAmbientPermeationEnergy(Emitter, MinimumAmbientPermeationEnergy);
 
 	vaEmitterSetTrailRefreshCount(Emitter, TrailRefreshCount);
 	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);

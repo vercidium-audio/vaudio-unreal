@@ -24,6 +24,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bAffectsGroupedEAX = true;
 
+	// When true, this emitter is kept alive after being removed from the world while its reverb tail continues to play.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (EditCondition = "bAffectsGroupedEAX"))
+	bool bKeepReverbTailAlive = true;
+
 	// The loudest linear volume (0-1) this emitter's dry source will ever be played at by the consuming application.
 	// Used to estimate how long the emitter's reverb tail stays audible - a quieter source's reverb tail finishes sooner.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (EditCondition = "bAffectsGroupedEAX", ClampMin = "0.0", ClampMax = "1.0"))

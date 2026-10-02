@@ -165,9 +165,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0"))
 	int32 ReverbBounceCount = 0;
 
-	// The percentage of returning energy required for reverb to be at maximum volume
+	// The percentage of returning energy required for reverb to be at full volume
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float ReverbEnergyCap = 0.15f;
+
+	// Energy threshold below which reverb rays stop bouncing to prevent unnecessary traversal
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
+	float MinimumReverbEnergy = 0.01f;
 
 	// How long (in milliseconds) the echogram records data for. Returning reverb rays after this period will be ignored
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "1"))
@@ -201,6 +205,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float AmbientOcclusionEnergyCap = 0.5f;
 
+	// Low-frequency energy threshold below which ambient occlusion rays stop bouncing to prevent unnecessary traversal
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
+	float MinimumAmbientOcclusionEnergy = 0.01f;
+
 	// Number of ambient permeation rays cast
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0"))
 	int32 AmbientPermeationRayCount = 0;
@@ -212,6 +220,10 @@ public:
 	// Percentage of ambient permeation energy required for the emitter to be at full volume
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float AmbientPermeationEnergyCap = 0.5f;
+
+	// Energy threshold below which ambient permeation rays are cancelled to prevent unnecessary traversal
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambient", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
+	float MinimumAmbientPermeationEnergy = 0.01f;
 
 	// --- Refresh ---
 

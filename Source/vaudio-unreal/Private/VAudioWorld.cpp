@@ -73,6 +73,7 @@ void AVAudioWorld::UpdateVAWorld()
 	vaWorldSetMetersPerUnit(World, FMath::Max(0.0001f, MetersPerUnit));
 	vaWorldSetEpsilon(World, Epsilon);
 	vaWorldSetEmittersOutsideTheWorldAreMuffled(World, bEmittersOutsideTheWorldAreMuffled);
+	vaWorldSetOcclusionRaysLoseEnergyFromWorldBounds(World, bOcclusionRaysLoseEnergyFromWorldBounds);
 
 	// Threading
 	vaWorldSetWorkItemCount(World, FMath::Max(1, WorkItemCount));
@@ -179,10 +180,6 @@ void AVAudioWorld::InitializeVAWorld()
 
 void AVAudioWorld::ApplyGroupedEAXReverb()
 {
-	// Wait for raytracing to run at least once
-	if (vaWorldGetInitialising(World))
-		return;
-
 	const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
 	int32 Count = vaWorldGetGroupedEAXCount(World);
 
@@ -437,32 +434,29 @@ void AVAudioWorld::Tick(float DeltaTime)
 
 			// Per-grouped-EAX-zone reverb data (mirrors the settings ApplyGroupedEAXReverb() sends
 			// to each preset - recomputed here purely for display).
-			if (vaWorldGetInitialising(World) == false)
+			const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
+			int32 GroupedEAXCount = vaWorldGetGroupedEAXCount(World);
+
+			if (GroupedEAX)
 			{
-				const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
-				int32 GroupedEAXCount = vaWorldGetGroupedEAXCount(World);
-
-				if (GroupedEAX)
+				for (int32 i = 0; i < GroupedEAXCount; ++i)
 				{
-					for (int32 i = 0; i < GroupedEAXCount; ++i)
+					const VAEAXReverb* EAX = GroupedEAX[i];
+
+					uint64 messageID = VAGroupedEAXMessageBase + i;
+					if (!EAX)
 					{
-						const VAEAXReverb* EAX = GroupedEAX[i];
+						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange,
+							FString::Printf(TEXT("[VA] GroupedEAX[%d]: invalid"), i));
 
-						uint64 messageID = VAGroupedEAXMessageBase + i;
-						if (!EAX)
-						{
-							GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Orange,
-								FString::Printf(TEXT("[VA] GroupedEAX[%d]: invalid"), i));
-
-							continue;
-						}
-
-						USubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr;
-						float pan = PanPreset ? PanPreset->GetSettings().Pan : 0.0f;
-
-						GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
-							FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f gainLF=%.2f gainHF=%.2f pan=%.2f"), i, EAX->decayTime, EAX->gainLF, EAX->gainHF, pan));
+						continue;
 					}
+
+					USubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr;
+					float pan = PanPreset ? PanPreset->GetSettings().Pan : 0.0f;
+
+					GEngine->AddOnScreenDebugMessage(messageID, 0.0f, FColor::Green,
+						FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f gainLF=%.2f gainHF=%.2f pan=%.2f"), i, EAX->decayTime, EAX->gainLF, EAX->gainHF, pan));
 				}
 			}
 
