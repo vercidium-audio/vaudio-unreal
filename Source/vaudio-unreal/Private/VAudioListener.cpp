@@ -194,6 +194,7 @@ void AVAudioListener::UpdateVAEmitter()
 
 	vaEmitterSetOcclusionRayCount(Emitter, OcclusionRayCount);
 	vaEmitterSetOcclusionBounceCount(Emitter, OcclusionBounceCount);
+	vaEmitterSetMinimumOcclusionEnergy(Emitter, MinimumOcclusionEnergy);
 	vaEmitterSetPermeationRayCount(Emitter, PermeationRayCount);
 	vaEmitterSetPermeationBounceCount(Emitter, PermeationBounceCount);
 	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
