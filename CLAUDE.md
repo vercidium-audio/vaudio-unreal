@@ -1,6 +1,6 @@
 # Overview
 
-This is a public repo for the Vercidium Audio Unreal Engine plugin, which is a wrapper around the vaudionative.dll file, which is the Vercidium Audio (vaudio) C SDK.
+This is a public repo for the Vercidium Audio Unreal Engine plugin, which is a wrapper around the Vercidium Audio 3D C SDK (vaudionative.dll).
 
 ~\vaudiofps2\ThirdParty\vaudio\include\vaudio.h is the public header for Vercidium Audio.
 
@@ -9,13 +9,12 @@ Don't attempt to build the plugin yourself. The user will build it and inform yo
 Coding guidelines:
 - Use DisplayWarning() to surface errors to the user on the screen
 - Use camelCase for variable names
-- Use camelCase for field and parameter names, e.g. 'result' instead of 'Result'
-- Don't use single capitalised acronyms for variable names - use position instead of P, vaWorld instead of VAW, etc
-- Don't capitalies variable names, e.g. 'listener' instead of 'Listener'
+- Don't use single capitalised acronyms for variable names, e.g. use `position` instead of `P`, `vaWorld` instead of `VAW`, etc
+- Don't capitalise variable names, e.g. use `listener` instead of `Listener`
 
 ## Actor Initialisation
 
-If an actor has invalid configuration, disable it with `SetActorTickEnabled(false)`, rather than letting `if (!AudioWorld)` or `if (!Emitter)` checks pollute the rest of the code, e.g. in `VAudioRelativeSource.cpp`:
+If an actor is configured incorrectly, disable it with `SetActorTickEnabled(false)`, rather than letting `if (!AudioWorld)` or `if (!Emitter)` checks pollute the rest of the code, e.g. in `VAudioRelativeSource.cpp`:
 
 ```cpp
 void AVAudioRelativeSource::BeginPlay()
@@ -34,7 +33,7 @@ void AVAudioRelativeSource::BeginPlay()
 
 ## VAResult Handling
 
-When a va* function returns a VAResult, ensure all options are handled, e.g. in `VAudioListener.cpp`:
+When a va* function returns a VAResult, ensure all return codes are handled, e.g. in `VAudioListener.cpp`:
 
 ```cpp
 VAResult result = vaEmitterAddTarget(Emitter, Target->GetVAEmitter());

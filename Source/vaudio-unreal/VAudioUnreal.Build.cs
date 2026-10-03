@@ -14,7 +14,8 @@ public class VaudioUnreal : ModuleRules
 			PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "MaterialEditor" });
 		}
 
-		string SDKPath = Path.Combine(ModuleDirectory, "../../../../ThirdParty/vaudio");
+		// The host project's ThirdParty folder, so a project that loads the plugin via AdditionalPluginDirectories (e.g. the test devproject) uses its own SDK copy
+		string SDKPath = Path.Combine(Target.ProjectFile.Directory.FullName, "ThirdParty", "vaudio");
 
 		PublicIncludePaths.Add(Path.Combine(SDKPath, "include"));
 		PublicAdditionalLibraries.Add(Path.Combine(SDKPath, "lib", "Win64", "vaudionative.lib"));
