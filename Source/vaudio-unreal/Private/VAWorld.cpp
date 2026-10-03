@@ -24,6 +24,14 @@ extern "C" {
 // List of worlds used by Material assets to reverse-lookup the world(s) they belong to
 TArray<TWeakObjectPtr<AVAWorld>> AVAWorld::RunningWorlds;
 
+TMap<VAEmitter*, AVAWorld*> AVAWorld::OrphanedEmitters;
+
+void AVAWorld::OnReverbUpdatedTrampoline(VAWorld* world)
+{
+	if (AVAWorld* self = static_cast<AVAWorld*>(vaWorldGetUserData(world)))
+		self->RaytraceCount++;
+}
+
 AVAWorld::AVAWorld()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -140,6 +148,8 @@ void AVAWorld::InitializeVAWorld()
 		return;
 
 	World = vaWorldCreate();
+	vaWorldSetUserData(World, this);
+	vaWorldSetOnReverbUpdatedCallback(World, &OnReverbUpdatedTrampoline);
 
 	// Logging
 	vaWorldSetLogCallback(World, &VASdkLogCallback);
@@ -174,7 +184,6 @@ void AVAWorld::InitializeVAWorld()
 	}
 
 	InitialiseMaterials();
-	ScanAndAddPrimitives();
 }
 
 void AVAWorld::ApplyGroupedEAXReverb()
@@ -254,11 +263,35 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (World)
 	{
+		// Blocks until the raytracing threads finish, after which no primitive is in use
 		vaWorldWait(World);
 		DestroyPrimitives();
-		vaWorldDestroy(World);
+
+		// Invokes OnRemoved for the emitters whose removal was waiting on raytracing results
+		VAResult result = vaWorldDestroy(World);
+
+		if (result != VA_SUCCESS)
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to destroy the world."));
+
 		World = nullptr;
+		DestroyRemovedEmitters();
+
+		// vaWorldDestroy unlinked the emitters still waiting on a reverb tail, so they can be freed now
+		for (auto it = OrphanedEmitters.CreateIterator(); it; ++it)
+		{
+			if (it.Value() != this)
+				continue;
+
+			vaEmitterDestroy(it.Key());
+			it.RemoveCurrent();
+		}
 	}
+
+	// Emitters that end play after this see GetVAWorld() == nullptr and destroy their own handles
+	RegisteredEmitters.Empty();
+	Listeners.Empty();
+	MainListener = nullptr;
+	PendingEventEmitters.Empty();
 }
 
 void AVAWorld::Tick(float DeltaTime)
@@ -280,6 +313,17 @@ void AVAWorld::Tick(float DeltaTime)
 		}
 
 		vaWorldUpdate(World);
+
+		// OnRemoved has been invoked for these, so the raytracing threads no longer read them
+		DestroyRemovedEmitters();
+
+		// Broadcast the Blueprint events the SDK callbacks queued during vaWorldUpdate. A handler may destroy emitters, hence the weak pointers
+		TArray<TWeakObjectPtr<AVAEmitterBase>> eventEmitters = MoveTemp(PendingEventEmitters);
+
+		for (const TWeakObjectPtr<AVAEmitterBase>& emitter : eventEmitters)
+			if (AVAEmitterBase* alive = emitter.Get())
+				alive->FlushPendingEvents();
+
 		ApplyGroupedEAXReverb();
 
 		if (bReverbOnly != bWasReverbOnly)
@@ -297,9 +341,12 @@ void AVAWorld::Tick(float DeltaTime)
 		if (GEngine)
 		{
 			// Per-emitter position and world-bounds check
-			for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
+			TArray<AVAEmitterBase*> statusEmitters(Listeners);
+			statusEmitters.Append(RegisteredEmitters);
+
+			for (int32 i = 0; i < statusEmitters.Num(); ++i)
 			{
-				AVAEmitterBase* baseEmitter = RegisteredEmitters[i];
+				AVAEmitterBase* baseEmitter = statusEmitters[i];
 				AVAListener* listener = Cast<AVAListener>(baseEmitter);
 				AVAEmitter* continuousEmitter = listener ? nullptr : Cast<AVAEmitter>(baseEmitter);
 
@@ -380,31 +427,18 @@ void AVAWorld::Tick(float DeltaTime)
 				}
 			}
 
-			// Per-target LPF applied by the main listener (mirrors the filter AVAListener::TickTypeSpecific()
-			// applies to each target's source - recomputed here purely for display).
+			// Per-target LPF from the main listener, the same filter each source applies to itself
 			if (AVAListener* MessageListener = GetMainListener())
 			{
 				VAEmitter* ListenerVA = MessageListener->GetVAEmitter();
 
 				if (ListenerVA)
 				{
-					for (int32 i = 0; i < MessageListener->TargetEmitters.Num(); ++i)
+					for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 					{
-						AVAEmitterBase* Target = MessageListener->TargetEmitters[i];
+						AVAEmitterBase* Target = RegisteredEmitters[i];
 
 						uint64 messageID = VAMessageKey(MessageListener, EVAMessageSlot::TargetStatus, i);
-
-						if (!Target)
-						{
-							VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has a null target"), *MessageListener->GetActorNameOrLabel()));
-							continue;
-						}
-
-						if (Target == MessageListener)
-						{
-							VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has itself in its own Target Emitters list"), *MessageListener->GetActorNameOrLabel()));
-							continue;
-						}
 
 						if (!Target->GetVAEmitter())
 						{
@@ -469,7 +503,7 @@ void AVAWorld::Tick(float DeltaTime)
 			{
 				FVector ListenerPos = CurrentMainListener->GetActorLocation();
 
-				int targetCount = CurrentMainListener->TargetEmitters.Num();
+				int targetCount = RegisteredEmitters.Num();
 				FColor color = targetCount == 0 ? FColor::Orange : FColor::Green;
 
 				const wchar_t* plural = targetCount == 1 ? TEXT("target") : TEXT("targets");
@@ -488,9 +522,9 @@ void AVAWorld::Tick(float DeltaTime)
 				}
 			}
 			else
-				VAShowMessage(VAMessageKey(this, EVAMessageSlot::ListenerStatus), 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] There is no main listener. Ensure an AVAListener actor is placed and assigned to a World")));
+				VAShowMessage(VAMessageKey(this, EVAMessageSlot::ListenerStatus), 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] There is no main listener. Ensure a VAListener actor is placed and assigned to this world")));
 			
-			VAShowMessage(VAMessageKey(this, EVAMessageSlot::PrimitiveStatus), 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Primitives: prisms=%d spheres=%d capsules=%d meshes=%d"), PrismPrimitives.Num(), SpherePrimitives.Num(), CapsulePrimitives.Num(), MeshPrimitives.Num()));
+			VAShowMessage(VAMessageKey(this, EVAMessageSlot::PrimitiveStatus), 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Primitives: %d"), PrimitiveBindings.Num()));
 			VAShowMessage(VAMessageKey(this, EVAMessageSlot::RaytracingTime), 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.2f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
 
 			if (ActorsWithInvalidMaterials.Num() > 0)
@@ -513,62 +547,123 @@ USubmixEffectReverbPreset* AVAWorld::GetGroupedEAXPreset(int32 Index) const
 	return GroupedEAXPresets.IsValidIndex(Index) ? GroupedEAXPresets[Index] : nullptr;
 }
 
-void AVAWorld::RegisterEmitter(AVAEmitterBase* Emitter)
+bool AVAWorld::RegisterEmitter(AVAEmitterBase* emitter)
 {
-	RegisteredEmitters.AddUnique(Emitter);
-	Emitter->SetEmitterIndex(RegisteredEmitters.Find(Emitter));
+	VAResult result = vaWorldAddEmitter(World, emitter->GetVAEmitter());
 
-	if (AVAListener* ConcreteListener = Cast<AVAListener>(Emitter))
+	switch (result)
 	{
-		if (MainListener.IsValid() && MainListener.Get() != ConcreteListener)
-		{
-			VA_WARN_NAMED(TEXT("Has multiple listeners: '%s' and '%s'. Only one listener should exist per world"), *MainListener->GetActorNameOrLabel(), *Emitter->GetActorNameOrLabel());
-		}
+		case VA_SUCCESS:
+			break;
+
+		case VA_ALREADY_EXISTS:
+			VA_ERROR_NAMED(TEXT("Failed to register emitter '%s' as it is already added to this world."), *emitter->GetActorNameOrLabel());
+			return false;
+
+		case VA_WORLD_CONFLICT:
+			VA_ERROR_NAMED(TEXT("Failed to register emitter '%s' as it is already added to a different world."), *emitter->GetActorNameOrLabel());
+			return false;
+
+		default:
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to register emitter '%s'."), *emitter->GetActorNameOrLabel());
+			return false;
+	}
+
+	if (AVAListener* listener = Cast<AVAListener>(emitter))
+	{
+		Listeners.Add(listener);
+
+		if (!MainListener)
+			SetMainListener(listener);
 		else
-		{
-			MainListener = ConcreteListener;
-		}
+			VA_WARN_NAMED(TEXT("Has multiple listeners: '%s' and '%s'. Only '%s' is used until it ends play"), *MainListener->GetActorNameOrLabel(), *listener->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
+
+		return true;
 	}
+
+	RegisteredEmitters.Add(emitter);
+
+	// If the listener hasn't begun play yet, SetMainListener wires this emitter up when it does
+	if (MainListener)
+		MainListener->AddTarget(emitter);
+
+	return true;
 }
 
-void AVAWorld::UnregisterEmitter(AVAEmitterBase* Emitter)
+void AVAWorld::UnregisterEmitter(AVAEmitterBase* emitter)
 {
-	RegisteredEmitters.Remove(Emitter);
-	Emitter->SetEmitterIndex(-1);
+	RegisteredEmitters.Remove(emitter);
 
-	for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
-		RegisteredEmitters[i]->SetEmitterIndex(i);
+	AVAListener* listener = Cast<AVAListener>(emitter);
 
-	if (MainListener.Get() == Emitter)
-		MainListener = nullptr;
+	if (!listener)
+		return;
 
-	// If the world was removed first, no need to invoke vaWorldRemoveEmitter
-	if (World)
-		vaWorldRemoveEmitter(World, Emitter->GetVAEmitter());
+	Listeners.Remove(listener);
+
+	if (MainListener != listener)
+		return;
+
+	MainListener = nullptr;
+
+	// The next listener has its own SDK handle, so every emitter is added to it as a target again
+	if (Listeners.Num() > 0)
+		SetMainListener(Listeners[0]);
 }
 
-AVAListener* AVAWorld::GetMainListener()
+void AVAWorld::SetMainListener(AVAListener* listener)
 {
-	if (MainListener.IsValid())
-		return MainListener.Get();
+	MainListener = listener;
+	WirePendingTargets();
+}
 
-	UWorld* UEWorld = GetWorld();
-	if (!UEWorld)
-		return nullptr;
+void AVAWorld::WirePendingTargets()
+{
+	if (!MainListener)
+		return;
 
-	for (TActorIterator<AVAListener> ActorIt(UEWorld); ActorIt; ++ActorIt)
+	for (AVAEmitterBase* emitter : RegisteredEmitters)
 	{
-		AVAListener* Listener = *ActorIt;
+		if (emitter->GetVAEmitter())
+			MainListener->AddTarget(emitter);
+	}
+}
 
-		if (Listener->AudioWorld != this)
-			continue;
+void AVAWorld::OnOrphanedEmitterRemoved(VAEmitter* handle)
+{
+	AVAWorld* world = nullptr;
 
-		// The listener will initialise its targets, which will fail if the listener isn't set, so MainListener needs to be set here
-		MainListener = Listener;
-		break;
+	if (OrphanedEmitters.RemoveAndCopyValue(handle, world))
+		world->DeferEmitterDestroy(handle);
+}
+
+void AVAWorld::QueueEmitterEvents(AVAEmitterBase* emitter)
+{
+	PendingEventEmitters.AddUnique(emitter);
+}
+
+void AVAWorld::DestroyRemovedEmitters()
+{
+	for (VAEmitter* handle : PendingEmitterDestroys)
+	{
+		VAResult result = vaEmitterDestroy(handle);
+
+		if (result != VA_SUCCESS)
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to destroy a removed emitter."));
 	}
 
-	return MainListener.Get();
+	PendingEmitterDestroys.Empty();
+}
+
+int32 AVAWorld::GetOrphanedEmitterCount() const
+{
+	int32 count = 0;
+
+	for (const TPair<VAEmitter*, AVAWorld*>& pair : OrphanedEmitters)
+		if (pair.Value == this)
+			count++;
+
+	return count;
 }
 
 void AVAWorld::ExportWorld()

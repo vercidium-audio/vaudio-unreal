@@ -37,13 +37,6 @@ void AVASourceRelative::BeginPlay()
 
 	if (ListenerEmitter)
 	{
-		if (!ListenerEmitter->GetVAEmitter())
-		{
-			VA_WARN_NAMED(TEXT("Will not play as its listener '%s' is not assigned to an AudioWorld"), *ListenerEmitter->GetActorNameOrLabel());
-			SetActorTickEnabled(false);
-			return;
-		}
-
 		if (!ListenerEmitter->ListenerReverbSubmix)
 		{
 			VA_WARN_NAMED(TEXT("Will have no reverb as the Listener has no reverb submix"));
@@ -154,7 +147,6 @@ void AVASourceRelative::TrySpawnSourceSound()
 	}
 	else
 	{
-		check(false);
 		VA_WARN_NAMED(TEXT("Play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
 	}
 }

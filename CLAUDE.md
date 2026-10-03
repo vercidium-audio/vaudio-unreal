@@ -7,47 +7,55 @@ This is a public repo for the Vercidium Audio Unreal Engine plugin, which is a w
 Don't attempt to build the plugin yourself. The user will build it and inform you of any errors.
 
 Coding guidelines:
-- Use DisplayWarning() to surface errors to the user on the screen
+- Log with the macros in `Private/VALog.h` (`VA_LOG`, `VA_WARN`, `VA_ERROR`, plus `_NAMED` and `_RESULT` variants). Warnings and errors also appear on screen, but on-screen messages don't exist in Shipping, so never use `GEngine->AddOnScreenDebugMessage` as the only channel
 - Use camelCase for variable names
 - Don't use single capitalised acronyms for variable names, e.g. use `position` instead of `P`, `vaWorld` instead of `VAW`, etc
 - Don't capitalise variable names, e.g. use `listener` instead of `Listener`
 
 ## Actor Initialisation
 
-If an actor is configured incorrectly, disable it with `SetActorTickEnabled(false)`, rather than letting `if (!AudioWorld)` or `if (!Emitter)` checks pollute the rest of the code, e.g. in `VAudioRelativeSource.cpp`:
+If an actor is configured incorrectly, disable it with `SetActorTickEnabled(false)`, rather than letting `if (!AudioWorld)` or `if (!Emitter)` checks pollute the rest of the code, e.g. in `VASourceRelative.cpp`:
 
 ```cpp
-void AVAudioRelativeSource::BeginPlay()
+void AVASourceRelative::BeginPlay()
 {
 	Super::BeginPlay();
 
 	// Disable the actor if validation fails
 	if (SourceSounds.Num() == 0)
 	{
-		DisplayWarning(TEXT("[VA] RelativeSource '%s' has no SourceSounds and will not play sound"), *GetActorNameOrLabel());
+		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound"));
 		SetActorTickEnabled(false);
 		return;
 	}
 }
 ```
 
+Actor BeginPlay order isn't guaranteed, so never require another actor (e.g. the listener) to have begun play first. Wait for it in Tick instead, or let `AVAWorld` wire things up when it registers.
+
 ## VAResult Handling
 
-When a va* function returns a VAResult, ensure all return codes are handled, e.g. in `VAudioListener.cpp`:
+When a va* function returns a VAResult, handle every documented return code, and never `check(result == VA_SUCCESS)`, e.g. in `VAListener.cpp`:
 
 ```cpp
-VAResult result = vaEmitterAddTarget(Emitter, Target->GetVAEmitter());
+VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());
 
-if (result == VA_FEATURE_DISABLED)
+switch (result)
 {
-    DisplayWarning(TEXT("[VA] Listener '%s' cannot have targets as it does not cast occlusion or permeation rays"), *GetActorNameOrLabel());
-}
-else if (result == VA_NOT_ADDED_TO_WORLD)
-{
-    DisplayWarning(TEXT("[VA] Listener '%s' has a target '%s' that has not been assigned to the same World as this listener. This target will not be raytraced"), *GetActorNameOrLabel(), *Target->GetActorNameOrLabel());
-}
-else
-{
-    check(result == VA_SUCCESS);
+	case VA_SUCCESS:
+	case VA_ALREADY_EXISTS:
+		break;
+
+	case VA_NOT_ADDED_TO_WORLD:
+		VA_ERROR_NAMED(TEXT("Failed to add target '%s' as it has not been added to the same world as this listener."), *target->GetActorNameOrLabel());
+		break;
+
+	case VA_FEATURE_DISABLED:
+		VA_ERROR_NAMED(TEXT("Failed to add target '%s' as this listener casts neither occlusion nor permeation rays."), *target->GetActorNameOrLabel());
+		break;
+
+	default:
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to add target '%s'."), *target->GetActorNameOrLabel());
+		break;
 }
 ```

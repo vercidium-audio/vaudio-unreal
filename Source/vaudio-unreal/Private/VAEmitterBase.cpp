@@ -13,21 +13,33 @@ extern "C" {
 // can resolve identity directly instead of needing a side registry.
 static void VAOnRaytracingCompleteTrampoline(VAEmitter* emitter)
 {
-	if (AVAEmitterBase* Owner = static_cast<AVAEmitterBase*>(vaEmitterGetUserData(emitter)))
-		Owner->OnRaytracingComplete.Broadcast();
+	if (AVAEmitterBase* owner = static_cast<AVAEmitterBase*>(vaEmitterGetUserData(emitter)))
+		owner->QueueRaytracingComplete();
 }
 
 static void VAOnRaytracedByAnotherEmitterTrampoline(VAEmitter* source, VAEmitter* target)
 {
-	AVAEmitterBase* Owner = static_cast<AVAEmitterBase*>(vaEmitterGetUserData(target));
+	AVAEmitterBase* owner = static_cast<AVAEmitterBase*>(vaEmitterGetUserData(target));
 
-	if (!Owner)
+	if (!owner)
 		return;
 
-	VALowPassFilter* Filter = vaEmitterGetTargetFilter(source, target);
+	VALowPassFilter* filter = vaEmitterGetTargetFilter(source, target);
 
-	if (Filter)
-		Owner->OnRaytracedByListener.Broadcast(Filter->gainLF, Filter->gainHF);
+	if (filter)
+		owner->QueueRaytracedByListener(filter->gainLF, filter->gainHF);
+}
+
+static void VAOnRemovedTrampoline(VAEmitter* emitter)
+{
+	if (AVAEmitterBase* owner = static_cast<AVAEmitterBase*>(vaEmitterGetUserData(emitter)))
+	{
+		owner->OnEmitterRemoved(emitter);
+		return;
+	}
+
+	// The actor already released this handle while its removal was pending
+	AVAWorld::OnOrphanedEmitterRemoved(emitter);
 }
 
 AVAEmitterBase::AVAEmitterBase()
@@ -55,65 +67,53 @@ void AVAEmitterBase::BeginPlay()
 
 bool AVAEmitterBase::TryInitializeEmitter()
 {
-	check(AudioWorld);
-
 	// Already failed once before, don't try again
-	if (failedInitialisation)
+	if (!AudioWorld || failedInitialisation)
 		return false;
 
 	// Already initialised, all is good
 	if (Emitter)
 		return true;
 
-
-	// If the world is a child actor of the emitter, initialise it here first:
+	// The world may not have begun play yet, since actor BeginPlay order isn't guaranteed
 	AudioWorld->InitializeVAWorld();
-	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 
-	bool configPass = ValidateConfig();
-
-	if (!configPass)
+	if (!ValidateConfig())
 	{
 		// Failed validation, disable this actor
 		SetActorTickEnabled(false);
-
 		failedInitialisation = true;
 		return false;
 	}
 
-	// Create the emitter
-	check(!Emitter);
-
 	Emitter = vaEmitterCreate();
 	vaEmitterSetName(Emitter, TCHAR_TO_UTF8(*GetActorNameOrLabel()));
-	
+
 	vaEmitterSetLogCallback(Emitter, &VASdkLogCallback);
 	vaEmitterSetLogErrorCallback(Emitter, &VASdkLogErrorCallback);
 	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
 
-	// Lets the callback trampolines below resolve this actor from the VAEmitter* alone
+	// Lets the callback trampolines resolve this actor from the VAEmitter* alone
 	vaEmitterSetUserData(Emitter, this);
 	vaEmitterSetOnRaytracingCompleteCallback(Emitter, &VAOnRaytracingCompleteTrampoline);
 	vaEmitterSetOnRaytracedByAnotherEmitterCallback(Emitter, &VAOnRaytracedByAnotherEmitterTrampoline);
+	vaEmitterSetOnRemovedCallback(Emitter, &VAOnRemovedTrampoline);
 
-	// Add the emitter to the world
-	VAResult result = vaWorldAddEmitter(vaWorld, Emitter);
-
-	check(result == VA_SUCCESS);
-
-	if (result == VA_ALREADY_EXISTS)
-	{
-		VA_WARN_NAMED(TEXT("Was added to AudioWorld '%s' twice"), *AudioWorld->GetActorNameOrLabel());
-	}
-	else if (result == VA_WORLD_CONFLICT)
-	{
-		VA_WARN_NAMED(TEXT("Cannot be added to AudioWorld '%s' as it is already added to another world"), *AudioWorld->GetActorNameOrLabel());
-	}
-
-	// Initialise the specific emitter type (e.g. Listener adds targets, Source, Continuous, etc)
+	// Properties are pushed before the emitter joins the world, so the listener's ray counts are set before targets are added to it
 	InitializeTypeSpecific();
 
-	AudioWorld->RegisterEmitter(this);
+	if (!AudioWorld->RegisterEmitter(this))
+	{
+		// Never added to the world, so it can be destroyed straight away
+		vaEmitterSetUserData(Emitter, nullptr);
+		vaEmitterDestroy(Emitter);
+		Emitter = nullptr;
+
+		SetActorTickEnabled(false);
+		failedInitialisation = true;
+		return false;
+	}
+
 	registered = true;
 	return true;
 }
@@ -130,26 +130,103 @@ void AVAEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		registered = false;
 	}
 
-	if (Emitter)
-	{
-		// The emitter can outlive this actor (see TODO below), so clear the userData pointer now
-		// to stop the callback trampolines from resolving a dangling actor.
-		vaEmitterSetUserData(Emitter, nullptr);
+	ReleaseEmitter();
+}
 
-		// TODO - Can't just kill it here - need to wait for world pendingshutdown
-		//vaEmitterDestroy(Emitter);
-		//Emitter = nullptr;
+void AVAEmitterBase::ReleaseEmitter()
+{
+	if (!Emitter)
+		return;
+
+	VAWorld* vaWorld = AudioWorld ? AudioWorld->GetVAWorld() : nullptr;
+
+	// The world ended first, and vaWorldDestroy unlinked this emitter from it, so it can be freed now
+	if (!vaWorld)
+	{
+		vaEmitterSetUserData(Emitter, nullptr);
+		VAResult result = vaEmitterDestroy(Emitter);
+
+		if (result != VA_SUCCESS)
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to destroy the emitter after its world ended."));
+
+		Emitter = nullptr;
+		return;
+	}
+
+	// If no raytracing results were pending, OnRemoved has already run, handing the handle to the world and clearing Emitter
+	VAResult result = vaWorldRemoveEmitter(vaWorld, Emitter);
+
+	if (!Emitter)
+		return;
+
+	switch (result)
+	{
+		// OnRemoved fires once the in-flight raytracing results are handled, or once its reverb tail finishes (VA_PENDING_REMOVAL). This actor may be gone by then, so the world takes over the handle
+		case VA_SUCCESS:
+		case VA_PENDING_REMOVAL:
+			vaEmitterSetUserData(Emitter, nullptr);
+			AudioWorld->AddOrphanedEmitter(Emitter);
+			break;
+
+		// Never added to the world
+		case VA_NOT_FOUND:
+			vaEmitterSetUserData(Emitter, nullptr);
+			vaEmitterDestroy(Emitter);
+			break;
+
+		default:
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to remove the emitter from its world."));
+			vaEmitterSetUserData(Emitter, nullptr);
+			AudioWorld->AddOrphanedEmitter(Emitter);
+			break;
+	}
+
+	Emitter = nullptr;
+}
+
+void AVAEmitterBase::OnEmitterRemoved(VAEmitter* handle)
+{
+	AudioWorld->DeferEmitterDestroy(handle);
+
+	if (Emitter == handle)
+		Emitter = nullptr;
+}
+
+void AVAEmitterBase::QueueRaytracingComplete()
+{
+	pendingRaytracingComplete = true;
+	AudioWorld->QueueEmitterEvents(this);
+}
+
+void AVAEmitterBase::QueueRaytracedByListener(float gainLF, float gainHF)
+{
+	pendingRaytracedByListener = true;
+	pendingGainLF = gainLF;
+	pendingGainHF = gainHF;
+	AudioWorld->QueueEmitterEvents(this);
+}
+
+void AVAEmitterBase::FlushPendingEvents()
+{
+	if (pendingRaytracingComplete)
+	{
+		pendingRaytracingComplete = false;
+		OnRaytracingComplete.Broadcast();
+	}
+
+	// A handler above may have destroyed this actor
+	if (pendingRaytracedByListener && IsValid(this))
+	{
+		pendingRaytracedByListener = false;
+		OnRaytracedByListener.Broadcast(pendingGainLF, pendingGainHF);
 	}
 }
 
 void AVAEmitterBase::Tick(float DeltaTime)
 {
-	// TODO - Source still calling Tick even if it failed validation above
+	// Initialisation failed after the tick function was registered
 	if (!Emitter)
 		return;
-
-	check(Emitter);
-	check(AudioWorld);
 
 	Super::Tick(DeltaTime);
 

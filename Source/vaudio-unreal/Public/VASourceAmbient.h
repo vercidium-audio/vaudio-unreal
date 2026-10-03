@@ -36,4 +36,6 @@ public:
 
 private:
 	void TrySpawnSourceSound(const VALowPassFilter* AmbientFilter);
+
+	bool checkedListenerRays = false;
 };

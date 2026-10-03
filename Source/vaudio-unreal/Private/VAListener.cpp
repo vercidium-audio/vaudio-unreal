@@ -16,41 +16,6 @@ AVAListener::AVAListener()
 {
 }
 
-bool AVAListener::ValidateConfig()
-{
-	VAWorld* vaWorld = AudioWorld->GetVAWorld();
-
-	bool occlusionEnabled = OcclusionRayCount > 0 && OcclusionBounceCount > 0;
-	bool permeationEnabled = PermeationRayCount > 0 && PermeationBounceCount > 0;
-
-	if (!occlusionEnabled && !permeationEnabled)
-		if (TargetEmitters.Num() > 0)
-		{
-			VA_WARN_NAMED(TEXT("Cannot have targets as it does not cast occlusion or permeation rays"));
-			return false;
-		}
-
-	// Check for null targets
-	TSet<AVAEmitterBase*> registeredTargets;
-
-	for (int32 i = 0; i < TargetEmitters.Num(); i++)
-	{
-		AVAEmitterBase* target = TargetEmitters[i];
-
-		// Fail validation if the user added a null target
-		if (!target)
-		{
-			VA_WARN_NAMED(TEXT("Will not cast rays as it has a null target at index %d"), i);
-			vaWorldRemoveEmitter(vaWorld, Emitter);
-			return false;
-		}
-
-		registeredTargets.Add(target);
-	}
-
-	return true;
-}
-
 void AVAListener::InitializeTypeSpecific()
 {
 	// Set ray counts and other settings
@@ -67,70 +32,41 @@ void AVAListener::InitializeTypeSpecific()
 			VA_WARN_NAMED(TEXT("Has a reverb submix assigned but does not cast reverb rays"));
 		}
 	}
+}
 
-	TSet<AVAEmitterBase*> registeredTargets;
-
-	VAWorld* vaWorld = AudioWorld->GetVAWorld();
-
-	// Add targets
-	for (int32 i = 0; i < TargetEmitters.Num(); i++)
+void AVAListener::AddTarget(AVAEmitterBase* target)
+{
+	if (!vaEmitterGetOcclusionEnabled(Emitter) && !vaEmitterGetPermeationEnabled(Emitter))
 	{
-		AVAEmitterBase* target = TargetEmitters[i];
-
-		if (!target)
+		// Every emitter in the world is a target, so only say it once
+		if (!warnedNoTargetRays)
 		{
-			// ValidateConfig() should've caught null targets
-			check(false);
-			continue;
+			VA_ERROR_NAMED(TEXT("Cannot determine how muffled other sounds are. Increase its occlusion or permeation ray counts and try again."));
+			warnedNoTargetRays = true;
 		}
 
-		if (registeredTargets.Contains(target))
-		{
-			VA_WARN_NAMED(TEXT("Has a duplicate target: %s"), *target->GetActorNameOrLabel());
-			continue;
-		}
+		return;
+	}
 
-		if (target->AudioWorld == NULL)
-		{
-			VA_WARN_NAMED(TEXT("Has a target '%s' that has not been assigned to an AudioWorld. This target will not be raytraced"), *target->GetActorNameOrLabel());
-			continue;
-		}
+	VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());
 
-		if (target->AudioWorld != AudioWorld)
-		{
-			VA_WARN_NAMED(TEXT("Has a target '%s' that is assigned to a different world: '%s'. This target will not be raytraced"), *target->GetActorNameOrLabel(), *target->AudioWorld->GetActorNameOrLabel());
-			continue;
-		}
+	switch (result)
+	{
+		case VA_SUCCESS:
+		case VA_ALREADY_EXISTS:
+			break;
 
-		// Actor init order isn't guaranteed so just initialise the targete emitter here
-		bool pass = target->TryInitializeEmitter();
+		case VA_NOT_ADDED_TO_WORLD:
+			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as it has not been added to the same world as this listener."), *target->GetActorNameOrLabel());
+			break;
 
-		// If the target failed to initialise (e.g. Source has no sound), don't add it to our list
-		if (!pass)
-		{
-			VA_WARN_NAMED(TEXT("Has a target '%s' that failed to initialise. It will not be raytraced"), *target->GetActorNameOrLabel());
-			continue;
-		}
+		case VA_FEATURE_DISABLED:
+			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as this listener casts neither occlusion nor permeation rays."), *target->GetActorNameOrLabel());
+			break;
 
-		VAEmitter* vaTarget = target->GetVAEmitter();
-
-		VAResult result = vaEmitterAddTarget(Emitter, vaTarget);
-
-		check(result == VA_SUCCESS);
-		check(vaEmitterHasTarget(Emitter, vaTarget));
-
-		if (result == VA_FEATURE_DISABLED)
-		{
-			// ValidateConfig() above should've caught this
-			continue;
-		}
-		else if (result == VA_NOT_ADDED_TO_WORLD)
-		{
-			// The target->AudioWorld check above should have caught this already
-			continue;
-		}
-
-		registeredTargets.Add(target);
+		default:
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to add target '%s'."), *target->GetActorNameOrLabel());
+			break;
 	}
 }
 
@@ -167,24 +103,6 @@ void AVAListener::TickTypeSpecific(float DeltaTime)
 	if (ListenerReverbPreset)
 		ApplyListenerReverb();
 
-	// Update filters for each target VASource
-	for (AVAEmitterBase* Target : TargetEmitters)
-	{
-		VAEmitter* vaEmitter = Target->GetVAEmitter();
-
-		// Wait till we've raytraced the target
-		if (!vaEmitterHasRaytracedTarget(Emitter, vaEmitter))
-			continue;
-
-		VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(Emitter, vaEmitter);
-
-		if (AVASource* Source = Cast<AVASource>(Target))
-			Source->ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
-		else
-		{
-			// Continuous / relative emitters update their own filter based on GetMufflingResult()
-		}
-	}
 }
 
 void AVAListener::UpdateVAEmitter()

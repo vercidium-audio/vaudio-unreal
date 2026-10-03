@@ -148,12 +148,17 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio")
 	FVAOnRaytracedByListener OnRaytracedByListener;
 
-	int32 GetEmitterIndex() const { return EmitterIndex; }
-	void SetEmitterIndex(int32 Index) { EmitterIndex = Index; }
-
 	// Creates the VA emitter and wires up audio components. Safe to call repeatedly:
 	// no-ops (returns true) if already initialized, returns false if AudioWorld isn't assigned
 	bool TryInitializeEmitter();
+
+	// Called from the SDK callbacks during vaWorldUpdate. The Blueprint delegates are broadcast later by FlushPendingEvents, after vaWorldUpdate returns, so a handler that spawns or destroys emitters can't re-enter the SDK
+	void QueueRaytracingComplete();
+	void QueueRaytracedByListener(float gainLF, float gainHF);
+	void FlushPendingEvents();
+
+	// Called from the OnRemoved callback once the SDK has removed handle from the world. The world destroys it later
+	void OnEmitterRemoved(VAEmitter* handle);
 
 	// --- Reverb ---
 
@@ -299,8 +304,14 @@ protected:
 	VAEmitter* Emitter = nullptr;
 
 private:
-	// Set by AVAWorld::RegisterEmitter/UnregisterEmitter - see GetEmitterIndex() above.
-	int32 EmitterIndex = -1;
 	bool registered = false;
 	bool failedInitialisation = false;
+
+	bool pendingRaytracingComplete = false;
+	bool pendingRaytracedByListener = false;
+	float pendingGainLF = 0.0f;
+	float pendingGainHF = 0.0f;
+
+	// Removes the emitter from the world and hands its handle to the world, which destroys it once the SDK has let go of it
+	void ReleaseEmitter();
 };

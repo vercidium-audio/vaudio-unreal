@@ -32,7 +32,12 @@ void UVAMaterialBase::ApplyToWorld(AVAWorld* Owner)
 	if (IsA<UVACustomMaterial>() && !vaWorldHasMaterial(World, MaterialId))
 	{
 		VAResult result = vaWorldCreateMaterial(World, MaterialId);
-		check(result == VA_SUCCESS);
+
+		if (result != VA_SUCCESS)
+		{
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create custom material %d."), MaterialId);
+			return;
+		}
 	}
 
 	vaWorldSetMaterialAbsorptionLF(World,        MaterialId, AbsorptionLF);

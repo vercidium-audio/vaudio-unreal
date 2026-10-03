@@ -15,7 +15,6 @@ public:
 	AVAListener();
 
 protected:
-	virtual bool ValidateConfig() override;
 	virtual void InitializeTypeSpecific() override;
 	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
@@ -29,11 +28,6 @@ public:
 	// This submix applies reverb to sounds created by this listener
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
 	USoundSubmix* ListenerReverbSubmix = nullptr;
-
-	// Target emitters that this listener will cast occlusion and permeation rays towards.
-	// Holds both AVASource and AVAEmitter actors - both are raytracing targets.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
-	TArray<AVAEmitterBase*> TargetEmitters;
 
 	// --- Reverb ---
 
@@ -75,9 +69,15 @@ public:
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
+public:
+	// Called by AVAWorld for every non-listener emitter, so this listener calculates how muffled it is
+	void AddTarget(AVAEmitterBase* target);
+
 private:
 	UPROPERTY(Transient)
 	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;
+
+	bool warnedNoTargetRays = false;
 
 	void ApplyListenerReverb();
 };

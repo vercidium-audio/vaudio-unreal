@@ -27,14 +27,6 @@ bool AVASource::ValidateConfig()
 		return false;
 	}
 
-	AVAListener* listener = AudioWorld->GetMainListener();
-
-	if (!listener)
-	{
-		VA_WARN_NAMED(TEXT("Will not play as the AudioWorld does not have a listener"));
-		return false;
-	}
-
 	return true;
 }
 
@@ -42,11 +34,8 @@ void AVASource::InitializeTypeSpecific()
 {
 	Super::InitializeTypeSpecific();
 
-	AVAListener* listener = AudioWorld->GetMainListener();
-
 	// Already validated by ValidateConfig() above
 	check(SourceSound);
-	check(listener);
 
 	if (!SourceSound->IsPlayWhenSilent())
 	{
@@ -92,21 +81,14 @@ void AVASource::DeinitializeTypeSpecific()
 
 void AVASource::TickTypeSpecific(float DeltaTime)
 {
-	check(AudioWorld);
-	check(Emitter);
-
-	// HACK - need to fix the init order madness
-	// Bail if the listener failed to initialise
-	if (!AudioWorld->GetMainListener() || !AudioWorld->GetMainListener()->GetVAEmitter())
-	{
-		VA_WARN_NAMED(TEXT("Will not play as the listener failed validation"));
-		return;
-	}
-
 	Super::TickTypeSpecific(DeltaTime);
 
 	if (bSourcePendingSpawn)
 		TrySpawnSourceSound();
+
+	// Null until the main listener has raytraced this source
+	if (VALowPassFilter* lowPassFilter = GetMufflingResult())
+		ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 
 	if (bAffectsGroupedEAX)
 		UpdateSourceSubmix();
@@ -121,19 +103,10 @@ void AVASource::TickTypeSpecific(float DeltaTime)
 
 void AVASource::TrySpawnSourceSound()
 {
-	AVAListener* Listener = AudioWorld->GetMainListener();
-	VAEmitter* vaListener = Listener->GetVAEmitter();
+	// Wait until the main listener has raytraced this source, which may not have begun play yet
+	VALowPassFilter* lowPassFilter = GetMufflingResult();
 
-	VAVector emitterPos = vaEmitterGetPosition(Emitter);
-
-	// Target not configured correctly
-	if (!vaEmitterHasTarget(vaListener, Emitter))
-	{
-		return;
-	}
-
-	// Wait until raytracing completes
-	if (!vaEmitterHasRaytracedTarget(vaListener, Emitter))
+	if (!lowPassFilter)
 		return;
 
 	bSourcePendingSpawn = false;
@@ -161,7 +134,6 @@ void AVASource::TrySpawnSourceSound()
 		}
 
 		// Apply filter immediately
-		VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(vaListener, Emitter);
 		ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 
 		// Apply reverb
@@ -212,6 +184,10 @@ void AVASource::UpdateSourceSubmix()
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 	AVAListener* Listener = AudioWorld->GetMainListener();
 
+	// The listener ended play
+	if (!Listener || !Listener->GetVAEmitter())
+		return;
+
 	// At this stage we have been raytraced by the listener, so groupedEAX should be available
 	const VAEAXReverb** groupedEAX = vaWorldGetGroupedEAX(vaWorld);
 
@@ -228,7 +204,12 @@ void AVASource::UpdateSourceSubmix()
 	VAEmitter* ListenerVA = Listener->GetVAEmitter();
 
 	// Only relative gain is supported. Can't do directional reverb in Unreal :(
-	float SendLevel = *vaEAXReverbGetRelativeGain(EAX, ListenerVA);
+	const float* relativeGain = vaEAXReverbGetRelativeGain(EAX, ListenerVA);
+
+	if (!relativeGain)
+		return;
+
+	float SendLevel = *relativeGain;
 
 	FSoundSubmixSendInfo SubmixSendInfo;
 	SubmixSendInfo.SoundSubmix = Submix;

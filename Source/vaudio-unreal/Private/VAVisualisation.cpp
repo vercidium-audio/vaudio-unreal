@@ -120,7 +120,14 @@ void UVAVisualisation::BeginPlay()
 
 	OwnerEmitter->VisualisationComponent = this;
 	VAResult result = vaEmitterSetVisualisationCallback(OwnerEmitter->GetVAEmitter(), &VAVisualisationCallbackTrampoline);
-	check(result == VA_SUCCESS);
+
+	if (result != VA_SUCCESS)
+	{
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to register the visualisation callback."));
+		OwnerEmitter->VisualisationComponent = nullptr;
+		return;
+	}
+
 	bCallbackRegistered = true;
 
 	SetComponentTickEnabled(true);

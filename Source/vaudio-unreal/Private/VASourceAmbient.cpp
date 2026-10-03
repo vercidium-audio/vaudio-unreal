@@ -34,28 +34,10 @@ void AVASourceAmbient::BeginPlay()
 		return;
 	}
 
-	AVAListener* listener = AudioWorld->GetMainListener();
-
-	if (!listener)
-	{
-		VA_WARN_NAMED(TEXT("Will not play as the AudioWorld does not have a listener"));
-		SetActorTickEnabled(false);
-		return;
-	}
-
 	// Warnings
 	if (!SourceSound->IsPlayWhenSilent())
 	{
 		VA_WARN_NAMED(TEXT("SourceSound '%s' must have Virtualization Mode set to 'Play When Silent', else it may stop playing when fully muffled"), *SourceSound->GetName());
-	}
-
-	bool occlusionEnabled = listener->AmbientOcclusionRayCount > 0 && listener->AmbientOcclusionBounceCount > 0;
-	bool permeationEnabled = listener->AmbientPermeationRayCount > 0 && listener->AmbientPermeationBounceCount > 0;
-
-	// Warn the user that their listener does not have ambient rays
-	if (!occlusionEnabled && !permeationEnabled)
-	{
-		VA_WARN_NAMED(TEXT("Will not be muffled as the listener does not cast ambient occlusion or ambient permeation rays"));
 	}
 }
 
@@ -74,15 +56,21 @@ void AVASourceAmbient::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// HACK - need to fix the init order madness
-	// Bail if the listener failed to initialise
-	if (!AudioWorld->GetMainListener() || !AudioWorld->GetMainListener()->GetVAEmitter())
-	{
-		VA_WARN_NAMED(TEXT("Will not play as the listener failed validation"));
-		return;
-	}
+	AVAListener* listener = AudioWorld->GetMainListener();
 
-	VAEmitter* vaListener = AudioWorld->GetMainListener()->GetVAEmitter();
+	// The listener may not have begun play yet
+	if (!listener || !listener->GetVAEmitter())
+		return;
+
+	VAEmitter* vaListener = listener->GetVAEmitter();
+
+	if (!checkedListenerRays)
+	{
+		checkedListenerRays = true;
+
+		if (!vaEmitterGetAmbientOcclusionEnabled(vaListener) && !vaEmitterGetAmbientPermeationEnabled(vaListener))
+			VA_WARN_NAMED(TEXT("Will not be muffled as the listener does not cast ambient occlusion or ambient permeation rays"));
+	}
 	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(vaListener);
 
 	// Raytracing has not completed yet - don't play the sound

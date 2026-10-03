@@ -9,13 +9,14 @@
 #include "VAWorld.generated.h"
 
 struct VAWorld;
-struct VAMeshPrimitive;
-struct VACapsulePrimitive;
-struct VASpherePrimitive;
-struct VAPrismPrimitive;
+struct VAEmitter;
 class AVAEmitterBase;
 class AVAListener;
 class UVAMaterialBase;
+class UVAMaterialComponent;
+class UShapeComponent;
+class UStaticMeshComponent;
+enum class EVAPropagateMode : uint8;
 class UVASubmixEffectDirectionalPanPreset;
 
 UCLASS(NotBlueprintType, NotBlueprintable)
@@ -43,10 +44,20 @@ enum class EVAPrimitiveKind : uint8
 struct FVAPrimitiveBinding
 {
 	TWeakObjectPtr<USceneComponent> Component;
+
+	// The material component this primitive's material came from, on the component's own actor or inherited from an attach parent
+	TWeakObjectPtr<UVAMaterialComponent> Source;
+
 	void* Primitive = nullptr;
 	EVAPrimitiveKind Kind = EVAPrimitiveKind::Mesh;
-	FTransform LocalOffset = FTransform::Identity;
 
+	// Mesh space relative to the component, i.e. an instanced static mesh's instance transform. Identity otherwise
+	FTransform MeshTransform = FTransform::Identity;
+
+	// A simple collision element's rotation and translation in mesh space
+	FTransform ElementTransform = FTransform::Identity;
+
+	// A simple collision element's unscaled size
 	FVector LocalExtent = FVector::ZeroVector;
 
 	FDelegateHandle Handle;
@@ -200,8 +211,7 @@ public:
 	void BakeGeometry();
 #endif
 
-	// Populated by BakeGeometry and saved with the level. Used by ScanAndAddPrimitives as a
-	// fallback source of triangle data when the live mesh's render data is unavailable.
+	// Populated by BakeGeometry and saved with the level. Used as a fallback source of triangle data when the live mesh's render data is unavailable
 	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio", AdvancedDisplay)
 	TArray<FVABakedMesh> BakedMeshes;
 
@@ -211,6 +221,21 @@ public:
 	// world - not shared across worlds/levels.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
 	TArray<UVAMaterialBase*> Materials;
+
+	// Only colliders (shape components and static mesh simple collision) whose collision object type is listed here become raytracing geometry, like Godot's VAWorld.collision_layers. Empty adds every collider
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
+	TArray<TEnumAsByte<ECollisionChannel>> CollisionObjectTypes;
+
+	// Rebuilds an actor's raytracing geometry and that of its attached children, e.g. after changing its meshes or instances, or attaching it to or detaching it from an actor with a VAMaterialComponent
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void SyncPrimitive(AActor* actor);
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	int32 GetPrimitiveCount() const { return PrimitiveBindings.Num(); }
+
+	// Called by UVAMaterialComponent. Adds the geometry of its actor, and of attached child actors without their own VAMaterialComponent
+	void AddMaterialPrimitives(UVAMaterialComponent* source);
+	void RemoveMaterialPrimitives(UVAMaterialComponent* source);
 
 	static TArray<TWeakObjectPtr<AVAWorld>> RunningWorlds;
 
@@ -230,10 +255,29 @@ public:
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
 	int32 GetGroupedEAXPresetCount() const { return GroupedEAXPresets.Num(); }
 	int32 GetMaximumGroupedEAXCount() const { return GroupedEAXSubmixes.Num(); }
-	void RegisterEmitter(AVAEmitterBase* Emitter);
-	void UnregisterEmitter(AVAEmitterBase* Emitter);
+	// Adds the emitter to the vaWorld. Non-listener emitters automatically become targets of the main listener, whichever of the two begins play first. Returns false (and logs why) if the SDK rejected it
+	bool RegisterEmitter(AVAEmitterBase* emitter);
+	void UnregisterEmitter(AVAEmitterBase* emitter);
 
-	AVAListener* GetMainListener();
+	AVAListener* GetMainListener() const { return MainListener; }
+	const TArray<AVAEmitterBase*>& GetRegisteredEmitters() const { return RegisteredEmitters; }
+
+	// Called from the OnRemoved callback, after which the raytracing threads no longer read the emitter. Destroyed after the next vaWorldUpdate returns
+	void DeferEmitterDestroy(VAEmitter* handle) { PendingEmitterDestroys.Add(handle); }
+
+	// For a handle whose actor ended play while its removal was still pending (reverb tail). The world destroys it once OnRemoved fires, or when the world ends
+	void AddOrphanedEmitter(VAEmitter* handle) { OrphanedEmitters.Add(handle, this); }
+	static void OnOrphanedEmitterRemoved(VAEmitter* handle);
+
+	int32 GetOrphanedEmitterCount() const;
+	int32 GetPendingEmitterDestroyCount() const { return PendingEmitterDestroys.Num(); }
+
+	// Called from the SDK callbacks, so FlushPendingEvents runs after vaWorldUpdate returns
+	void QueueEmitterEvents(AVAEmitterBase* emitter);
+
+	// Number of completed raytracing passes, so tests can wait for fresh results after changing the scene
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	int32 GetRaytraceCount() const { return RaytraceCount; }
 
 private:
 	VAWorld* World = nullptr;
@@ -246,20 +290,27 @@ private:
 	UPROPERTY(Transient)
 	TArray<UVASubmixEffectDirectionalPanPreset*> GroupedEAXPanPresets;
 
-	TArray<VAMeshPrimitive*>    MeshPrimitives;
-	TArray<VACapsulePrimitive*> CapsulePrimitives;
-	TArray<VASpherePrimitive*>  SpherePrimitives;
-	TArray<VAPrismPrimitive*>   PrismPrimitives;
-
 	TArray<FVAPrimitiveBinding> PrimitiveBindings;
 
 	TMap<USceneComponent*, TArray<int32>> PrimitiveBindingsByComponent;
 
+	// Non-listener emitters, which are all targets of the main listener. Raw pointers are safe as emitters unregister in EndPlay
 	TArray<AVAEmitterBase*> RegisteredEmitters;
 
-	// Cached from RegisteredEmitters whenever an AVAListener is (un)registered, so
-	// GetMainListener() and Tick() don't need to scan every frame.
-	TWeakObjectPtr<AVAListener> MainListener;
+	TArray<AVAListener*> Listeners;
+	AVAListener* MainListener = nullptr;
+
+	TArray<VAEmitter*> PendingEmitterDestroys;
+	static TMap<VAEmitter*, AVAWorld*> OrphanedEmitters;
+
+	TArray<TWeakObjectPtr<AVAEmitterBase>> PendingEventEmitters;
+
+	int32 RaytraceCount = 0;
+	static void OnReverbUpdatedTrampoline(VAWorld* world);
+
+	void SetMainListener(AVAListener* listener);
+	void WirePendingTargets();
+	void DestroyRemovedEmitters();
 
 	TArray<FString> ActorsWithInvalidMaterials;
 
@@ -268,20 +319,28 @@ private:
 	bool bWasReverbOnly = false;
 
 	void InitialiseMaterials();
-	void ScanAndAddPrimitives();
 	void DestroyPrimitives();
 	void ApplyGroupedEAXReverb();
 
-	bool TryAddPrimitive(void* Primitive, const TCHAR* PrimitiveTypeName, const FString& ActorName);
+	// Adds the actor's geometry, then recurses into attached children that don't have their own VAMaterialComponent
+	void AddActorTree(AActor* actor, UVAMaterialComponent* source);
+	void AddActorPrimitives(AActor* actor, UVAMaterialComponent* source);
+	void AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId);
+	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
+	bool AddMeshPrimitive(const TArray<FVector3f>& vertices, UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
+	bool PassesCollisionFilter(const UPrimitiveComponent* component) const;
 
-	void BindPrimitiveToComponent(void* Primitive, EVAPrimitiveKind Kind, USceneComponent* Component,
-		const FTransform& LocalOffset = FTransform::Identity, const FVector& LocalExtent = FVector::ZeroVector);
+	// Sets the primitive's transform, adds it to the vaWorld and tracks its component's movement. Destroys it if the SDK rejects it
+	bool AddBinding(FVAPrimitiveBinding binding, const TCHAR* typeName);
 
+	void RemoveBindings(TFunctionRef<bool(const FVAPrimitiveBinding&)> predicate);
+	static void DestroyPrimitive(void* primitive, EVAPrimitiveKind kind);
 	static void RefreshPrimitiveTransform(const FVAPrimitiveBinding& Binding);
 
 	void OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
 
-	// Unbinds every TransformUpdated delegate registered in PrimitiveBindings and empties it.
-	// Called from DestroyPrimitives().
-	void UnbindPrimitiveComponents();
+	// Bound to the OnEndPlay of every actor that contributed primitives, so destroyed or streamed-out geometry stops affecting raytracing
+	UFUNCTION()
+	void OnGeometryActorEndPlay(AActor* actor, EEndPlayReason::Type endPlayReason);
+
 };

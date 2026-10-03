@@ -34,6 +34,40 @@ enum class EVAMaterial : uint8
 	WoodOutdoor      UMETA(DisplayName = "Wood (Outdoor)"),
 };
 
+// Which of an actor's components become raytracing geometry, matching the Godot vercidium_audio_propagate metadata
+UENUM(BlueprintType)
+enum class EVAPropagateMode : uint8
+{
+	// Shape components, plus each static mesh's simple collision (or its render triangles if it has none)
+	All,
+
+	// Shape components and static mesh simple collision only
+	Colliders,
+
+	// Static mesh render triangles only
+	Visuals,
+};
+
+// Gives one of the actor's components a different material, e.g. a glass window mesh on a brick building
+USTRUCT(BlueprintType)
+struct FVAMaterialOverride
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (GetOptions = "GetComponentNames"))
+	FName Component;
+
+	// Optional - if set, overrides Material below with a UVADefaultMaterial or UVACustomMaterial from AudioWorld's Materials array
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
+	UVAMaterialBase* MaterialAsset = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (EditCondition = "MaterialAsset == nullptr", EditConditionHides))
+	EVAMaterial Material = EVAMaterial::Concrete;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
+	bool bUseFlatTransmission = false;
+};
+
 UCLASS(ClassGroup = ("Vercidium Audio"), meta = (BlueprintSpawnableComponent), DisplayName = "VAMaterialComponent")
 class VAUDIOUNREAL_API UVAMaterialComponent : public UActorComponent
 {
@@ -58,11 +92,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	bool bUseFlatTransmission = false;
 
+	// Which components of this actor, and of attached child actors that inherit this material, become raytracing geometry
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
+	EVAPropagateMode PropagateMode = EVAPropagateMode::All;
+
+	// Which LOD of each static mesh is raytraced. Lower detail LODs are cheaper to raytrace, but should stay closed (watertight) so transmission is calculated correctly. Clamped to the mesh's lowest-detail LOD
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (ClampMin = "0"))
+	int32 MeshLOD = 0;
+
+	// Materials for individual components of this actor
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
+	TArray<FVAMaterialOverride> MaterialOverrides;
+
 	bool GetMaterialId(int32& OutMaterialId);
+
+	// The material for one component, taking MaterialOverrides into account. Returns false (and logs why) if the material can't be resolved
+	bool GetMaterialFor(const UActorComponent* component, int32& outMaterialId, bool& outUseFlatTransmission);
+
+	UFUNCTION()
+	TArray<FString> GetComponentNames() const;
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+public:
 
 #if WITH_EDITOR
 	virtual void PostLoad() override;
 	virtual void OnRegister() override;
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 
 private:
 	// Ensures sibling static meshes keep a CPU-readable copy of their vertex/index buffers
