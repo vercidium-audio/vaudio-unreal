@@ -1,21 +1,8 @@
 #include "VASource.h"
-#include "VAWorld.h"
-#include "VAListener.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
 
-extern "C" {
-#include "vaudio.h"
-}
-
 #include "VALog.h"
-#include "VAConstants.h"
-
-AVASource::AVASource()
-{
-	// Godot's VASource default
-	bAffectsGroupedEAX = true;
-}
 
 bool AVASource::ValidateConfig()
 {
@@ -50,41 +37,12 @@ void AVASource::InitializeTypeSpecific()
 	bAutoPlayPending = bAutoPlay;
 }
 
-void AVASource::DeinitializeTypeSpecific()
-{
-	Playback.Stop();
-
-	Super::DeinitializeTypeSpecific();
-}
-
 void AVASource::TickTypeSpecific(float DeltaTime)
 {
 	Super::TickTypeSpecific(DeltaTime);
 
-	Playback.RemoveFinished();
-	UpdatePlayback();
-
 	if (bAutoPlayPending && IsReadyToPlay())
 		Play();
-
-	Playback.SetLocation(GetActorLocation());
-}
-
-void AVASource::UpdatePlayback()
-{
-	Playback.SetVolumeMultiplier(VolumeMultiplier);
-	Playback.SetPitchMultiplier(PitchMultiplier);
-
-	// Null until the main listener has raytraced this source, and after a bRaytraceOnce source leaves the world. The last result is kept
-	if (VALowPassFilter* lowPassFilter = GetMufflingResult())
-		Playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
-
-	USoundSubmix* submix = nullptr;
-	float sendLevel = 0.0f;
-
-	// Set after the filter, as the send level is compensated by gainLF
-	if (ResolveReverbSend(submix, sendLevel))
-		Playback.SetReverbSend(submix, sendLevel);
 }
 
 bool AVASource::Play()
@@ -115,9 +73,4 @@ bool AVASource::Play()
 
 	Playback.Play(component);
 	return true;
-}
-
-void AVASource::Stop()
-{
-	Playback.Stop();
 }

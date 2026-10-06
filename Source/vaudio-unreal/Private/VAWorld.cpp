@@ -466,7 +466,7 @@ void AVAWorld::Tick(float DeltaTime)
 
 			// Only sources have dry output to toggle
 			for (AVAEmitter* Emitter : RegisteredEmitters)
-				if (AVASource* ConcreteEmitter = Cast<AVASource>(Emitter))
+				if (AVARaytracedSource* ConcreteEmitter = Cast<AVARaytracedSource>(Emitter))
 					ConcreteEmitter->SetDryOutputEnabled(bDryEnabled);
 		}
 
