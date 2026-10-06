@@ -260,7 +260,7 @@ void AVAEmitter::QueueRaytracedByListener(float gainLF, float gainHF)
 	pendingGainHF = gainHF;
 	AudioWorld->QueueEmitterEvents(this);
 
-	// Godot removes the emitter from inside this callback. Here it leaves at the end of its next Tick, so subclasses can apply the result first
+	// Leaves at the end of the first Tick where it's ready to play, so subclasses can play and apply the results first
 	if (bRaytraceOnce)
 		pendingRaytraceOnceRelease = true;
 }
@@ -294,7 +294,7 @@ void AVAEmitter::Tick(float DeltaTime)
 
 	TickTypeSpecific(DeltaTime);
 
-	if (pendingRaytraceOnceRelease)
+	if (pendingRaytraceOnceRelease && IsReadyToPlay())
 	{
 		pendingRaytraceOnceRelease = false;
 
@@ -364,6 +364,18 @@ void AVAEmitter::UpdateVAEmitter()
 bool AVAEmitter::IsRaytraced() const
 {
 	return Emitter && !vaEmitterGetInitialising(Emitter);
+}
+
+bool AVAEmitter::IsReadyToPlay() const
+{
+	if (!GetMufflingResult())
+		return false;
+
+	// Its grouped EAX slot, and so its reverb send, isn't known until it casts its own reverb rays
+	if (vaEmitterGetAffectsGroupedEAX(Emitter) && vaEmitterGetReverbEnabled(Emitter))
+		return vaEmitterGetEAX(Emitter) != nullptr;
+
+	return true;
 }
 
 int32 AVAEmitter::GetGroupedEAXIndex() const

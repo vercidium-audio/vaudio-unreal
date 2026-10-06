@@ -3,13 +3,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Components/AudioComponent.h"
-#include "Components/SceneComponent.h"
-#include "VAFilterConversion.h"
 #include "VASourceRelative.generated.h"
 
+class AVAWorld;
 class AVAListener;
-class AVAEmitter;
 
+// A listener-relative (2D) sound, e.g. the player's own footsteps or weapon. It isn't raytraced or muffled, and sends to the current listener's ListenerReverbSubmix, like Godot's VASourceRelative
 UCLASS(DisplayName = "VASourceRelative")
 class VAUDIOUNREAL_API AVASourceRelative : public AActor
 {
@@ -25,21 +24,18 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
+	// The world whose current listener's reverb this source uses
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
+	AVAWorld* AudioWorld = nullptr;
+
+	// One of these is picked at random when the sound plays
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	TArray<USoundBase*> SourceSounds;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
-	bool bAttachToSelf = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
-	AVAEmitter* ReverbSource = nullptr;
 
 	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;
 
-	const FVASourceFilter& GetFilter() const { return Filter; }
-
-	// The submix this source's reverb is sent to: the listener's ListenerReverbSubmix, the continuous emitter's grouped EAX submix (at its relative gain) or listener reverb, or null. Resolved every tick, even with no audio device
+	// The current listener's ListenerReverbSubmix, or null. Resolved every tick, even with no audio device
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
 	USoundSubmix* GetReverbSubmix() const { return ReverbSubmix; }
 
@@ -48,29 +44,15 @@ public:
 
 private:
 	UPROPERTY(Transient)
-	FVASourceFilter Filter;
-
-	UPROPERTY(Transient)
 	USoundSubmix* ReverbSubmix = nullptr;
 
 	float ReverbSendLevel = 0.0f;
 
-	// This actor has no VAEmitter* of its own (see class comment) but still needs a root
-	// component so bAttachToSelf spawning has something to attach the audio component to.
-	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio|Source")
-	USceneComponent* SourceRootComponent = nullptr;
-
-	// Cached downcasts of ReverbSource, resolved once at BeginPlay - exactly one of these is set
-	// after a valid BeginPlay (or both null if ReverbSource was misconfigured).
 	UPROPERTY(Transient)
-	AVAListener* ListenerEmitter = nullptr;
-
-	UPROPERTY(Transient)
-	AVAEmitter* ContinuousEmitter = nullptr;
+	AVAListener* WarnedListener = nullptr;
 
 	bool bSourcePendingSpawn = false;
 
 	void TrySpawnSourceSound();
 	void UpdateSourceSubmix();
-	bool ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel) const;
 };

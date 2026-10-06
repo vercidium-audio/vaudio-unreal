@@ -81,11 +81,11 @@ void AVASource::TickTypeSpecific(float DeltaTime)
 
 void AVASource::TrySpawnSourceSound()
 {
-	// Wait until the main listener has raytraced this source, which may not have begun play yet
-	VALowPassFilter* lowPassFilter = GetMufflingResult();
-
-	if (!lowPassFilter)
+	// Wait for the muffling and reverb results, so the sound never starts unmuffled or without reverb
+	if (!IsReadyToPlay())
 		return;
+
+	VALowPassFilter* lowPassFilter = GetMufflingResult();
 
 	bSourcePendingSpawn = false;
 
