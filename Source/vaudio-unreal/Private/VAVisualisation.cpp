@@ -102,9 +102,21 @@ void UVAVisualisation::BeginPlay()
 		return;
 	}
 
+	InitializeVisualisation();
+}
+
+void UVAVisualisation::InitializeVisualisation()
+{
+	if (bCallbackRegistered || !OwnerEmitter)
+		return;
+
 	if (!OwnerEmitter->TryInitializeEmitter())
 	{
-		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Cannot initialise as its owner has no AudioWorld assigned"));
+		// The level's VAWorld hasn't begun play yet. The owner calls this again once it joins
+		if (!OwnerEmitter->GetAudioWorld())
+			return;
+
+		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Will not render as its owner failed to initialise"));
 		return;
 	}
 

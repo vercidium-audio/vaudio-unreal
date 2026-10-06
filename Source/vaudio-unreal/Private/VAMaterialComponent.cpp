@@ -1,6 +1,7 @@
 #include "VAMaterialComponent.h"
 #include "VAMaterial.h"
 #include "VAWorld.h"
+#include "VAWorldSubsystem.h"
 #include "VAMaterialConversion.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -22,7 +23,7 @@ bool UVAMaterialComponent::GetMaterialId(int32& OutMaterialId)
 
 	if (!AudioWorld || !AudioWorld->Materials.Contains(MaterialAsset))
 	{
-		VA_WARN_NAMED(TEXT("MaterialAsset '%s' is not in AudioWorld's Materials array - assign AudioWorld first and add the asset to its Materials array."), *MaterialAsset->GetName());
+		VA_WARN_NAMED(TEXT("MaterialAsset '%s' is not in the VAWorld's Materials array. Add it to the Materials array of the level's VAWorld."), *MaterialAsset->GetName());
 		return false;
 	}
 
@@ -49,7 +50,7 @@ bool UVAMaterialComponent::GetMaterialFor(const UActorComponent* component, int3
 
 			if (!AudioWorld || !AudioWorld->Materials.Contains(materialOverride.MaterialAsset))
 			{
-				VA_WARN_NAMED(TEXT("The MaterialAsset '%s' for component '%s' is not in AudioWorld's Materials array."), *materialOverride.MaterialAsset->GetName(), *component->GetName());
+				VA_WARN_NAMED(TEXT("The MaterialAsset '%s' for component '%s' is not in the VAWorld's Materials array."), *materialOverride.MaterialAsset->GetName(), *component->GetName());
 				return false;
 			}
 
@@ -79,14 +80,47 @@ void UVAMaterialComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	AudioWorld = AVAWorld::Find(this);
+
+	if (AudioWorld)
+	{
+		AudioWorld->AddMaterialPrimitives(this);
+		return;
+	}
+
+	// The VAWorld begins play after this component, as actor BeginPlay order isn't guaranteed
+	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+		WorldRegisteredHandle = subsystem->OnWorldRegistered.AddUObject(this, &UVAMaterialComponent::OnWorldRegistered);
+}
+
+void UVAMaterialComponent::OnWorldRegistered()
+{
+	StopWaitingForWorld();
+	AudioWorld = AVAWorld::Find(this);
+
 	if (AudioWorld)
 		AudioWorld->AddMaterialPrimitives(this);
 }
 
+void UVAMaterialComponent::StopWaitingForWorld()
+{
+	if (!WorldRegisteredHandle.IsValid())
+		return;
+
+	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+		subsystem->OnWorldRegistered.Remove(WorldRegisteredHandle);
+
+	WorldRegisteredHandle.Reset();
+}
+
 void UVAMaterialComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	StopWaitingForWorld();
+
 	if (AudioWorld)
 		AudioWorld->RemoveMaterialPrimitives(this);
+
+	AudioWorld = nullptr;
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -111,11 +145,6 @@ void UVAMaterialComponent::OnRegister()
 {
 	Super::OnRegister();
 	EnsureMeshesAllowCPUAccess();
-
-	// Owner is null in CDO/archetype contexts (see EnsureMeshesAllowCPUAccess above) - nothing to warn about yet.
-	AActor* Owner = GetOwner();
-	if (Owner && !AudioWorld)
-		VA_LOG_NAMED(TEXT("Has no AudioWorld assigned - its geometry will not be added to raytracing until one is set."));
 }
 
 

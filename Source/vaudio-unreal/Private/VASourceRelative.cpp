@@ -16,14 +16,6 @@ void AVASourceRelative::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Disable the actor if validation fails
-	if (!AudioWorld)
-	{
-		VA_WARN_NAMED(TEXT("Will not play as it does not have an AudioWorld assigned"));
-		SetActorTickEnabled(false);
-		return;
-	}
-
 	if (SourceSounds.Num() == 0)
 	{
 		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound"));
@@ -98,7 +90,9 @@ void AVASourceRelative::UpdatePlayback()
 	Playback.SetVolumeMultiplier(VolumeMultiplier);
 	Playback.SetPitchMultiplier(PitchMultiplier);
 
-	AVAListener* listener = AudioWorld->GetMainListener();
+	// Found every tick, as the VAWorld may begin play after this actor
+	AVAWorld* audioWorld = AVAWorld::Find(this);
+	AVAListener* listener = audioWorld ? audioWorld->GetMainListener() : nullptr;
 
 	// Keep the current send while there's no current listener, e.g. while the listener is switching
 	if (!listener)

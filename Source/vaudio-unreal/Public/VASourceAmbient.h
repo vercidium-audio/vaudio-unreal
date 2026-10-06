@@ -22,10 +22,6 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
-	// The world whose main listener's ambient filter this source reads from
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
-	AVAWorld* AudioWorld = nullptr;
-
 	// The sound file to play (2D - rain/wind/room-tone has no meaningful position)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	USoundBase* SourceSound = nullptr;

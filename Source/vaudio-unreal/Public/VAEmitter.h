@@ -143,11 +143,11 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
 
-	// The world that this emitter belongs to
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	AVAWorld* AudioWorld = nullptr;
-
 	// --- Runtime access ---
+
+	// The level's VAWorld, found automatically. Null until this emitter has joined it
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	AVAWorld* GetAudioWorld() const { return AudioWorld; }
 
 	VAEmitter* GetVAEmitter() const { return Emitter; }
 
@@ -196,7 +196,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio")
 	FVAOnRaytracedByListener OnRaytracedByListener;
 
-	// Creates the VA emitter and wires up audio components. Safe to call repeatedly: no-ops (returns true) if already registered with the world, returns false if AudioWorld isn't assigned or initialisation failed. A listener that isn't current is registered but has no handle
+	// Creates the VA emitter and wires up audio components. Safe to call repeatedly: no-ops (returns true) if already registered with the world, returns false if the level's VAWorld hasn't begun play yet or initialisation failed. A listener that isn't current is registered but has no handle
 	bool TryInitializeEmitter();
 
 	// Called from the SDK callbacks during vaWorldUpdate. The Blueprint delegates are broadcast later by FlushPendingEvents, after vaWorldUpdate returns, so a handler that spawns or destroys emitters can't re-enter the SDK
@@ -391,12 +391,22 @@ protected:
 
 	VAEmitter* Emitter = nullptr;
 
+	// Resolved by TryInitializeEmitter
+	UPROPERTY(Transient)
+	TObjectPtr<AVAWorld> AudioWorld = nullptr;
+
 	// Updated every tick while bAffectsGroupedEAX is set
 	int32 CurrentGroupedEAXIndex = -1;
 
 private:
 	bool registered = false;
 	bool failedInitialisation = false;
+
+	// Set while this emitter waits for the level's VAWorld to begin play
+	FDelegateHandle WorldRegisteredHandle;
+
+	void OnWorldRegistered();
+	void StopWaitingForWorld();
 
 	// bRaytraceOnce: set when the listener raytraces this emitter, and the emitter leaves the world at the end of the first Tick where IsReadyToPlay() is true
 	bool pendingRaytraceOnceRelease = false;

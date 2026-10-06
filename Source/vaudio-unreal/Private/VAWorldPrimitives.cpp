@@ -87,10 +87,9 @@ void AVAWorld::BakeGeometry()
 	{
 		AActor* Actor = *ActorIt;
 
-		// Null if this actor (or its attach-parent chain) has no UVAMaterialComponent, or has
-		// one that belongs to a different VAWorld - not baked geometry for this world.
+		// Null if this actor (or its attach-parent chain) has no UVAMaterialComponent. A level has one VAWorld, so every material component belongs to this one
 		UVAMaterialComponent* MatComp = FindMaterialInChain(Actor);
-		if (!MatComp || MatComp->AudioWorld != this || MatComp->PropagateMode == EVAPropagateMode::Colliders) continue;
+		if (!MatComp || MatComp->PropagateMode == EVAPropagateMode::Colliders) continue;
 
 		TArray<UStaticMeshComponent*> MeshComps;
 		Actor->GetComponents<UStaticMeshComponent>(MeshComps);
@@ -131,9 +130,6 @@ void AVAWorld::AddMaterialPrimitives(UVAMaterialComponent* source)
 
 	if (!owner)
 		return;
-
-	// The world may not have begun play yet, since actor BeginPlay order isn't guaranteed
-	InitializeVAWorld();
 
 	// Safe to call again, e.g. if the component is re-registered
 	RemoveMaterialPrimitives(source);
@@ -200,7 +196,7 @@ void AVAWorld::SyncPrimitive(AActor* actor)
 
 	UVAMaterialComponent* source = FindMaterialInChain(actor);
 
-	if (source && source->AudioWorld == this)
+	if (source && source->GetAudioWorld() == this)
 		AddActorTree(actor, source);
 }
 

@@ -246,6 +246,10 @@ public:
 
 	static TArray<TWeakObjectPtr<AVAWorld>> RunningWorlds;
 
+	// The VAWorld in the context object's level, once it has begun play. Every VA actor and component uses this, so none of them need a reference to it
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject"))
+	static AVAWorld* Find(const UObject* WorldContextObject);
+
 	// --- Internal API used by emitters ---
 
 	void InitializeVAWorld();

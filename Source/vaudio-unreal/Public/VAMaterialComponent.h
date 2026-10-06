@@ -57,7 +57,7 @@ struct FVAMaterialOverride
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (GetOptions = "GetComponentNames"))
 	FName Component;
 
-	// Optional - if set, overrides Material below with a UVADefaultMaterial or UVACustomMaterial from AudioWorld's Materials array
+	// Optional - if set, overrides Material below with a UVADefaultMaterial or UVACustomMaterial from the VAWorld's Materials array
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	UVAMaterialBase* MaterialAsset = nullptr;
 
@@ -76,11 +76,7 @@ class VAUDIOUNREAL_API UVAMaterialComponent : public UActorComponent
 public:
 	UVAMaterialComponent();
 
-	// Which VAWorld this actor (and its attached children) should be added to.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	AVAWorld* AudioWorld = nullptr;
-
-	// Optional - if set, overrides Material below with a UVADefaultMaterial or UVACustomMaterial from AudioWorld's Materials array.
+	// Optional - if set, overrides Material below with a UVADefaultMaterial or UVACustomMaterial from the VAWorld's Materials array.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	UVAMaterialBase* MaterialAsset = nullptr;
 
@@ -109,12 +105,25 @@ public:
 	// The material for one component, taking MaterialOverrides into account. Returns false (and logs why) if the material can't be resolved
 	bool GetMaterialFor(const UActorComponent* component, int32& outMaterialId, bool& outUseFlatTransmission);
 
+	// The level's VAWorld, found automatically. Null until this component has joined it
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	AVAWorld* GetAudioWorld() const { return AudioWorld; }
+
 	UFUNCTION()
 	TArray<FString> GetComponentNames() const;
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AVAWorld> AudioWorld = nullptr;
+
+	// Set while this component waits for the level's VAWorld to begin play
+	FDelegateHandle WorldRegisteredHandle;
+
+	void OnWorldRegistered();
+	void StopWaitingForWorld();
 
 public:
 

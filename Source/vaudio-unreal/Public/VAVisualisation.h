@@ -65,6 +65,9 @@ public:
 	// results, always on the main thread during vaWorldUpdate() - safe to touch UObjects directly
 	void OnVisualisationData(VAVisualisationData* data, int32 count);
 
+	// Called from BeginPlay, or by the owner once it joins the VAWorld if that begins play later. No-op once initialised
+	void InitializeVisualisation();
+
 #if WITH_EDITOR
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio|Visualisation")
 	void GenerateFadeNodes();

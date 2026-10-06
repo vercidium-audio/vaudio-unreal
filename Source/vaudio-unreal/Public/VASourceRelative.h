@@ -24,10 +24,6 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
-	// The world whose current listener's reverb this source uses
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
-	AVAWorld* AudioWorld = nullptr;
-
 	// One of these is picked at random each time the sound plays
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	TArray<USoundBase*> SourceSounds;

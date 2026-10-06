@@ -1,8 +1,8 @@
 #include "VAWorld.h"
+#include "VAWorldSubsystem.h"
 #include "VASubmixEffectDirectionalPan.h"
 #include "VAEmitter.h"
 #include "VASource.h"
-#include "VAEmitter.h"
 #include "VAListener.h"
 #include "VAMaterial.h"
 #include "VAReverbConversion.h"
@@ -39,7 +39,7 @@ AVAWorld::AVAWorld()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Allow components to be attached to this AudioWorld
+	// Allow components to be attached to this VAWorld
 	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
 
@@ -141,12 +141,33 @@ void AVAWorld::BeginPlay()
 {
 	Super::BeginPlay();
 
+	UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>();
+
+	if (!subsystem)
+		return;
+
+	if (AVAWorld* existing = subsystem->GetVAWorld())
+	{
+		VA_ERROR_NAMED(TEXT("Is ignored, as '%s' is already the VAWorld in this level. A level can only have one VAWorld."), *existing->GetActorNameOrLabel());
+		SetActorTickEnabled(false);
+		return;
+	}
+
 	RunningWorlds.Add(this);
 
 	InitializeVAWorld();
+
+	// Actors that began play before this one join it now
+	subsystem->RegisterWorld(this);
 }
 
-// This can also be called by other VA emitters, as they might initialise first (actor init order not guaranteed)
+AVAWorld* AVAWorld::Find(const UObject* WorldContextObject)
+{
+	UWorld* world = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+	UVAWorldSubsystem* subsystem = world ? world->GetSubsystem<UVAWorldSubsystem>() : nullptr;
+	return subsystem ? subsystem->GetVAWorld() : nullptr;
+}
+
 void AVAWorld::InitializeVAWorld()
 {
 	// Already initialised, all is good
@@ -274,6 +295,9 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 
 	RunningWorlds.RemoveSingleSwap(this);
+
+	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+		subsystem->UnregisterWorld(this);
 
 	for (int32 i = 0; i < GroupedEAXPresets.Num(); i++)
 	{

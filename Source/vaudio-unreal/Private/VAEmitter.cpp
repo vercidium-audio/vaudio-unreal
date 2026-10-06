@@ -1,6 +1,8 @@
 #include "VAEmitter.h"
 #include "VAWorld.h"
+#include "VAWorldSubsystem.h"
 #include "VAListener.h"
+#include "VAVisualisation.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -73,29 +75,58 @@ void AVAEmitter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Disable the actor if validation fails
-	if (!AudioWorld)
-	{
-		VA_WARN_NAMED(TEXT("Does not have an AudioWorld assigned and will not cast rays or play sound"));
-		SetActorTickEnabled(false);
+	// A UVAVisualisation on this actor may have initialised it already, during Super::BeginPlay
+	if (TryInitializeEmitter() || AudioWorld)
 		return;
-	}
 
-	TryInitializeEmitter();
+	// The VAWorld begins play after this actor, as actor BeginPlay order isn't guaranteed. Tick returns early until then
+	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+		WorldRegisteredHandle = subsystem->OnWorldRegistered.AddUObject(this, &AVAEmitter::OnWorldRegistered);
+}
+
+void AVAEmitter::OnWorldRegistered()
+{
+	StopWaitingForWorld();
+
+	if (!TryInitializeEmitter())
+		return;
+
+	// A visualisation that began play while this emitter was waiting
+	TArray<UVAVisualisation*> visualisations;
+	GetComponents(visualisations);
+
+	for (UVAVisualisation* visualisation : visualisations)
+		if (visualisation->HasBegunPlay())
+			visualisation->InitializeVisualisation();
+}
+
+void AVAEmitter::StopWaitingForWorld()
+{
+	if (!WorldRegisteredHandle.IsValid())
+		return;
+
+	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+		subsystem->OnWorldRegistered.Remove(WorldRegisteredHandle);
+
+	WorldRegisteredHandle.Reset();
 }
 
 bool AVAEmitter::TryInitializeEmitter()
 {
 	// Already failed once before, don't try again
-	if (!AudioWorld || failedInitialisation)
+	if (failedInitialisation)
 		return false;
 
 	// Already initialised, all is good
 	if (registered)
 		return true;
 
-	// The world may not have begun play yet, since actor BeginPlay order isn't guaranteed
-	AudioWorld->InitializeVAWorld();
+	if (!AudioWorld)
+		AudioWorld = AVAWorld::Find(this);
+
+	// The level's VAWorld hasn't begun play yet
+	if (!AudioWorld)
+		return false;
 
 	if (!ValidateConfig() || !AttachToWorld())
 	{
@@ -176,6 +207,12 @@ void AVAEmitter::DestroyUnaddedEmitter()
 void AVAEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
+
+	if (WorldRegisteredHandle.IsValid())
+	{
+		StopWaitingForWorld();
+		VA_WARN_NAMED(TEXT("Ended play without finding a VAWorld, so it never cast rays or played sound. Place a VAWorld in the level."));
+	}
 
 	DeinitializeTypeSpecific();
 
