@@ -79,6 +79,58 @@ void AVAEmitter::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& G
 	GainHF = MufflingFilter->gainHF;
 }
 
+bool AVAEmitter::ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel) const
+{
+	OutSubmix = nullptr;
+	OutSendLevel = 0.0f;
+
+	// Not added to a world yet, or already removed
+	if (!AudioWorld || !Emitter)
+		return false;
+
+	VAWorld* vaWorld = AudioWorld->GetVAWorld();
+	AVAListener* Listener = AudioWorld->GetMainListener();
+
+	// The listener ended play
+	if (!vaWorld || !Listener || !Listener->GetVAEmitter())
+		return false;
+
+	int32 GroupedEAXIndex = bAffectsGroupedEAX ? GetGroupedEAXIndex() : -1;
+
+	if (GroupedEAXIndex >= 0)
+	{
+		int groupedEAXCount = vaWorldGetGroupedEAXCount(vaWorld);
+
+		if (GroupedEAXIndex >= groupedEAXCount)
+		{
+			VA_WARN_NAMED(TEXT("Has an invalid grouped EAX index: %d. There are only %d grouped EAX submixes available"), GroupedEAXIndex, groupedEAXCount);
+			return false;
+		}
+
+		// A grouped EAX index is only assigned once this emitter's own reverb rays have completed, so its grouped EAX is guaranteed to be available
+		const VAEAXReverb* EAX = vaWorldGetGroupedEAX(vaWorld)[GroupedEAXIndex];
+
+		// Only relative gain is supported. Can't do directional reverb in Unreal :(
+		const float* relativeGain = vaEAXReverbGetRelativeGain(EAX, Listener->GetVAEmitter());
+
+		if (!relativeGain)
+			return false;
+
+		// Null if the user assigned a null submix to World.groupedEAX[]. A warning is already logged in VAWorld.cpp
+		OutSubmix = AudioWorld->GetGroupedEAXSubmix(GroupedEAXIndex);
+		OutSendLevel = *relativeGain;
+		return true;
+	}
+
+	if (bUseListenerReverb && Listener->ListenerReverbSubmix)
+	{
+		OutSubmix = Listener->ListenerReverbSubmix;
+		OutSendLevel = 1.0f;
+	}
+
+	return true;
+}
+
 #if WITH_EDITOR
 void AVAEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {

@@ -53,7 +53,5 @@ private:
 	FVASourceFilter Filter;
 
 	void UpdateSourceSubmix();
-	bool ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel);
-	void SendToSubmix(USoundSubmix* Submix, float SendLevel);
 	void TrySpawnSourceSound();
 };

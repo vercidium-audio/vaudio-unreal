@@ -5,6 +5,7 @@
 #include "VAEmitter.generated.h"
 
 struct VALowPassFilter;
+class USoundSubmix;
 
 UCLASS(DisplayName = "VAEmitter")
 class VAUDIOUNREAL_API AVAEmitter : public AVAEmitterBase
@@ -44,6 +45,9 @@ public:
 	// Reads this emitter's raytraced muffling result. bSuccess is false (and GainLF/GainHF are zeroed) until the listener has raytraced this emitter at least once
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Muffling")
 	void GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const;
+
+	// Mirrors Godot's VAWorld::get_reverb_effect: the grouped EAX submix at its relative gain, else the listener's ListenerReverbSubmix (bUseListenerReverb), else null. Returns false to keep the current send, e.g. while the listener is switching
+	bool ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel) const;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;

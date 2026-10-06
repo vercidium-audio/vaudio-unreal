@@ -10,6 +10,7 @@ extern "C" {
 
 #include "VALog.h"
 #include "VAConstants.h"
+#include "VASubmixSend.h"
 
 AVASource::AVASource()
 {
@@ -142,81 +143,13 @@ void AVASource::UpdateSourceSubmix()
 
 	// Moved to another submix (a different grouped EAX slot, between grouped and listener reverb, or a new current listener), so silence the old send
 	if (ReverbSubmix && ReverbSubmix != Submix)
-		SendToSubmix(ReverbSubmix, 0.0f);
+		VASetReverbSend(SourceAudioComponent, ReverbSubmix, 0.0f);
 
 	ReverbSubmix = Submix;
 	ReverbSendLevel = SendLevel;
 
 	if (ReverbSubmix)
-		SendToSubmix(ReverbSubmix, ReverbSendLevel);
-}
-
-// Mirrors Godot's VAWorld::get_reverb_effect. Returns false to keep the current send, e.g. while the listener is switching
-bool AVASource::ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel)
-{
-	VAWorld* vaWorld = AudioWorld->GetVAWorld();
-	AVAListener* Listener = AudioWorld->GetMainListener();
-
-	// The listener ended play
-	if (!Listener || !Listener->GetVAEmitter())
-		return false;
-
-	int32 GroupedEAXIndex = bAffectsGroupedEAX ? GetGroupedEAXIndex() : -1;
-
-	if (GroupedEAXIndex >= 0)
-	{
-		int groupedEAXCount = vaWorldGetGroupedEAXCount(vaWorld);
-
-		if (GroupedEAXIndex >= groupedEAXCount)
-		{
-			VA_WARN_NAMED(TEXT("Has an invalid grouped EAX index: %d. There are only %d grouped EAX submixes available"), GroupedEAXIndex, groupedEAXCount);
-			return false;
-		}
-
-		// A grouped EAX index is only assigned once this source's own reverb rays have completed, so its grouped EAX is available
-		const VAEAXReverb* EAX = vaWorldGetGroupedEAX(vaWorld)[GroupedEAXIndex];
-
-		// Only relative gain is supported. Can't do directional reverb in Unreal :(
-		const float* relativeGain = vaEAXReverbGetRelativeGain(EAX, Listener->GetVAEmitter());
-
-		if (!relativeGain)
-			return false;
-
-		// Null if the user assigned a null submix to World.groupedEAX[]. A warning is already logged in VAWorld.cpp
-		OutSubmix = AudioWorld->GetGroupedEAXSubmix(GroupedEAXIndex);
-		OutSendLevel = *relativeGain;
-		return true;
-	}
-
-	if (bUseListenerReverb && Listener->ListenerReverbSubmix)
-	{
-		OutSubmix = Listener->ListenerReverbSubmix;
-		OutSendLevel = 1.0f;
-	}
-
-	return true;
-}
-
-void AVASource::SendToSubmix(USoundSubmix* Submix, float SendLevel)
-{
-	// Sound not played yet - still waiting for raytracing
-	if (!SourceAudioComponent)
-		return;
-
-	FSoundSubmixSendInfo SubmixSendInfo;
-	SubmixSendInfo.SoundSubmix = Submix;
-	SubmixSendInfo.SendLevel = SendLevel;
-	SubmixSendInfo.SendLevelControlMethod = ESendLevelControlMethod::Manual;
-	SubmixSendInfo.SendStage = ESubmixSendStage::PreDistanceAttenuation;
-
-	if (FAudioDevice* AudioDevice = SourceAudioComponent->GetAudioDevice())
-	{
-		uint64 AudioComponentID = SourceAudioComponent->GetAudioComponentID();
-		AudioDevice->SendCommandToActiveSounds(AudioComponentID, [SubmixSendInfo](FActiveSound& ActiveSound)
-		{
-			ActiveSound.SetSubmixSend(SubmixSendInfo);
-		});
-	}
+		VASetReverbSend(SourceAudioComponent, ReverbSubmix, ReverbSendLevel);
 }
 
 // Toggle whether we only hear reverb

@@ -11,6 +11,7 @@ extern "C" {
 
 #include "VALog.h"
 #include "VAConstants.h"
+#include "VASubmixSend.h"
 
 AVASourceRelative::AVASourceRelative()
 {
@@ -153,41 +154,51 @@ void AVASourceRelative::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	ApplyReverbSource();
-}
-
-void AVASourceRelative::ApplyReverbSource()
-{
 	if (bSourcePendingSpawn)
 		TrySpawnSourceSound();
 
-	// TODO - line 198, SourceAudioComponent was null
-	if (!SourceAudioComponent)
+	if (ContinuousEmitter)
+	{
+		// Null until the continuous emitter has been raytraced by the listener
+		if (VALowPassFilter* vaLowPassFilter = ContinuousEmitter->GetMufflingResult())
+			Filter.Apply(SourceAudioComponent, vaLowPassFilter->gainLF, vaLowPassFilter->gainHF);
+	}
+
+	UpdateSourceSubmix();
+}
+
+void AVASourceRelative::UpdateSourceSubmix()
+{
+	USoundSubmix* Submix = nullptr;
+	float SendLevel = 0.0f;
+
+	if (!ResolveReverbSend(Submix, SendLevel))
 		return;
 
+	// Moved to another submix (e.g. the continuous emitter changed grouped EAX slot), so silence the old send
+	if (ReverbSubmix && ReverbSubmix != Submix)
+		VASetReverbSend(SourceAudioComponent, ReverbSubmix, 0.0f);
+
+	ReverbSubmix = Submix;
+	ReverbSendLevel = SendLevel;
+
+	if (ReverbSubmix)
+		VASetReverbSend(SourceAudioComponent, ReverbSubmix, ReverbSendLevel);
+}
+
+bool AVASourceRelative::ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel) const
+{
+	// Already logged in BeginPlay if ListenerReverbSubmix is null
 	if (ListenerEmitter)
 	{
-		VAEmitter* vaEmitter = ListenerEmitter->GetVAEmitter();
-
-		// Already logged above if ListenerReverbSubmix is null
-		if (ListenerEmitter->ListenerReverbSubmix)
-			SourceAudioComponent->SetSubmixSend(ListenerEmitter->ListenerReverbSubmix, 1.0f);
+		OutSubmix = ListenerEmitter->ListenerReverbSubmix;
+		OutSendLevel = 1.0f;
+		return true;
 	}
-	else if (ContinuousEmitter)
-	{
-		VALowPassFilter* vaLowPassFilter = ContinuousEmitter->GetMufflingResult();
 
-		// Continuous target hasn't been raytraced by the listener yet
-		if (!vaLowPassFilter)
-			return;
+	// Leeches the continuous emitter's reverb, like Godot's VASourceLeech
+	if (ContinuousEmitter)
+		return ContinuousEmitter->ResolveReverbSend(OutSubmix, OutSendLevel);
 
-		Filter.Apply(SourceAudioComponent, vaLowPassFilter->gainLF, vaLowPassFilter->gainHF);
-
-		// Apply the continuous emitter's grouped EAX reverb to this sound
-		if (ContinuousEmitter->AudioWorld)
-		{
-			if (USoundSubmix* Submix = ContinuousEmitter->AudioWorld->GetGroupedEAXSubmix(ContinuousEmitter->GetGroupedEAXIndex()))
-				SourceAudioComponent->SetSubmixSend(Submix, 1.0f);
-		}
-	}
+	return false;
 }

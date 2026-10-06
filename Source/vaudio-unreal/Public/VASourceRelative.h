@@ -40,9 +40,21 @@ public:
 
 	const FVASourceFilter& GetFilter() const { return Filter; }
 
+	// The submix this source's reverb is sent to: the listener's ListenerReverbSubmix, the continuous emitter's grouped EAX submix (at its relative gain) or listener reverb, or null. Resolved every tick, even with no audio device
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
+	USoundSubmix* GetReverbSubmix() const { return ReverbSubmix; }
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
+	float GetReverbSendLevel() const { return ReverbSendLevel; }
+
 private:
 	UPROPERTY(Transient)
 	FVASourceFilter Filter;
+
+	UPROPERTY(Transient)
+	USoundSubmix* ReverbSubmix = nullptr;
+
+	float ReverbSendLevel = 0.0f;
 
 	// This actor has no VAEmitter* of its own (see class comment) but still needs a root
 	// component so bAttachToSelf spawning has something to attach the audio component to.
@@ -60,5 +72,6 @@ private:
 	bool bSourcePendingSpawn = false;
 
 	void TrySpawnSourceSound();
-	void ApplyReverbSource();
+	void UpdateSourceSubmix();
+	bool ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel) const;
 };
