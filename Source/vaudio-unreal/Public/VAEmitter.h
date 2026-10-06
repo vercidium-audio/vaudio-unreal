@@ -33,6 +33,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (EditCondition = "bAffectsGroupedEAX", ClampMin = "0.0", ClampMax = "1.0"))
 	float MaxVolume = 1.0f;
 
+	// When bAffectsGroupedEAX is false, this emitter uses the current listener's ListenerReverbSubmix if this is true, and has no reverb if it's false
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb")
+	bool bUseListenerReverb = false;
+
 	int32 GetGroupedEAXIndex() const { return CurrentGroupedEAXIndex; }
 
 	VALowPassFilter* GetMufflingResult() const;

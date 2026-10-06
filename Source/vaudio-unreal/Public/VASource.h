@@ -32,7 +32,19 @@ public:
 	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;
 
+	// The submix this source's reverb is sent to: its grouped EAX submix, the current listener's ListenerReverbSubmix (bUseListenerReverb), or null. Resolved every tick, even with no audio device
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
+	USoundSubmix* GetReverbSubmix() const { return ReverbSubmix; }
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
+	float GetReverbSendLevel() const { return ReverbSendLevel; }
+
 private:
+	UPROPERTY(Transient)
+	USoundSubmix* ReverbSubmix = nullptr;
+
+	float ReverbSendLevel = 0.0f;
+
 	bool bCurrentDryEnabled = true;
 
 	bool bSourcePendingSpawn = false;
@@ -44,5 +56,7 @@ private:
 	USoundEffectSourcePresetChain* SourceEffectChain = nullptr;
 
 	void UpdateSourceSubmix();
+	bool ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel);
+	void SendToSubmix(USoundSubmix* Submix, float SendLevel);
 	void TrySpawnSourceSound();
 };

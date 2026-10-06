@@ -153,8 +153,7 @@ public:
 
 	// --- Reverb ---
 
-	// One submix per grouped EAX zone. The SDK assigns each source emitter a zone index;
-	// that index selects which submix its audio is sent to. Must have at least 2 entries.
+	// One submix per grouped EAX. The SDK assigns each source emitter a grouped EAX index, which selects the submix its audio is sent to. Must have at least 2 entries.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb")
 	TArray<USoundSubmix*> GroupedEAXSubmixes;
 
@@ -262,7 +261,7 @@ public:
 	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
 
-	// The pan last pushed to this zone's submix, from -1 (left) to 1 (right) relative to the player's audio listener
+	// The pan last pushed to this grouped EAX's submix, from -1 (left) to 1 (right) relative to the player's audio listener
 	float GetGroupedEAXPan(int32 Index) const;
 	int32 GetGroupedEAXPresetCount() const { return GroupedEAXPresets.Num(); }
 	int32 GetMaximumGroupedEAXCount() const { return GroupedEAXSubmixes.Num(); }

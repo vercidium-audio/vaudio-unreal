@@ -500,7 +500,7 @@ void AVAWorld::Tick(float DeltaTime)
 				}
 			}
 
-			// Per-grouped-EAX-zone reverb data (mirrors the settings OnReverbUpdated() sends to each preset - recomputed here purely for display).
+			// Per-grouped-EAX reverb data (mirrors the settings OnReverbUpdated() sends to each preset - recomputed here purely for display).
 			const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
 			int32 GroupedEAXCount = vaWorldGetGroupedEAXCount(World);
 

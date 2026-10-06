@@ -74,6 +74,9 @@ void AVASource::DeinitializeTypeSpecific()
 		SourceAudioComponent = nullptr;
 	}
 
+	ReverbSubmix = nullptr;
+	ReverbSendLevel = 0.0f;
+
 	// No need to separately zero the submix send gain: Stop() above tears down the audio
 	// component (SpawnSound* defaults to bAutoDestroy), which releases its submix send too.
 	Super::DeinitializeTypeSpecific();
@@ -90,8 +93,7 @@ void AVASource::TickTypeSpecific(float DeltaTime)
 	if (VALowPassFilter* lowPassFilter = GetMufflingResult())
 		ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 
-	if (bAffectsGroupedEAX)
-		UpdateSourceSubmix();
+	UpdateSourceSubmix();
 
 	if (SourceAudioComponent)
 	{
@@ -165,51 +167,74 @@ void AVASource::ApplySourceFilter(float GainLF, float GainHF)
 
 void AVASource::UpdateSourceSubmix()
 {
-	// Sound not played yet - still waiting for raytracing
-	if (!SourceAudioComponent)
+	USoundSubmix* Submix = nullptr;
+	float SendLevel = 0.0f;
+
+	if (!ResolveReverbSend(Submix, SendLevel))
 		return;
 
-	int32 GroupedEAXIndex = GetGroupedEAXIndex();
+	// Moved to another submix (a different grouped EAX slot, between grouped and listener reverb, or a new current listener), so silence the old send
+	if (ReverbSubmix && ReverbSubmix != Submix)
+		SendToSubmix(ReverbSubmix, 0.0f);
 
-	// Raytracing has not completed at least once
-	if (GroupedEAXIndex < 0)
-		return;
+	ReverbSubmix = Submix;
+	ReverbSendLevel = SendLevel;
 
-	USoundSubmix* Submix = AudioWorld->GetGroupedEAXSubmix(GroupedEAXIndex);
+	if (ReverbSubmix)
+		SendToSubmix(ReverbSubmix, ReverbSendLevel);
+}
 
-	// The user assigned a null submix to World.groupedEAX[]. A warning is already logged in VAWorld.cpp
-	if (!Submix)
-		return;
-
+// Mirrors Godot's VAWorld::get_reverb_effect. Returns false to keep the current send, e.g. while the listener is switching
+bool AVASource::ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel)
+{
 	VAWorld* vaWorld = AudioWorld->GetVAWorld();
 	AVAListener* Listener = AudioWorld->GetMainListener();
 
 	// The listener ended play
 	if (!Listener || !Listener->GetVAEmitter())
-		return;
+		return false;
 
-	// At this stage we have been raytraced by the listener, so groupedEAX should be available
-	const VAEAXReverb** groupedEAX = vaWorldGetGroupedEAX(vaWorld);
+	int32 GroupedEAXIndex = bAffectsGroupedEAX ? GetGroupedEAXIndex() : -1;
 
-	int groupedEAXCount = vaWorldGetGroupedEAXCount(vaWorld);
-
-	if (GroupedEAXIndex >= groupedEAXCount)
+	if (GroupedEAXIndex >= 0)
 	{
-		VA_WARN_NAMED(TEXT("Has an invalid grouped EAX index: %d. There are only %d grouped EAX submixes available"), GroupedEAXIndex, groupedEAXCount);
-		return;
+		int groupedEAXCount = vaWorldGetGroupedEAXCount(vaWorld);
+
+		if (GroupedEAXIndex >= groupedEAXCount)
+		{
+			VA_WARN_NAMED(TEXT("Has an invalid grouped EAX index: %d. There are only %d grouped EAX submixes available"), GroupedEAXIndex, groupedEAXCount);
+			return false;
+		}
+
+		// A grouped EAX index is only assigned once this source's own reverb rays have completed, so its grouped EAX is available
+		const VAEAXReverb* EAX = vaWorldGetGroupedEAX(vaWorld)[GroupedEAXIndex];
+
+		// Only relative gain is supported. Can't do directional reverb in Unreal :(
+		const float* relativeGain = vaEAXReverbGetRelativeGain(EAX, Listener->GetVAEmitter());
+
+		if (!relativeGain)
+			return false;
+
+		// Null if the user assigned a null submix to World.groupedEAX[]. A warning is already logged in VAWorld.cpp
+		OutSubmix = AudioWorld->GetGroupedEAXSubmix(GroupedEAXIndex);
+		OutSendLevel = *relativeGain;
+		return true;
 	}
 
-	const VAEAXReverb* EAX = groupedEAX[GroupedEAXIndex];
+	if (bUseListenerReverb && Listener->ListenerReverbSubmix)
+	{
+		OutSubmix = Listener->ListenerReverbSubmix;
+		OutSendLevel = 1.0f;
+	}
 
-	VAEmitter* ListenerVA = Listener->GetVAEmitter();
+	return true;
+}
 
-	// Only relative gain is supported. Can't do directional reverb in Unreal :(
-	const float* relativeGain = vaEAXReverbGetRelativeGain(EAX, ListenerVA);
-
-	if (!relativeGain)
+void AVASource::SendToSubmix(USoundSubmix* Submix, float SendLevel)
+{
+	// Sound not played yet - still waiting for raytracing
+	if (!SourceAudioComponent)
 		return;
-
-	float SendLevel = *relativeGain;
 
 	FSoundSubmixSendInfo SubmixSendInfo;
 	SubmixSendInfo.SoundSubmix = Submix;

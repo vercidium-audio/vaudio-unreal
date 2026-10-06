@@ -31,7 +31,7 @@ enum class EVAMessageSlot : uint32
 	// + offset, see EVAVisualisationMaterialWarningOffset
 	VisualisationMaterial = 0x100,
 
-	// + grouped EAX zone index
+	// + grouped EAX index
 	GroupedEAX = 0x1000,
 
 	// + target index
