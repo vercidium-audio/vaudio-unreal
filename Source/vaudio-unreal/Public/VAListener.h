@@ -19,8 +19,28 @@ protected:
 	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 	virtual void UpdateVAEmitter() override;
+	virtual bool AttachToWorld() override;
+	virtual void DetachFromWorld() override;
 
 public:
+	// Every listener in a world shares one SDK emitter, which is controlled by the current listener. Only one listener is current at a time. A listener that begins play with this enabled takes over from the current one
+	UPROPERTY(EditAnywhere, BlueprintGetter = IsCurrent, BlueprintSetter = SetCurrent, Category = "Vercidium Audio|Listener")
+	bool bCurrent = false;
+
+	UFUNCTION(BlueprintGetter)
+	bool IsCurrent() const { return bCurrent; }
+
+	// Disabling current hands the shared emitter to another listener. The only listener in a world stays current
+	UFUNCTION(BlueprintSetter)
+	void SetCurrent(bool value);
+
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Listener")
+	void MakeCurrent();
+
+	// Called by AVAWorld. Takes over the shared handle from the previous listener, or creates it if this is the first listener in the world. Targets stay connected to the handle
+	bool Activate(VAEmitter* sharedHandle);
+	void Deactivate();
+
 	// Automatically move this emitter (and the VA listener position) to the first player controller's camera every frame
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
 	bool bAutoFollowCamera = true;

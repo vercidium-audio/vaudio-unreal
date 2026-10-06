@@ -16,11 +16,9 @@ AVAListener::AVAListener()
 {
 }
 
+// Runs once when this listener begins play, whether or not it's current. Properties are pushed by Activate instead
 void AVAListener::InitializeTypeSpecific()
 {
-	// Set ray counts and other settings
-	UpdateVAEmitter();
-
 	// Initialise the submix
 	if (ListenerReverbSubmix)
 	{
@@ -32,6 +30,67 @@ void AVAListener::InitializeTypeSpecific()
 			VA_WARN_NAMED(TEXT("Has a reverb submix assigned but does not cast reverb rays"));
 		}
 	}
+}
+
+bool AVAListener::AttachToWorld()
+{
+	InitializeTypeSpecific();
+	return AudioWorld->RegisterListener(this);
+}
+
+void AVAListener::DetachFromWorld()
+{
+	AudioWorld->UnregisterListener(this);
+}
+
+void AVAListener::SetCurrent(bool value)
+{
+	// Not in a world yet, e.g. set before BeginPlay. RegisterListener reads the flag when this listener joins
+	if (!IsRegistered())
+	{
+		bCurrent = value;
+		return;
+	}
+
+	if (value)
+		AudioWorld->SetCurrentListener(this);
+	else
+		AudioWorld->ReleaseCurrentListener(this);
+}
+
+void AVAListener::MakeCurrent()
+{
+	SetCurrent(true);
+}
+
+bool AVAListener::Activate(VAEmitter* sharedHandle)
+{
+	bCurrent = true;
+
+	if (sharedHandle)
+	{
+		AdoptEmitter(sharedHandle);
+		UpdateVAEmitter();
+		return true;
+	}
+
+	CreateEmitter();
+
+	// Ray counts are set before targets are added
+	UpdateVAEmitter();
+
+	if (AudioWorld->AddEmitterToWorld(this))
+		return true;
+
+	DestroyUnaddedEmitter();
+	bCurrent = false;
+	return false;
+}
+
+void AVAListener::Deactivate()
+{
+	bCurrent = false;
+	Emitter = nullptr;
 }
 
 void AVAListener::AddTarget(AVAEmitterBase* target)
@@ -142,7 +201,13 @@ void AVAListener::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	// Emitter only exists while PIE/game is running, so ignore edits when we haven't hit Play yet
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(AVAListener, bCurrent))
+	{
+		SetCurrent(bCurrent);
+		return;
+	}
+
+	// Emitter only exists while PIE/game is running and this listener is current, so ignore edits otherwise
 	if (!Emitter)
 		return;
 

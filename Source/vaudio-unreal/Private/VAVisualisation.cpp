@@ -114,6 +114,13 @@ void UVAVisualisation::BeginPlay()
 		return;
 	}
 
+	// Every listener shares one handle, which only the current listener holds
+	if (!OwnerEmitter->GetVAEmitter())
+	{
+		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Is attached to a listener that isn't current when play begins and will not render"));
+		return;
+	}
+
 	ValidateDiamondMaterial();
 	CreateInstancedMesh();
 	ApplyVisualisationSettings();

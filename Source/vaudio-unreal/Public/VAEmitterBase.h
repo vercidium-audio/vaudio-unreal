@@ -148,8 +148,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio")
 	FVAOnRaytracedByListener OnRaytracedByListener;
 
-	// Creates the VA emitter and wires up audio components. Safe to call repeatedly:
-	// no-ops (returns true) if already initialized, returns false if AudioWorld isn't assigned
+	// Creates the VA emitter and wires up audio components. Safe to call repeatedly: no-ops (returns true) if already registered with the world, returns false if AudioWorld isn't assigned or initialisation failed. A listener that isn't current is registered but has no handle
 	bool TryInitializeEmitter();
 
 	// Called from the SDK callbacks during vaWorldUpdate. The Blueprint delegates are broadcast later by FlushPendingEvents, after vaWorldUpdate returns, so a handler that spawns or destroys emitters can't re-enter the SDK
@@ -300,6 +299,21 @@ protected:
 
 
 	virtual void UpdateVAEmitter();
+
+	// Creates the SDK handle and adds it to the world. Listeners override these, as every listener in a world shares one handle
+	virtual bool AttachToWorld();
+	virtual void DetachFromWorld();
+
+	// Creates a handle with this actor's callbacks. Properties aren't pushed yet
+	void CreateEmitter();
+
+	// Points a handle's user data, name and position at this actor
+	void AdoptEmitter(VAEmitter* handle);
+
+	// For a handle that was never added to the world
+	void DestroyUnaddedEmitter();
+
+	bool IsRegistered() const { return registered; }
 
 	VAEmitter* Emitter = nullptr;
 

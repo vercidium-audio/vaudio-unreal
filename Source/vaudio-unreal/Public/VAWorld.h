@@ -263,11 +263,29 @@ public:
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
 	int32 GetGroupedEAXPresetCount() const { return GroupedEAXPresets.Num(); }
 	int32 GetMaximumGroupedEAXCount() const { return GroupedEAXSubmixes.Num(); }
-	// Adds the emitter to the vaWorld. Non-listener emitters automatically become targets of the main listener, whichever of the two begins play first. Returns false (and logs why) if the SDK rejected it
+	// Adds a non-listener emitter to the vaWorld. It automatically becomes a target of the current listener, whichever of the two begins play first. Returns false (and logs why) if the SDK rejected it
 	bool RegisterEmitter(AVAEmitterBase* emitter);
 	void UnregisterEmitter(AVAEmitterBase* emitter);
 
+	// Calls vaWorldAddEmitter on the emitter's handle. Returns false (and logs why) if the SDK rejected it
+	bool AddEmitterToWorld(AVAEmitterBase* emitter);
+
+	// Every listener in a world shares one SDK emitter. The first listener creates it, and it's handed over whenever the current listener changes, so targets stay connected. Returns false if the SDK rejected the first listener's handle
+	bool RegisterListener(AVAListener* listener);
+
+	// Promotes the first remaining listener if this one was current. The last listener takes the shared handle with it
+	void UnregisterListener(AVAListener* listener);
+
+	bool SetCurrentListener(AVAListener* listener);
+
+	// Hands the shared handle to another listener. The only listener in the world stays current
+	void ReleaseCurrentListener(AVAListener* listener);
+
+	// The current listener
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	AVAListener* GetMainListener() const { return MainListener; }
+
+	const TArray<AVAListener*>& GetListeners() const { return Listeners; }
 	const TArray<AVAEmitterBase*>& GetRegisteredEmitters() const { return RegisteredEmitters; }
 
 	// Called from the OnRemoved callback, after which the raytracing threads no longer read the emitter. Destroyed after the next vaWorldUpdate returns
@@ -308,7 +326,10 @@ private:
 	// Non-listener emitters, which are all targets of the main listener. Raw pointers are safe as emitters unregister in EndPlay
 	TArray<AVAEmitterBase*> RegisteredEmitters;
 
+	// Every listener that has begun play, current or not. Raw pointers are safe as listeners unregister in EndPlay
 	TArray<AVAListener*> Listeners;
+
+	// The current listener, which holds the shared SDK handle
 	AVAListener* MainListener = nullptr;
 
 	TArray<VAEmitter*> PendingEmitterDestroys;
@@ -319,7 +340,6 @@ private:
 	int32 RaytraceCount = 0;
 	static void OnReverbUpdatedTrampoline(VAWorld* world);
 
-	void SetMainListener(AVAListener* listener);
 	void WirePendingTargets();
 	void DestroyRemovedEmitters();
 

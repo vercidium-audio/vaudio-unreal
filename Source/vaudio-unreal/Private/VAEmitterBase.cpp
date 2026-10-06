@@ -72,43 +72,15 @@ bool AVAEmitterBase::TryInitializeEmitter()
 		return false;
 
 	// Already initialised, all is good
-	if (Emitter)
+	if (registered)
 		return true;
 
 	// The world may not have begun play yet, since actor BeginPlay order isn't guaranteed
 	AudioWorld->InitializeVAWorld();
 
-	if (!ValidateConfig())
+	if (!ValidateConfig() || !AttachToWorld())
 	{
-		// Failed validation, disable this actor
-		SetActorTickEnabled(false);
-		failedInitialisation = true;
-		return false;
-	}
-
-	Emitter = vaEmitterCreate();
-	vaEmitterSetName(Emitter, TCHAR_TO_UTF8(*GetActorNameOrLabel()));
-
-	vaEmitterSetLogCallback(Emitter, &VASdkLogCallback);
-	vaEmitterSetLogErrorCallback(Emitter, &VASdkLogErrorCallback);
-	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
-
-	// Lets the callback trampolines resolve this actor from the VAEmitter* alone
-	vaEmitterSetUserData(Emitter, this);
-	vaEmitterSetOnRaytracingCompleteCallback(Emitter, &VAOnRaytracingCompleteTrampoline);
-	vaEmitterSetOnRaytracedByAnotherEmitterCallback(Emitter, &VAOnRaytracedByAnotherEmitterTrampoline);
-	vaEmitterSetOnRemovedCallback(Emitter, &VAOnRemovedTrampoline);
-
-	// Properties are pushed before the emitter joins the world, so the listener's ray counts are set before targets are added to it
-	InitializeTypeSpecific();
-
-	if (!AudioWorld->RegisterEmitter(this))
-	{
-		// Never added to the world, so it can be destroyed straight away
-		vaEmitterSetUserData(Emitter, nullptr);
-		vaEmitterDestroy(Emitter);
-		Emitter = nullptr;
-
+		// Failed validation or the SDK rejected it, so disable this actor
 		SetActorTickEnabled(false);
 		failedInitialisation = true;
 		return false;
@@ -116,6 +88,55 @@ bool AVAEmitterBase::TryInitializeEmitter()
 
 	registered = true;
 	return true;
+}
+
+bool AVAEmitterBase::AttachToWorld()
+{
+	CreateEmitter();
+
+	// Properties are pushed before the emitter joins the world
+	InitializeTypeSpecific();
+
+	if (AudioWorld->RegisterEmitter(this))
+		return true;
+
+	DestroyUnaddedEmitter();
+	return false;
+}
+
+void AVAEmitterBase::DetachFromWorld()
+{
+	AudioWorld->UnregisterEmitter(this);
+}
+
+void AVAEmitterBase::CreateEmitter()
+{
+	VAEmitter* handle = vaEmitterCreate();
+
+	vaEmitterSetLogCallback(handle, &VASdkLogCallback);
+	vaEmitterSetLogErrorCallback(handle, &VASdkLogErrorCallback);
+	vaEmitterSetOnRaytracingCompleteCallback(handle, &VAOnRaytracingCompleteTrampoline);
+	vaEmitterSetOnRaytracedByAnotherEmitterCallback(handle, &VAOnRaytracedByAnotherEmitterTrampoline);
+	vaEmitterSetOnRemovedCallback(handle, &VAOnRemovedTrampoline);
+
+	AdoptEmitter(handle);
+}
+
+void AVAEmitterBase::AdoptEmitter(VAEmitter* handle)
+{
+	Emitter = handle;
+
+	// Lets the callback trampolines resolve this actor from the VAEmitter* alone
+	vaEmitterSetUserData(Emitter, this);
+	vaEmitterSetName(Emitter, TCHAR_TO_UTF8(*GetActorNameOrLabel()));
+	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
+}
+
+void AVAEmitterBase::DestroyUnaddedEmitter()
+{
+	vaEmitterSetUserData(Emitter, nullptr);
+	vaEmitterDestroy(Emitter);
+	Emitter = nullptr;
 }
 
 void AVAEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -126,7 +147,7 @@ void AVAEmitterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (registered)
 	{
-		AudioWorld->UnregisterEmitter(this);
+		DetachFromWorld();
 		registered = false;
 	}
 

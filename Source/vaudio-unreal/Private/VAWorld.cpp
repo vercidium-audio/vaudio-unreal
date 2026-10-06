@@ -345,7 +345,12 @@ void AVAWorld::Tick(float DeltaTime)
 		if (GEngine)
 		{
 			// Per-emitter position and world-bounds check
-			TArray<AVAEmitterBase*> statusEmitters(Listeners);
+			// Listeners that aren't current have no handle
+			TArray<AVAEmitterBase*> statusEmitters;
+
+			if (MainListener)
+				statusEmitters.Add(MainListener);
+
 			statusEmitters.Append(RegisteredEmitters);
 
 			for (int32 i = 0; i < statusEmitters.Num(); ++i)
@@ -551,14 +556,14 @@ USubmixEffectReverbPreset* AVAWorld::GetGroupedEAXPreset(int32 Index) const
 	return GroupedEAXPresets.IsValidIndex(Index) ? GroupedEAXPresets[Index] : nullptr;
 }
 
-bool AVAWorld::RegisterEmitter(AVAEmitterBase* emitter)
+bool AVAWorld::AddEmitterToWorld(AVAEmitterBase* emitter)
 {
 	VAResult result = vaWorldAddEmitter(World, emitter->GetVAEmitter());
 
 	switch (result)
 	{
 		case VA_SUCCESS:
-			break;
+			return true;
 
 		case VA_ALREADY_EXISTS:
 			VA_ERROR_NAMED(TEXT("Failed to register emitter '%s' as it is already added to this world."), *emitter->GetActorNameOrLabel());
@@ -572,22 +577,16 @@ bool AVAWorld::RegisterEmitter(AVAEmitterBase* emitter)
 			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to register emitter '%s'."), *emitter->GetActorNameOrLabel());
 			return false;
 	}
+}
 
-	if (AVAListener* listener = Cast<AVAListener>(emitter))
-	{
-		Listeners.Add(listener);
-
-		if (!MainListener)
-			SetMainListener(listener);
-		else
-			VA_WARN_NAMED(TEXT("Has multiple listeners: '%s' and '%s'. Only '%s' is used until it ends play"), *MainListener->GetActorNameOrLabel(), *listener->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
-
-		return true;
-	}
+bool AVAWorld::RegisterEmitter(AVAEmitterBase* emitter)
+{
+	if (!AddEmitterToWorld(emitter))
+		return false;
 
 	RegisteredEmitters.Add(emitter);
 
-	// If the listener hasn't begun play yet, SetMainListener wires this emitter up when it does
+	// If no listener has begun play yet, SetCurrentListener wires this emitter up when one does
 	if (MainListener)
 		MainListener->AddTarget(emitter);
 
@@ -597,28 +596,93 @@ bool AVAWorld::RegisterEmitter(AVAEmitterBase* emitter)
 void AVAWorld::UnregisterEmitter(AVAEmitterBase* emitter)
 {
 	RegisteredEmitters.Remove(emitter);
+}
 
-	AVAListener* listener = Cast<AVAListener>(emitter);
+bool AVAWorld::RegisterListener(AVAListener* listener)
+{
+	if (!MainListener)
+	{
+		if (!SetCurrentListener(listener))
+			return false;
 
-	if (!listener)
-		return;
+		Listeners.Add(listener);
+		return true;
+	}
 
+	Listeners.Add(listener);
+
+	// A listener that begins play with bCurrent enabled takes over, e.g. a spawned player pawn's listener
+	if (listener->IsCurrent())
+	{
+		VA_WARN_NAMED(TEXT("VAListener '%s' has bCurrent enabled, so it replaced '%s' as the current listener. Disable bCurrent on listeners that shouldn't take over when they begin play, and call MakeCurrent() on the one that should be used."), *listener->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
+		SetCurrentListener(listener);
+	}
+
+	return true;
+}
+
+void AVAWorld::UnregisterListener(AVAListener* listener)
+{
 	Listeners.Remove(listener);
 
 	if (MainListener != listener)
 		return;
 
-	MainListener = nullptr;
-
-	// The next listener has its own SDK handle, so every emitter is added to it as a target again
 	if (Listeners.Num() > 0)
-		SetMainListener(Listeners[0]);
+	{
+		SetCurrentListener(Listeners[0]);
+		return;
+	}
+
+	// Last listener in this world, so it keeps the shared handle and releases it in EndPlay
+	MainListener = nullptr;
 }
 
-void AVAWorld::SetMainListener(AVAListener* listener)
+bool AVAWorld::SetCurrentListener(AVAListener* listener)
 {
+	if (MainListener == listener)
+		return true;
+
+	AVAListener* previous = MainListener;
+	VAEmitter* sharedHandle = previous ? previous->GetVAEmitter() : nullptr;
+
+	if (previous)
+		previous->Deactivate();
+
 	MainListener = listener;
-	WirePendingTargets();
+
+	if (!listener->Activate(sharedHandle))
+	{
+		MainListener = nullptr;
+		return false;
+	}
+
+	// Set up the emitters that began play before the first listener
+	if (!sharedHandle)
+		WirePendingTargets();
+
+	return true;
+}
+
+void AVAWorld::ReleaseCurrentListener(AVAListener* listener)
+{
+	if (MainListener != listener)
+	{
+		listener->Deactivate();
+		return;
+	}
+
+	for (AVAListener* other : Listeners)
+	{
+		if (other != listener)
+		{
+			SetCurrentListener(other);
+			return;
+		}
+	}
+
+	VA_WARN_NAMED(TEXT("VAListener '%s' is the only listener in this world, so it stays current."), *listener->GetActorNameOrLabel());
+	listener->bCurrent = true;
 }
 
 void AVAWorld::WirePendingTargets()
