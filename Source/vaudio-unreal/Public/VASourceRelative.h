@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Components/AudioComponent.h"
+#include "VASourcePlayback.h"
 #include "VASourceRelative.generated.h"
 
 class AVAWorld;
@@ -28,31 +28,52 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	AVAWorld* AudioWorld = nullptr;
 
-	// One of these is picked at random when the sound plays
+	// One of these is picked at random each time the sound plays
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	TArray<USoundBase*> SourceSounds;
 
-	UPROPERTY(Transient)
-	UAudioComponent* SourceAudioComponent = nullptr;
+	// When true, plays on the first tick. Otherwise it only plays when Play() is called
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
+	bool bAutoPlay = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0", UIMax = "1.0"))
+	float VolumeMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
+	float PitchMultiplier = 1.0f;
+
+	// Plays a random sound from SourceSounds. Each call starts a new sound, so calls overlap. Returns false if this actor failed validation, or if the sound couldn't be created (e.g. there's no audio device)
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
+	bool Play();
+
+	// Stops every sound started by Play()
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
+	void Stop();
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
+	bool IsPlaying() const { return Playback.IsPlaying(); }
+
+	const FVASourcePlayback& GetPlayback() const { return Playback; }
 
 	// The current listener's ListenerReverbSubmix, or null. Resolved every tick, even with no audio device
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
-	USoundSubmix* GetReverbSubmix() const { return ReverbSubmix; }
+	USoundSubmix* GetReverbSubmix() const { return Playback.GetReverbSubmix(); }
 
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
-	float GetReverbSendLevel() const { return ReverbSendLevel; }
+	float GetReverbSendLevel() const { return Playback.GetReverbSendLevel(); }
 
 private:
 	UPROPERTY(Transient)
-	USoundSubmix* ReverbSubmix = nullptr;
-
-	float ReverbSendLevel = 0.0f;
+	FVASourcePlayback Playback;
 
 	UPROPERTY(Transient)
 	AVAListener* WarnedListener = nullptr;
 
-	bool bSourcePendingSpawn = false;
+	bool bValidConfig = false;
 
-	void TrySpawnSourceSound();
-	void UpdateSourceSubmix();
+	// Cleared by the first Play(), whether bAutoPlay or the user called it
+	bool bAutoPlayPending = false;
+
+	// Pushes the multipliers and the listener's reverb send to Playback
+	void UpdatePlayback();
 };

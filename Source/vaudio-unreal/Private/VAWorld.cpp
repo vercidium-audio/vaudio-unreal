@@ -426,14 +426,13 @@ void AVAWorld::Tick(float DeltaTime)
 							uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::AttenuationStatus);
 							VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *continuousEmitter->GetActorNameOrLabel()));
 						}
-						else if (!source->SourceAudioComponent) // SourceAudioComponent is set when it actually plays
+						else if (!source->IsPlaying())
 						{
 							uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::SourceStatus);
-							VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has not played its sound yet"), i, *continuousEmitter->GetActorNameOrLabel()));
+							VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' is not playing"), i, *continuousEmitter->GetActorNameOrLabel()));
 						}
 					}
 
-					UAudioComponent* sourceAudioComponent = source ? source->SourceAudioComponent : nullptr;
 					FString typeString = source ? TEXT("Source") : TEXT("Continuous");
 
 					if (continuousEmitter->bAffectsGroupedEAX)

@@ -169,7 +169,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsRaytraced() const;
 
-	// True once the listener has raytraced this emitter and, if it casts reverb rays and affects grouped EAX, it has cast its own reverb rays too. Sources don't play until then
+	// True once the listener has raytraced this emitter and, if it casts reverb rays and affects grouped EAX, it has cast its own reverb rays too. Sources don't play until then. Stays true after a bRaytraceOnce emitter leaves the world
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsReadyToPlay() const;
 

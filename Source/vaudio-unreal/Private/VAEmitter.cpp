@@ -368,6 +368,10 @@ bool AVAEmitter::IsRaytraced() const
 
 bool AVAEmitter::IsReadyToPlay() const
 {
+	// A bRaytraceOnce emitter only leaves the world once it's ready, and sources keep playing with its last result
+	if (raytraceOnceReleased)
+		return hasLastMufflingResult;
+
 	if (!GetMufflingResult())
 		return false;
 

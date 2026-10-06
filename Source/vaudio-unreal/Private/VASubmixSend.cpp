@@ -26,3 +26,18 @@ void VASetReverbSend(UAudioComponent* Component, USoundSubmix* Submix, float Sen
 		ActiveSound.SetSubmixSend(SubmixSendInfo);
 	});
 }
+
+void VASetDryOutputEnabled(UAudioComponent* Component, bool bEnabled)
+{
+	FAudioDevice* AudioDevice = Component->GetAudioDevice();
+
+	// No active audio device (e.g. audio disabled, or the component's sound already stopped)
+	if (!AudioDevice)
+		return;
+
+	AudioDevice->SendCommandToActiveSounds(Component->GetAudioComponentID(), [bEnabled](FActiveSound& ActiveSound)
+	{
+		ActiveSound.bHasActiveMainSubmixOutputOverride = true;
+		ActiveSound.bEnableMainSubmixOutputOverride = bEnabled;
+	});
+}

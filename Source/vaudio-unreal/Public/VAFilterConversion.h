@@ -1,9 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "VAFilterConversion.generated.h"
-
-class UAudioComponent;
 
 constexpr float VA_MIN_LOW_PASS_CUTOFF_FREQUENCY = 200.0f;
 constexpr float VA_MAX_LOW_PASS_CUTOFF_FREQUENCY = 20000.0f;
@@ -24,17 +21,21 @@ inline float VACompensateReverbSendLevel(float SendLevel, float Volume)
 	return Volume <= SendLevel ? 1.0f : SendLevel / Volume;
 }
 
-// The muffling filter shared by every source type: gainLF sets the volume, gainHF sets the component's low-pass filter. Unlike the volume and the source effect chain, that filter is applied after the pre-attenuation reverb send, so it only muffles the dry path. Unreal's own occlusion/attenuation LPF is combined with it, and the lowest cutoff wins
-USTRUCT()
-struct VAUDIOUNREAL_API FVASourceFilter
+// The muffling filter shared by every source type: gainLF sets the volume, gainHF sets the component's low-pass filter. Unlike the volume and the source effect chain, that filter is applied after the pre-attenuation reverb send, so it only muffles the dry path. Unreal's own occlusion/attenuation LPF is combined with it, and the lowest cutoff wins. FVASourcePlayback pushes it to the audio components
+struct FVASourceFilter
 {
-	GENERATED_BODY()
+	// Returns true if the volume or cutoff changed
+	bool Apply(float GainLF, float GainHF)
+	{
+		float cutoff = VAGainHFToCutoffFrequency(GainHF);
 
-	// Must be called before Play(), so the first block is already filtered
-	void Attach(UAudioComponent* Component) const;
+		if (cutoff == CutoffFrequency && GainLF == Volume)
+			return false;
 
-	// The result is kept even when Component is null (not playing yet, or no audio device), and is pushed by Attach
-	void Apply(UAudioComponent* Component, float GainLF, float GainHF);
+		CutoffFrequency = cutoff;
+		Volume = GainLF;
+		return true;
+	}
 
 	float CompensateReverbSendLevel(float SendLevel) const { return VACompensateReverbSendLevel(SendLevel, Volume); }
 

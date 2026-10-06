@@ -2,13 +2,13 @@
 #include "VAEmitter.h"
 #include "VAListener.h"
 #include "AudioDevice.h"
+#include "Components/AudioComponent.h"
 
 extern "C" {
 #include "vaudio.h"
 }
 
 #include "VALog.h"
-#include "VASubmixSend.h"
 
 AVASourceLeech::AVASourceLeech()
 {
@@ -49,18 +49,15 @@ void AVASourceLeech::BeginPlay()
 	}
 
 	// The emitter is resolved in Tick, since this actor may be attached to it after spawning
-	bSourcePendingSpawn = true;
+	bValidConfig = true;
+	bAutoPlayPending = bAutoPlay;
 }
 
 void AVASourceLeech::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 
-	if (SourceAudioComponent)
-	{
-		SourceAudioComponent->Stop();
-		SourceAudioComponent = nullptr;
-	}
+	Playback.Stop();
 }
 
 AVAEmitter* AVASourceLeech::GetLeechedEmitter() const
@@ -71,15 +68,28 @@ AVAEmitter* AVASourceLeech::GetLeechedEmitter() const
 	return IsValid(Emitter) ? Emitter : nullptr;
 }
 
+bool AVASourceLeech::IsReadyToPlay() const
+{
+	AVAEmitter* emitter = GetLeechedEmitter();
+
+	// A listener is never ready to play
+	return emitter && emitter->IsReadyToPlay();
+}
+
 void AVASourceLeech::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	Playback.RemoveFinished();
 
 	AVAEmitter* emitter = GetLeechedEmitter();
 
 	// Keeps the last filter and send while there's no emitter, e.g. after it was destroyed
 	if (!emitter)
 	{
+		Playback.SetVolumeMultiplier(VolumeMultiplier);
+		Playback.SetPitchMultiplier(PitchMultiplier);
+
 		if (!bWarnedNoEmitter)
 		{
 			bWarnedNoEmitter = true;
@@ -99,66 +109,62 @@ void AVASourceLeech::Tick(float DeltaTime)
 
 	bWarnedNoEmitter = false;
 
-	// Null until the listener has raytraced the emitter
-	VALowPassFilter* lowPassFilter = emitter->GetMufflingResult();
+	UpdatePlayback(emitter);
 
-	if (!lowPassFilter)
-		return;
-
-	Filter.Apply(SourceAudioComponent, lowPassFilter->gainLF, lowPassFilter->gainHF);
-	UpdateSourceSubmix(emitter);
-
-	// Wait for the emitter's reverb results too, so the sound never starts without reverb
-	if (bSourcePendingSpawn && emitter->IsReadyToPlay())
-		TrySpawnSourceSound(emitter);
+	// Waits for the emitter's reverb results too, so the sound never starts without reverb
+	if (bAutoPlayPending && emitter->IsReadyToPlay())
+		Play();
 }
 
-void AVASourceLeech::TrySpawnSourceSound(AVAEmitter* emitter)
+void AVASourceLeech::UpdatePlayback(AVAEmitter* emitter)
 {
-	bSourcePendingSpawn = false;
+	Playback.SetVolumeMultiplier(VolumeMultiplier);
+	Playback.SetPitchMultiplier(PitchMultiplier);
 
-	USoundBase* chosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
+	// Null until the listener has raytraced the emitter, and after a bRaytraceOnce emitter leaves the world. The last result is kept
+	if (VALowPassFilter* lowPassFilter = emitter->GetMufflingResult())
+		Playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 
-	// Build the component without starting playback, so the low pass filter and reverb send are set before Play()
-	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
-	Params.SetLocation(GetActorLocation());
-
-	SourceAudioComponent = FAudioDevice::CreateComponent(chosenSound, Params);
-
-	if (SourceAudioComponent)
-	{
-		SourceAudioComponent->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		SourceAudioComponent->bAllowSpatialization = true;
-		SourceAudioComponent->bAutoDestroy = true;
-
-		Filter.Attach(SourceAudioComponent);
-
-		if (ReverbSubmix)
-			VASetReverbSend(SourceAudioComponent, ReverbSubmix, ReverbSendLevel);
-
-		SourceAudioComponent->Play();
-	}
-	else
-	{
-		VA_WARN_NAMED(TEXT("Play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
-	}
-}
-
-void AVASourceLeech::UpdateSourceSubmix(AVAEmitter* emitter)
-{
 	USoundSubmix* submix = nullptr;
 	float sendLevel = 0.0f;
 
-	if (!emitter->ResolveReverbSend(submix, sendLevel))
-		return;
+	// Set after the filter, as the send level is compensated by gainLF
+	if (emitter->ResolveReverbSend(submix, sendLevel))
+		Playback.SetReverbSend(submix, sendLevel);
+}
 
-	// Moved to another submix (e.g. the emitter changed grouped EAX slot), so silence the old send
-	if (ReverbSubmix && ReverbSubmix != submix)
-		VASetReverbSend(SourceAudioComponent, ReverbSubmix, 0.0f);
+bool AVASourceLeech::Play()
+{
+	// Wait for the emitter's muffling and reverb results, so the sound never starts unmuffled or without reverb
+	if (!bValidConfig || !IsReadyToPlay())
+		return false;
 
-	ReverbSubmix = submix;
-	ReverbSendLevel = Filter.CompensateReverbSendLevel(sendLevel);
+	bAutoPlayPending = false;
 
-	if (ReverbSubmix)
-		VASetReverbSend(SourceAudioComponent, ReverbSubmix, ReverbSendLevel);
+	// Play() may be called before this tick's update
+	UpdatePlayback(GetLeechedEmitter());
+
+	USoundBase* chosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
+
+	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
+	Params.SetLocation(GetActorLocation());
+
+	UAudioComponent* component = FAudioDevice::CreateComponent(chosenSound, Params);
+
+	if (!component)
+	{
+		VA_WARN_NAMED(TEXT("Play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
+		return false;
+	}
+
+	component->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	component->bAllowSpatialization = true;
+
+	Playback.Play(component);
+	return true;
+}
+
+void AVASourceLeech::Stop()
+{
+	Playback.Stop();
 }

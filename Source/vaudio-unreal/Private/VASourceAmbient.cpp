@@ -4,6 +4,7 @@
 #include "VALog.h"
 #include "VAConstants.h"
 
+#include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
 
 extern "C" {
@@ -47,16 +48,16 @@ void AVASourceAmbient::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 
-	if (SourceAudioComponent)
-	{
-		SourceAudioComponent->Stop();
-		SourceAudioComponent = nullptr;
-	}
+	Playback.Stop();
 }
 
 void AVASourceAmbient::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	Playback.RemoveFinished();
+	Playback.SetVolumeMultiplier(VolumeMultiplier);
+	Playback.SetPitchMultiplier(PitchMultiplier);
 
 	AVAListener* listener = AudioWorld->GetMainListener();
 
@@ -79,7 +80,7 @@ void AVASourceAmbient::Tick(float DeltaTime)
 	if (!AmbientFilter)
 		return;
 
-	Filter.Apply(SourceAudioComponent, AmbientFilter->gainLF, AmbientFilter->gainHF);
+	Playback.SetFilter(AmbientFilter->gainLF, AmbientFilter->gainHF);
 
 	if (bSourcePendingSpawn)
 		TrySpawnSourceSound();
@@ -90,12 +91,11 @@ void AVASourceAmbient::TrySpawnSourceSound()
 	bSourcePendingSpawn = false;
 
 	// CreateSound2D() builds the component without starting playback, so we can configure the low pass filter before playing any sound
-	SourceAudioComponent = UGameplayStatics::CreateSound2D(GetWorld(), SourceSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
+	UAudioComponent* component = UGameplayStatics::CreateSound2D(GetWorld(), SourceSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
 
-	if (SourceAudioComponent)
+	if (component)
 	{
-		Filter.Attach(SourceAudioComponent);
-		SourceAudioComponent->Play();
+		Playback.Play(component);
 	}
 	else
 	{

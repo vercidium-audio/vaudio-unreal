@@ -2,8 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Components/AudioComponent.h"
-#include "VAFilterConversion.h"
+#include "VASourcePlayback.h"
 #include "VASourceAmbient.generated.h"
 
 class AVAWorld;
@@ -31,14 +30,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	USoundBase* SourceSound = nullptr;
 
-	UPROPERTY(Transient)
-	UAudioComponent* SourceAudioComponent = nullptr;
+	// Multiplies the volume set by the listener's ambient filter
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0", UIMax = "1.0"))
+	float VolumeMultiplier = 1.0f;
 
-	const FVASourceFilter& GetFilter() const { return Filter; }
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
+	float PitchMultiplier = 1.0f;
+
+	const FVASourcePlayback& GetPlayback() const { return Playback; }
 
 private:
 	UPROPERTY(Transient)
-	FVASourceFilter Filter;
+	FVASourcePlayback Playback;
 
 	void TrySpawnSourceSound();
 

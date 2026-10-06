@@ -7,3 +7,6 @@ class USoundSubmix;
 
 // Sets the component's send to a reverb submix. Unlike Godot, this must be pre distance attenuation, else distant sounds contribute less to the reverb than vaudio's relative gain says. Does nothing until the component is playing
 void VASetReverbSend(UAudioComponent* Component, USoundSubmix* Submix, float SendLevel);
+
+// Mutes or restores the component's main submix output without touching its submix sends, so reverb keeps playing while the dry signal is silenced. Does nothing until the component is playing
+void VASetDryOutputEnabled(UAudioComponent* Component, bool bEnabled);

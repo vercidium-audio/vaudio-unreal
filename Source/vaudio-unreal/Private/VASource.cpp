@@ -1,8 +1,8 @@
 #include "VASource.h"
 #include "VAWorld.h"
 #include "VAListener.h"
-#include "ActiveSound.h"
 #include "AudioDevice.h"
+#include "Components/AudioComponent.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -10,7 +10,6 @@ extern "C" {
 
 #include "VALog.h"
 #include "VAConstants.h"
-#include "VASubmixSend.h"
 
 AVASource::AVASource()
 {
@@ -43,22 +42,18 @@ void AVASource::InitializeTypeSpecific()
 		VA_WARN_NAMED(TEXT("SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *SourceSound->GetName());
 	}
 
-	bSourcePendingSpawn = true;
+	if (!SourceSound->AttenuationSettings)
+	{
+		VA_WARN_NAMED(TEXT("SourceSound '%s' has no Sound Attenuation - it will not fall off with distance"), *SourceSound->GetName());
+	}
+
+	bAutoPlayPending = bAutoPlay;
 }
 
 void AVASource::DeinitializeTypeSpecific()
 {
-	if (SourceAudioComponent)
-	{
-		SourceAudioComponent->Stop();
-		SourceAudioComponent = nullptr;
-	}
+	Playback.Stop();
 
-	ReverbSubmix = nullptr;
-	ReverbSendLevel = 0.0f;
-
-	// No need to separately zero the submix send gain: Stop() above tears down the audio
-	// component (SpawnSound* defaults to bAutoDestroy), which releases its submix send too.
 	Super::DeinitializeTypeSpecific();
 }
 
@@ -66,107 +61,63 @@ void AVASource::TickTypeSpecific(float DeltaTime)
 {
 	Super::TickTypeSpecific(DeltaTime);
 
-	if (bSourcePendingSpawn)
-		TrySpawnSourceSound();
+	Playback.RemoveFinished();
+	UpdatePlayback();
 
-	// Null until the main listener has raytraced this source
-	if (VALowPassFilter* lowPassFilter = GetMufflingResult())
-		Filter.Apply(SourceAudioComponent, lowPassFilter->gainLF, lowPassFilter->gainHF);
+	if (bAutoPlayPending && IsReadyToPlay())
+		Play();
 
-	UpdateSourceSubmix();
-
-	if (SourceAudioComponent)
-		SourceAudioComponent->SetWorldLocationAndRotation(GetActorLocation(), FRotator::ZeroRotator);
+	Playback.SetLocation(GetActorLocation());
 }
 
-void AVASource::TrySpawnSourceSound()
+void AVASource::UpdatePlayback()
+{
+	Playback.SetVolumeMultiplier(VolumeMultiplier);
+	Playback.SetPitchMultiplier(PitchMultiplier);
+
+	// Null until the main listener has raytraced this source, and after a bRaytraceOnce source leaves the world. The last result is kept
+	if (VALowPassFilter* lowPassFilter = GetMufflingResult())
+		Playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
+
+	USoundSubmix* submix = nullptr;
+	float sendLevel = 0.0f;
+
+	// Set after the filter, as the send level is compensated by gainLF
+	if (ResolveReverbSend(submix, sendLevel))
+		Playback.SetReverbSend(submix, sendLevel);
+}
+
+bool AVASource::Play()
 {
 	// Wait for the muffling and reverb results, so the sound never starts unmuffled or without reverb
-	if (!IsReadyToPlay())
-		return;
+	if (!SourceSound || !IsReadyToPlay())
+		return false;
 
-	VALowPassFilter* lowPassFilter = GetMufflingResult();
+	bAutoPlayPending = false;
 
-	bSourcePendingSpawn = false;
+	// Play() may be called before this tick's update
+	UpdatePlayback();
 
-	// Create the component and attach the filter ahead of time.
-	//  Else if we attach the filter after creating the sound, the filter is never applied
 	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
 	Params.SetLocation(GetActorLocation());
 
-	SourceAudioComponent = FAudioDevice::CreateComponent(SourceSound, Params);
+	UAudioComponent* component = FAudioDevice::CreateComponent(SourceSound, Params);
 
-	if (SourceAudioComponent)
-	{
-		SourceAudioComponent->SetWorldLocationAndRotation(GetActorLocation(), FRotator::ZeroRotator);
-		SourceAudioComponent->SetPitchMultiplier(1.0f);
-		SourceAudioComponent->bAllowSpatialization = true;
-		SourceAudioComponent->bAutoDestroy = true;
-		SourceAudioComponent->bStopWhenOwnerDestroyed = false;
-
-		if (!SourceAudioComponent->AttenuationSettings)
-		{
-			VA_WARN_NAMED(TEXT("Has no Sound Attenuation - it will not fall off with distance"));
-		}
-
-		// Apply the filter immediately
-		Filter.Apply(nullptr, lowPassFilter->gainLF, lowPassFilter->gainHF);
-		Filter.Attach(SourceAudioComponent);
-
-		// Apply reverb
-		UpdateSourceSubmix();
-
-		SourceAudioComponent->Play();
-	}
-	else
+	if (!component)
 	{
 		VA_WARN_NAMED(TEXT("Play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
+		return false;
 	}
+
+	component->SetWorldLocationAndRotation(GetActorLocation(), FRotator::ZeroRotator);
+	component->bAllowSpatialization = true;
+	component->bStopWhenOwnerDestroyed = false;
+
+	Playback.Play(component);
+	return true;
 }
 
-void AVASource::UpdateSourceSubmix()
+void AVASource::Stop()
 {
-	USoundSubmix* Submix = nullptr;
-	float SendLevel = 0.0f;
-
-	if (!ResolveReverbSend(Submix, SendLevel))
-		return;
-
-	// Moved to another submix (a different grouped EAX slot, between grouped and listener reverb, or a new current listener), so silence the old send
-	if (ReverbSubmix && ReverbSubmix != Submix)
-		VASetReverbSend(SourceAudioComponent, ReverbSubmix, 0.0f);
-
-	ReverbSubmix = Submix;
-	ReverbSendLevel = Filter.CompensateReverbSendLevel(SendLevel);
-
-	if (ReverbSubmix)
-		VASetReverbSend(SourceAudioComponent, ReverbSubmix, ReverbSendLevel);
-}
-
-// Toggle whether we only hear reverb
-void AVASource::SetDryOutputEnabled(bool bEnabled)
-{
-	if (bEnabled == bCurrentDryEnabled)
-		return;
-
-	// Sound not played yet - still waiting for raytracing
-	if (!SourceAudioComponent)
-		return;
-
-	bCurrentDryEnabled = bEnabled;
-
-	FAudioDevice* AudioDevice = SourceAudioComponent->GetAudioDevice();
-
-	// No active audio device (e.g. audio disabled, or the component's sound already stopped) - nothing to update
-	if (!AudioDevice)
-		return;
-
-	uint64 AudioComponentID = SourceAudioComponent->GetAudioComponentID();
-	AudioDevice->SendCommandToActiveSounds(AudioComponentID, [bEnabled](FActiveSound& ActiveSound)
-	{
-		// Kill/restore the master submix output without touching submix send routing.
-		// This lets reverb submix sends stay alive while silencing the dry signal.
-		ActiveSound.bHasActiveMainSubmixOutputOverride = true;
-		ActiveSound.bEnableMainSubmixOutputOverride = bEnabled;
-	});
+	Playback.Stop();
 }
