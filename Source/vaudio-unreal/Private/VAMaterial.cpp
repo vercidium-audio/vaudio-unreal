@@ -1,21 +1,93 @@
 #include "VAMaterial.h"
 #include "VAWorld.h"
 #include "VAMaterialConversion.h"
+#include "VAConstants.h"
 
 #include "VALog.h"
 
-void UVAMaterialBase::LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId)
+namespace
 {
-	AbsorptionLF        = vaWorldGetMaterialAbsorptionLF(World, MaterialId);
-	AbsorptionHF        = vaWorldGetMaterialAbsorptionHF(World, MaterialId);
-	Scattering          = vaWorldGetMaterialScattering(World, MaterialId);
-	TransmissionLF      = vaWorldGetMaterialTransmissionLF(World, MaterialId);
-	TransmissionHF      = vaWorldGetMaterialTransmissionHF(World, MaterialId);
-	FlatTransmissionLF = vaWorldGetMaterialFlatTransmissionLF(World, MaterialId);
-	FlatTransmissionHF = vaWorldGetMaterialFlatTransmissionHF(World, MaterialId);
+	struct FVAMaterialDefaults
+	{
+		float AbsorptionLF;
+		float AbsorptionHF;
+		float Scattering;
+		float TransmissionLF;
+		float TransmissionHF;
+		float FlatTransmissionLF;
+		float FlatTransmissionHF;
+		VAColor Color;
+	};
+
+	// Read once from a scratch world, since a running world's values may already be overridden by a VADefaultMaterial
+	const FVAMaterialDefaults& GetMaterialDefaults(int32 MaterialId)
+	{
+		static FVAMaterialDefaults Defaults[VAMaterialTypeCount];
+		static bool bCached = false;
+
+		if (!bCached)
+		{
+			VAWorld* World = vaWorldCreate();
+
+			for (int32 i = 0; i < VAMaterialTypeCount; i++)
+			{
+				Defaults[i].AbsorptionLF       = vaWorldGetMaterialAbsorptionLF(World, i);
+				Defaults[i].AbsorptionHF       = vaWorldGetMaterialAbsorptionHF(World, i);
+				Defaults[i].Scattering         = vaWorldGetMaterialScattering(World, i);
+				Defaults[i].TransmissionLF     = vaWorldGetMaterialTransmissionLF(World, i);
+				Defaults[i].TransmissionHF     = vaWorldGetMaterialTransmissionHF(World, i);
+				Defaults[i].FlatTransmissionLF = vaWorldGetMaterialFlatTransmissionLF(World, i);
+				Defaults[i].FlatTransmissionHF = vaWorldGetMaterialFlatTransmissionHF(World, i);
+				Defaults[i].Color              = vaWorldGetMaterialColor(World, i);
+			}
+
+			VAResult result = vaWorldDestroy(World);
+
+			if (result != VA_SUCCESS)
+				VA_ERROR_RESULT(result, TEXT("Failed to destroy the scratch world used to read the default materials."));
+
+			bCached = true;
+		}
+
+		return Defaults[FMath::Clamp(MaterialId, 0, VAMaterialTypeCount - 1)];
+	}
+
+	void LogIfSetterFailed(VAResult result, const TCHAR* PropertyName, const FString& MaterialName)
+	{
+		if (result == VA_SUCCESS || result == VA_UNCHANGED)
+			return;
+
+		VA_ERROR_RESULT(result, TEXT("Failed to set %s on material '%s'."), PropertyName, *MaterialName);
+	}
+
+	void SetWorldMaterial(VAWorld* World, int32 MaterialId, const FString& MaterialName, float AbsorptionLF, float AbsorptionHF, float Scattering, float TransmissionLF, float TransmissionHF, float FlatTransmissionLF, float FlatTransmissionHF, VAColor Color)
+	{
+		LogIfSetterFailed(vaWorldSetMaterialAbsorptionLF(World, MaterialId, AbsorptionLF), TEXT("AbsorptionLF"), MaterialName);
+		LogIfSetterFailed(vaWorldSetMaterialAbsorptionHF(World, MaterialId, AbsorptionHF), TEXT("AbsorptionHF"), MaterialName);
+		LogIfSetterFailed(vaWorldSetMaterialScattering(World, MaterialId, Scattering), TEXT("Scattering"), MaterialName);
+		LogIfSetterFailed(vaWorldSetMaterialTransmissionLF(World, MaterialId, TransmissionLF), TEXT("TransmissionLF"), MaterialName);
+		LogIfSetterFailed(vaWorldSetMaterialTransmissionHF(World, MaterialId, TransmissionHF), TEXT("TransmissionHF"), MaterialName);
+		LogIfSetterFailed(vaWorldSetMaterialFlatTransmissionLF(World, MaterialId, FlatTransmissionLF), TEXT("FlatTransmissionLF"), MaterialName);
+		LogIfSetterFailed(vaWorldSetMaterialFlatTransmissionHF(World, MaterialId, FlatTransmissionHF), TEXT("FlatTransmissionHF"), MaterialName);
+		LogIfSetterFailed(vaWorldSetMaterialColor(World, MaterialId, Color), TEXT("Color"), MaterialName);
+	}
 }
 
-void UVAMaterialBase::ApplyToWorld(AVAWorld* Owner)
+void UVAMaterialBase::LoadDefaultsFromSDK(int32 MaterialId)
+{
+	const FVAMaterialDefaults& Defaults = GetMaterialDefaults(MaterialId);
+
+	AbsorptionLF       = Defaults.AbsorptionLF;
+	AbsorptionHF       = Defaults.AbsorptionHF;
+	Scattering         = Defaults.Scattering;
+	TransmissionLF     = Defaults.TransmissionLF;
+	TransmissionHF     = Defaults.TransmissionHF;
+	FlatTransmissionLF = Defaults.FlatTransmissionLF;
+	FlatTransmissionHF = Defaults.FlatTransmissionHF;
+	Color              = VAColorToFColor(Defaults.Color);
+}
+
+void UVAMaterialBase::ApplyToWorld(AVAWorld* Owner) const
 {
 	VAWorld* World = Owner ? Owner->GetVAWorld() : nullptr;
 
@@ -27,40 +99,7 @@ void UVAMaterialBase::ApplyToWorld(AVAWorld* Owner)
 	if (!GetMaterialId(Owner, MaterialId))
 		return;
 
-	// Custom materials (MaterialId >= 1000) don't exist in the SDK until we create them -
-	// built-in materials (UVADefaultMaterial) already exist, so skip this for those.
-	if (IsA<UVACustomMaterial>() && !vaWorldHasMaterial(World, MaterialId))
-	{
-		VAResult result = vaWorldCreateMaterial(World, MaterialId);
-
-		if (result != VA_SUCCESS)
-		{
-			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create custom material %d."), MaterialId);
-			return;
-		}
-	}
-
-	vaWorldSetMaterialAbsorptionLF(World,        MaterialId, AbsorptionLF);
-	vaWorldSetMaterialAbsorptionHF(World,        MaterialId, AbsorptionHF);
-	vaWorldSetMaterialScattering(World,          MaterialId, Scattering);
-	vaWorldSetMaterialTransmissionLF(World,      MaterialId, TransmissionLF);
-	vaWorldSetMaterialTransmissionHF(World,      MaterialId, TransmissionHF);
-	vaWorldSetMaterialFlatTransmissionLF(World, MaterialId, FlatTransmissionLF);
-	vaWorldSetMaterialFlatTransmissionHF(World, MaterialId, FlatTransmissionHF);
-}
-
-AVAWorld* UVAMaterialBase::FindOwningWorldActor()
-{
-	// We must loop over each world, as this material could live on the World directly, or on a Component attached to geometry
-	for (const TWeakObjectPtr<AVAWorld>& WeakWorld : AVAWorld::RunningWorlds)
-	{
-		AVAWorld* AudioWorld = WeakWorld.Get();
-
-		if (AudioWorld && AudioWorld->Materials.Contains(this))
-			return AudioWorld;
-	}
-
-	return nullptr;
+	SetWorldMaterial(World, MaterialId, GetMaterialName(), AbsorptionLF, AbsorptionHF, Scattering, TransmissionLF, TransmissionHF, FlatTransmissionLF, FlatTransmissionHF, FColorToVA(Color));
 }
 
 #if WITH_EDITOR
@@ -68,17 +107,18 @@ void UVAMaterialBase::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	AVAWorld* Owner = FindOwningWorldActor();
+	// Several worlds can share this asset, e.g. PIE with multiple clients
+	for (const TWeakObjectPtr<AVAWorld>& WeakWorld : AVAWorld::RunningWorlds)
+	{
+		AVAWorld* Owner = WeakWorld.Get();
 
-	// Null if this asset isn't assigned to any world
-	if (!Owner)
-		return;
-
-	ApplyToWorld(Owner);
+		if (Owner && Owner->Materials.Contains(this))
+			ApplyToWorld(Owner);
+	}
 }
 #endif
 
-bool UVADefaultMaterial::GetMaterialId(AVAWorld* Owner, int32& OutMaterialId)
+bool UVADefaultMaterial::GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const
 {
 	OutMaterialId = (int32)EVAMaterialToVA(MaterialType);
 	return true;
@@ -86,26 +126,24 @@ bool UVADefaultMaterial::GetMaterialId(AVAWorld* Owner, int32& OutMaterialId)
 
 void UVADefaultMaterial::ResetToDefaults()
 {
-	int32 MaterialId = (int32)EVAMaterialToVA(MaterialType);
-
-	AVAWorld* Owner = FindOwningWorldActor();
-	VAWorld* World = Owner ? Owner->GetVAWorld() : nullptr;
-
-	if (World)
-	{
-		// A world is already running (e.g. PIE) - read its live defaults for this material.
-		LoadDefaultsFromSDK(World, MaterialId);
-	}
-	else
-	{
-		VAWorld* ScratchWorld = vaWorldCreate();
-		LoadDefaultsFromSDK(ScratchWorld, MaterialId);
-		vaWorldDestroy(ScratchWorld);
-	}
+	LoadDefaultsFromSDK((int32)EVAMaterialToVA(MaterialType));
 
 #if WITH_EDITOR
 	Modify();
 #endif
+}
+
+void UVADefaultMaterial::RestoreWorldDefaults(AVAWorld* Owner) const
+{
+	VAWorld* World = Owner ? Owner->GetVAWorld() : nullptr;
+
+	if (!World)
+		return;
+
+	int32 MaterialId = (int32)EVAMaterialToVA(MaterialType);
+	const FVAMaterialDefaults& Defaults = GetMaterialDefaults(MaterialId);
+
+	SetWorldMaterial(World, MaterialId, GetMaterialName(), Defaults.AbsorptionLF, Defaults.AbsorptionHF, Defaults.Scattering, Defaults.TransmissionLF, Defaults.TransmissionHF, Defaults.FlatTransmissionLF, Defaults.FlatTransmissionHF, Defaults.Color);
 }
 
 #if WITH_EDITOR
@@ -119,38 +157,15 @@ void UVADefaultMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
 }
 #endif
 
-static constexpr int32 FirstCustomMaterialId = 1000;
-
-bool UVACustomMaterial::GetMaterialId(AVAWorld* Owner, int32& OutMaterialId)
+bool UVACustomMaterial::GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const
 {
-	if (CustomMaterialId == 0)
+	OutMaterialId = Owner ? Owner->GetCustomMaterialId(this) : 0;
+
+	if (OutMaterialId == 0)
 	{
-		// Claim the lowest ID that hasn't been claimed yet
-		int32 NextId = FirstCustomMaterialId;
-
-		for (UVAMaterialBase* Other : Owner->Materials)
-		{
-			UVACustomMaterial* OtherCustom = Cast<UVACustomMaterial>(Other);
-
-			if (OtherCustom && OtherCustom != this && OtherCustom->CustomMaterialId >= NextId)
-				NextId = OtherCustom->CustomMaterialId + 1;
-		}
-
-		CustomMaterialId = NextId;
-
-#if WITH_EDITOR
-		Modify();
-#endif
+		VA_ERROR(TEXT("Custom material '%s' has no ID in this VAWorld. Add it to the VAWorld's Materials array."), *GetMaterialName());
+		return false;
 	}
 
-	OutMaterialId = CustomMaterialId;
 	return true;
 }
-
-#if WITH_EDITOR
-void UVACustomMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
-{
-	// Applies to the world (base class implementation)
-	Super::PostEditChangeProperty(PropertyChangedEvent);
-}
-#endif

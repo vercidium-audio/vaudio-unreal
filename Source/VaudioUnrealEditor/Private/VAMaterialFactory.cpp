@@ -10,7 +10,10 @@ UVADefaultMaterialFactory::UVADefaultMaterialFactory()
 
 UObject* UVADefaultMaterialFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
 {
-	return NewObject<UVADefaultMaterial>(InParent, Class, Name, Flags);
+	// Start from MaterialType's built-in values rather than the base class defaults
+	UVADefaultMaterial* material = NewObject<UVADefaultMaterial>(InParent, Class, Name, Flags);
+	material->ResetToDefaults();
+	return material;
 }
 
 FText UVADefaultMaterialFactory::GetDisplayName() const

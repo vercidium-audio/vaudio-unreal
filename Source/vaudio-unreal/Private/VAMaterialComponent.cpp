@@ -21,7 +21,7 @@ bool UVAMaterialComponent::GetMaterialId(int32& OutMaterialId)
 		return true;
 	}
 
-	if (!AudioWorld || !AudioWorld->Materials.Contains(MaterialAsset))
+	if (!AudioWorld || !AudioWorld->HasMaterial(MaterialAsset))
 	{
 		VA_WARN_NAMED(TEXT("MaterialAsset '%s' is not in the VAWorld's Materials array. Add it to the Materials array of the level's VAWorld."), *MaterialAsset->GetName());
 		return false;
@@ -48,7 +48,7 @@ bool UVAMaterialComponent::GetMaterialFor(const UActorComponent* component, int3
 				return true;
 			}
 
-			if (!AudioWorld || !AudioWorld->Materials.Contains(materialOverride.MaterialAsset))
+			if (!AudioWorld || !AudioWorld->HasMaterial(materialOverride.MaterialAsset))
 			{
 				VA_WARN_NAMED(TEXT("The MaterialAsset '%s' for component '%s' is not in the VAWorld's Materials array."), *materialOverride.MaterialAsset->GetName(), *component->GetName());
 				return false;

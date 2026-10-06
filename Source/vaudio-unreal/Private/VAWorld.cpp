@@ -147,7 +147,11 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 
 	UpdateVAWorld();
 
-	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes))
+	FName memberName = PropertyChangedEvent.GetMemberPropertyName();
+
+	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes))
+		RebuildPrimitives();
+	else if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, Materials) && SyncMaterials())
 		RebuildPrimitives();
 }
 #endif
@@ -225,7 +229,7 @@ void AVAWorld::InitializeVAWorld()
 		GroupedEAXPanPresets.Add(PanPreset);
 	}
 
-	InitialiseMaterials();
+	SyncMaterials();
 }
 
 // Pan follows what the player hears, which is the player controller's audio listener rather than the listener actor
@@ -337,6 +341,8 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		vaWorldWait(World);
 		DestroyPrimitives();
 		MaterialSources.Empty();
+		CustomMaterialIds.Empty();
+		AppliedMaterials.Empty();
 
 		// Invokes OnRemoved for the emitters whose removal was waiting on raytracing results
 		VAResult result = vaWorldDestroy(World);
@@ -936,14 +942,88 @@ float AVAWorld::GetGroupedEAXDecayTime(int32 Index) const
 	return eax ? eax->decayTime : 0.0f;
 }
 
-void AVAWorld::InitialiseMaterials()
+static constexpr int32 FirstCustomMaterialId = 1000;
+
+bool AVAWorld::SyncMaterials()
 {
-	for (UVAMaterialBase* Mat : Materials)
+	if (!World)
+		return false;
+
+	bool changed = false;
+
+	for (UVAMaterialBase* material : AppliedMaterials)
 	{
-		// Ignore null materials
-		if (Mat)
-		{
-			Mat->ApplyToWorld(this);
-		}
+		if (!material || Materials.Contains(material))
+			continue;
+
+		changed = true;
+
+		if (const UVADefaultMaterial* defaultMaterial = Cast<UVADefaultMaterial>(material))
+			defaultMaterial->RestoreWorldDefaults(this);
+		else
+			VA_ERROR_NAMED(TEXT("Custom material '%s' was removed from Materials during play. Custom materials can't be removed at runtime - primitives using it keep its last values until the level is reloaded"), *material->GetMaterialName());
 	}
+
+	TArray<TObjectPtr<UVAMaterialBase>> applied;
+
+	for (UVAMaterialBase* material : Materials)
+	{
+		if (!material || applied.Contains(material))
+			continue;
+
+		applied.Add(material);
+
+		if (!AppliedMaterials.Contains(material))
+			changed = true;
+
+		UVACustomMaterial* customMaterial = Cast<UVACustomMaterial>(material);
+
+		if (customMaterial && !CustomMaterialIds.Contains(customMaterial))
+		{
+			// One past the highest ID this world has assigned, so a removed material's ID is never reused by another
+			int32 materialId = FirstCustomMaterialId;
+
+			for (const auto& pair : CustomMaterialIds)
+				materialId = FMath::Max(materialId, pair.Value + 1);
+
+			VAResult result = vaWorldCreateMaterial(World, materialId);
+
+			if (result != VA_SUCCESS)
+			{
+				VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create custom material '%s'."), *customMaterial->GetMaterialName());
+				continue;
+			}
+
+			CustomMaterialIds.Add(customMaterial, materialId);
+		}
+
+		// Re-applies every default material too, so a removed duplicate doesn't leave the SDK defaults in place
+		material->ApplyToWorld(this);
+	}
+
+	AppliedMaterials = MoveTemp(applied);
+	return changed;
+}
+
+void AVAWorld::SetMaterials(const TArray<UVAMaterialBase*>& newMaterials)
+{
+	Materials = newMaterials;
+
+	if (SyncMaterials())
+		RebuildPrimitives();
+}
+
+int32 AVAWorld::GetCustomMaterialId(const UVACustomMaterial* material) const
+{
+	const int32* materialId = CustomMaterialIds.Find(material);
+	return materialId ? *materialId : 0;
+}
+
+bool AVAWorld::HasMaterial(const UVAMaterialBase* material) const
+{
+	if (Materials.Contains(material))
+		return true;
+
+	const UVACustomMaterial* customMaterial = Cast<UVACustomMaterial>(material);
+	return customMaterial && GetCustomMaterialId(customMaterial) != 0;
 }

@@ -13,6 +13,7 @@ struct VAEmitter;
 class AVAEmitter;
 class AVAListener;
 class UVAMaterialBase;
+class UVACustomMaterial;
 class UVAMaterialComponent;
 class UShapeComponent;
 class UStaticMeshComponent;
@@ -265,10 +266,20 @@ public:
 
 	// --- Materials ---
 
-	// Material assets applied to this world on BeginPlay. Each asset is only ever used by one
-	// world - not shared across worlds/levels.
+	// Material assets applied to this world on BeginPlay. An asset can be shared by several worlds, as custom material IDs are assigned per world. Use SetMaterials to change this during play from Blueprint
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
 	TArray<UVAMaterialBase*> Materials;
+
+	// Changes Materials during play. Added materials are applied, removed default materials restore the SDK's built-in values, and every primitive is rebuilt. Custom materials can't be removed at runtime
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void SetMaterials(const TArray<UVAMaterialBase*>& newMaterials);
+
+	// The SDK ID this world assigned to a custom material, or 0 if it hasn't applied it
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	int32 GetCustomMaterialId(const UVACustomMaterial* material) const;
+
+	// Whether geometry can use this material asset: it's in Materials, or it's a custom material this world applied before it was removed
+	bool HasMaterial(const UVAMaterialBase* material) const;
 
 	// Only colliders (shape components and static mesh simple collision) whose collision object type is listed here become raytracing geometry, like Godot's VAWorld.collision_layers. Empty adds every collider
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
@@ -404,7 +415,15 @@ private:
 	// only runs on the tick where it actually changes.
 	bool bWasReverbOnly = false;
 
-	void InitialiseMaterials();
+	// Custom material IDs (1000 and up) assigned by this world, like Godot's VAWorld.custom_materials. Removed custom materials keep their ID, so re-adding one reuses it
+	TMap<TWeakObjectPtr<const UVACustomMaterial>, int32> CustomMaterialIds;
+
+	// The materials applied by the last SyncMaterials, to find removed ones
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UVAMaterialBase>> AppliedMaterials;
+
+	// Applies Materials to the SDK world, and undoes materials removed since the last call. Returns whether anything was added or removed
+	bool SyncMaterials();
 	void DestroyPrimitives();
 
 	// Moves the debug window's camera to the level editor viewport (bSyncViewport) or the current listener

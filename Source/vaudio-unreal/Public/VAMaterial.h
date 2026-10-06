@@ -42,23 +42,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float FlatTransmissionHF = 0.25f;
 
-	// Returns the SDK material ID this asset applies to (built-in or custom, see subclasses).
-	// Returns false (logs why) if the ID can't be resolved.
-	virtual bool GetMaterialId(AVAWorld* Owner, int32& OutMaterialId) PURE_VIRTUAL(UVAMaterialBase::GetMaterialId, return false;);
+	// Colour of primitives with this material in the debug window (dev SDK only)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
+	FColor Color = FColor::White;
 
-	void ApplyToWorld(AVAWorld* Owner);
+	// The SDK material ID this asset applies to in Owner. Custom materials only have one once Owner has applied them. Returns false (and logs why) otherwise
+	virtual bool GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const PURE_VIRTUAL(UVAMaterialBase::GetMaterialId, return false;);
+
+	// The name used in log messages
+	virtual FString GetMaterialName() const { return GetName(); }
+
+	// Pushes every property to Owner's SDK world
+	void ApplyToWorld(AVAWorld* Owner) const;
 
 #if WITH_EDITOR
+	// Applies the edit to every running VAWorld whose Materials array contains this asset
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
 protected:
-	// Finds the running world (if any) whose Materials array contains this asset, via
-	// AVAWorld::RunningWorlds. Null if this asset isn't assigned to any running world.
-	AVAWorld* FindOwningWorldActor();
-
-	// Reads the current SDK defaults for MaterialId into our properties.
-	void LoadDefaultsFromSDK(VAWorld* World, int32 MaterialId);
+	// Reads the SDK's built-in values for MaterialId into our properties
+	void LoadDefaultsFromSDK(int32 MaterialId);
 };
 
 // Overrides one of the 23 built-in materials (e.g. "Concrete", "Metal") - pick from
@@ -73,12 +77,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
 	EVAMaterial MaterialType = EVAMaterial::Concrete;
 
-	virtual bool GetMaterialId(AVAWorld* Owner, int32& OutMaterialId) override;
+	virtual bool GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const override;
 
 	// Reads defaults from the SDK for MaterialType and applies them to this asset's properties.
 	// Call this from the editor to reset to built-in defaults.
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio")
 	void ResetToDefaults();
+
+	// Puts MaterialType's SDK built-in values back in Owner's SDK world, when this asset is removed from its Materials array
+	void RestoreWorldDefaults(AVAWorld* Owner) const;
 
 #if WITH_EDITOR
 	// Changing MaterialType resets the other properties to that material's SDK defaults, matching the Godot plugin's VADefaultMaterial.
@@ -86,20 +93,17 @@ public:
 #endif
 };
 
+// A new material. Each VAWorld that lists it assigns it its own SDK ID (1000 and up) when it begins play, so one asset can be shared by several levels
 UCLASS(BlueprintType, DisplayName = "VACustomMaterial")
 class VAUDIOUNREAL_API UVACustomMaterial : public UVAMaterialBase
 {
 	GENERATED_BODY()
 
 public:
-	virtual bool GetMaterialId(AVAWorld* Owner, int32& OutMaterialId) override;
+	// Shown in log messages. Empty uses the asset name
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
+	FString MaterialName;
 
-#if WITH_EDITOR
-	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-#endif
-
-private:
-	// Custom material ID (>= 1000), lazily assigned by GetMaterialId() the first time this asset is applied. 0 means "not yet assigned".
-	UPROPERTY()
-	int32 CustomMaterialId = 0;
+	virtual bool GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const override;
+	virtual FString GetMaterialName() const override { return MaterialName.IsEmpty() ? GetName() : MaterialName; }
 };
