@@ -46,8 +46,6 @@ void AVASource::InitializeTypeSpecific()
 		VA_WARN_NAMED(TEXT("Has affectsGroupedEAX=true, but does not cast reverb rays"));
 	}
 
-	Filter.Initialize(this);
-
 	bSourcePendingSpawn = true;
 }
 
@@ -146,7 +144,7 @@ void AVASource::UpdateSourceSubmix()
 		VASetReverbSend(SourceAudioComponent, ReverbSubmix, 0.0f);
 
 	ReverbSubmix = Submix;
-	ReverbSendLevel = SendLevel;
+	ReverbSendLevel = Filter.CompensateReverbSendLevel(SendLevel);
 
 	if (ReverbSubmix)
 		VASetReverbSend(SourceAudioComponent, ReverbSubmix, ReverbSendLevel);

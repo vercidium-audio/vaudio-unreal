@@ -80,7 +80,6 @@ void AVASourceRelative::BeginPlay()
 		return;
 	}
 
-	Filter.Initialize(this);
 	bSourcePendingSpawn = true;
 
 	if (!ContinuousEmitter)
@@ -180,7 +179,7 @@ void AVASourceRelative::UpdateSourceSubmix()
 		VASetReverbSend(SourceAudioComponent, ReverbSubmix, 0.0f);
 
 	ReverbSubmix = Submix;
-	ReverbSendLevel = SendLevel;
+	ReverbSendLevel = Filter.CompensateReverbSendLevel(SendLevel);
 
 	if (ReverbSubmix)
 		VASetReverbSend(SourceAudioComponent, ReverbSubmix, ReverbSendLevel);

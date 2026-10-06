@@ -40,7 +40,6 @@ void AVASourceAmbient::BeginPlay()
 		VA_WARN_NAMED(TEXT("SourceSound '%s' must have Virtualization Mode set to 'Play When Silent', else it may stop playing when fully muffled"), *SourceSound->GetName());
 	}
 
-	Filter.Initialize(this);
 	bSourcePendingSpawn = true;
 }
 
