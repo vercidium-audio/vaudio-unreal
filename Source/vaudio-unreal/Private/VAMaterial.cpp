@@ -4,6 +4,7 @@
 #include "VAConstants.h"
 
 #include "VALog.h"
+#include "VaudioUnrealModule.h"
 
 namespace
 {
@@ -25,7 +26,7 @@ namespace
 		static FVAMaterialDefaults Defaults[VAMaterialTypeCount];
 		static bool bCached = false;
 
-		if (!bCached)
+		if (!bCached && FVaudioUnrealModule::IsSdkLoaded())
 		{
 			VAWorld* World = vaWorldCreate();
 

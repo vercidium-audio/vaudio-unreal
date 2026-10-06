@@ -8,6 +8,7 @@
 #include "VAReverbConversion.h"
 #include "VAConstants.h"
 #include "VALog.h"
+#include "VaudioUnrealModule.h"
 
 #include "EngineUtils.h"
 #include "Engine/StaticMeshActor.h"
@@ -164,6 +165,13 @@ void AVAWorld::BeginPlay()
 
 	if (!subsystem)
 		return;
+
+	if (!FVaudioUnrealModule::IsSdkLoaded())
+	{
+		VA_ERROR_NAMED(TEXT("Is disabled, as the Vercidium Audio SDK failed to load. Check the log for the reason."));
+		SetActorTickEnabled(false);
+		return;
+	}
 
 	if (AVAWorld* existing = subsystem->GetVAWorld())
 	{

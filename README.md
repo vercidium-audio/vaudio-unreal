@@ -44,24 +44,23 @@ Otherwise, just clone or extract this repository directly into `Plugins/vaudio-u
 
 ### 2. Add the Vercidium Audio SDK
 
-This plugin links against the native Vercidium Audio SDK, which is not included in this repository. The SDK files must live in the `ThirdParty/vaudio` folder at the root of your project (next to your `.uproject` file, not inside the plugin):
+This plugin links against the native Vercidium Audio SDK, which is not included in this repository. The SDK files must live in the plugin's `Source/ThirdParty/vaudio` folder:
 
 ```
-YourProject/ThirdParty/vaudio/include/vaudio.h
-YourProject/ThirdParty/vaudio/lib/Win64/vaudionative.lib
-YourProject/ThirdParty/vaudio/lib/Win64/vaudionative.dll
+YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/include/vaudio.h
+YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Win64/vaudionative.lib
+YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Win64/vaudionative.dll
 ```
 
-Download the SDK from [vercidium.com](https://vercidium.com) and copy the files into the above locations.
+Download the SDK from [vercidium.com](https://vercidium.com) and copy the 3D native SDK's files into the above locations. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`.
+
+When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/Win64` and loads them from there. If the SDK is missing, the build fails with a message saying where to put it.
 
 ### 3. Enable the plugin
 
 - Regenerate your project files (right-click your `.uproject` → **Generate Visual Studio project files**), then build the project in Visual Studio (or open the `.uproject` and let Unreal prompt you to rebuild missing modules).
 - Open the project in the Unreal Editor, go to **Edit → Plugins**, search for **Vercidium Audio**, and make sure it's enabled.
 - Restart the editor if prompted.
-
-> [!NOTE]
-> `vaudionative.dll` is delay-loaded, so it's only loaded the first time a plugin function is called (e.g. `AVAudioWorld::BeginPlay`), not at editor startup. If that first call fails with a "module not found" error, UBT likely hasn't copied `vaudionative.dll` into `YourProject/Binaries/Win64` yet (this copy only happens on a full build — incremental/hot-reload builds can skip it). Manually copy `vaudionative.dll` from `YourProject/Plugins/vaudio-unreal/Binaries/Win64/` into `YourProject/Binaries/Win64/` to fix this.
 
 ## Usage
 

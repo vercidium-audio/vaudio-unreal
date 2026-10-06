@@ -2,7 +2,7 @@
 
 This is a public repo for the Vercidium Audio Unreal Engine plugin, which is a wrapper around the Vercidium Audio 3D C SDK (vaudionative.dll).
 
-~\vaudiofps2\ThirdParty\vaudio\include\vaudio.h is the public header for Vercidium Audio.
+`Source/ThirdParty/vaudio/include/vaudio.h` is the public header for Vercidium Audio. The SDK is vendored there (not committed), and `VaudioUnreal.Build.cs` stages its shared library into `Binaries/ThirdParty/vaudio/<platform>`, where `FVaudioUnrealModule::StartupModule` loads it from.
 
 Don't attempt to build the plugin yourself. The user will build it and inform you of any errors.
 
