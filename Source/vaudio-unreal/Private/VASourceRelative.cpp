@@ -79,6 +79,7 @@ void AVASourceRelative::BeginPlay()
 		return;
 	}
 
+	Filter.Initialize(this);
 	bSourcePendingSpawn = true;
 
 	if (!ContinuousEmitter)
@@ -135,14 +136,11 @@ void AVASourceRelative::TrySpawnSourceSound()
 			SourceAudioComponent->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 
 		SourceAudioComponent->bAutoDestroy = true;
-		SourceAudioComponent->SetLowPassFilterEnabled(true);
 
 		if (vaLowPassFilter)
-		{
-			SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, vaLowPassFilter->gainHF));
-			SourceAudioComponent->SetVolumeMultiplier(vaLowPassFilter->gainLF);
-		}
+			Filter.Apply(nullptr, vaLowPassFilter->gainLF, vaLowPassFilter->gainHF);
 
+		Filter.Attach(SourceAudioComponent);
 		SourceAudioComponent->Play();
 	}
 	else
@@ -183,8 +181,7 @@ void AVASourceRelative::ApplyReverbSource()
 		if (!vaLowPassFilter)
 			return;
 
-		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, vaLowPassFilter->gainHF));
-		SourceAudioComponent->SetVolumeMultiplier(vaLowPassFilter->gainLF);
+		Filter.Apply(SourceAudioComponent, vaLowPassFilter->gainLF, vaLowPassFilter->gainHF);
 
 		// Apply the continuous emitter's grouped EAX reverb to this sound
 		if (ContinuousEmitter->AudioWorld)

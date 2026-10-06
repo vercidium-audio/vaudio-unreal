@@ -3,8 +3,7 @@
 #include "CoreMinimal.h"
 #include "VAEmitter.h"
 #include "Components/AudioComponent.h"
-#include "Sound/SoundEffectSource.h"
-#include "SourceEffects/SourceEffectFilter.h"
+#include "VAFilterConversion.h"
 #include "VASource.generated.h"
 
 UCLASS(DisplayName = "VASource")
@@ -26,8 +25,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	USoundBase* SourceSound = nullptr;
 
-	void ApplySourceFilter(float GainLF, float GainHF);
 	void SetDryOutputEnabled(bool bEnabled);
+
+	const FVASourceFilter& GetFilter() const { return Filter; }
 
 	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;
@@ -50,10 +50,7 @@ private:
 	bool bSourcePendingSpawn = false;
 
 	UPROPERTY(Transient)
-	USourceEffectFilterPreset* SourceLPFPreset = nullptr;
-
-	UPROPERTY(Transient)
-	USoundEffectSourcePresetChain* SourceEffectChain = nullptr;
+	FVASourceFilter Filter;
 
 	void UpdateSourceSubmix();
 	bool ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel);

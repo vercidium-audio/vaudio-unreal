@@ -3,10 +3,10 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Components/AudioComponent.h"
+#include "VAFilterConversion.h"
 #include "VASourceAmbient.generated.h"
 
 class AVAWorld;
-struct VALowPassFilter;
 
 UCLASS(DisplayName = "VASourceAmbient")
 class VAUDIOUNREAL_API AVASourceAmbient : public AActor
@@ -34,8 +34,14 @@ public:
 	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;
 
+	const FVASourceFilter& GetFilter() const { return Filter; }
+
 private:
-	void TrySpawnSourceSound(const VALowPassFilter* AmbientFilter);
+	UPROPERTY(Transient)
+	FVASourceFilter Filter;
+
+	void TrySpawnSourceSound();
 
 	bool checkedListenerRays = false;
+	bool bSourcePendingSpawn = false;
 };

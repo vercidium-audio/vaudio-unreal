@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Components/AudioComponent.h"
 #include "Components/SceneComponent.h"
+#include "VAFilterConversion.h"
 #include "VASourceRelative.generated.h"
 
 class AVAEmitterBase;
@@ -37,7 +38,12 @@ public:
 	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;
 
+	const FVASourceFilter& GetFilter() const { return Filter; }
+
 private:
+	UPROPERTY(Transient)
+	FVASourceFilter Filter;
+
 	// This actor has no VAEmitter* of its own (see class comment) but still needs a root
 	// component so bAttachToSelf spawning has something to attach the audio component to.
 	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio|Source")

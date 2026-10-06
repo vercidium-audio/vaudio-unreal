@@ -11,8 +11,6 @@ extern "C" {
 #include "VALog.h"
 #include "VAConstants.h"
 
-const float LOW_PASS_RESONANCE = 0.707f; // Butterworth Q constant - maximally flat passband, no resonant peak at the cutoff
-
 AVASource::AVASource()
 {
 }
@@ -47,21 +45,7 @@ void AVASource::InitializeTypeSpecific()
 		VA_WARN_NAMED(TEXT("Has affectsGroupedEAX=true, but does not cast reverb rays"));
 	}
 
-	// Build the source effect chain (LPF only on the dry path; reverb submix taps the pre-effect signal).
-	SourceLPFPreset = NewObject<USourceEffectFilterPreset>(this);
-
-	FSourceEffectFilterSettings LPFSettings;
-	LPFSettings.FilterCircuit    = ESourceEffectFilterCircuit::StateVariable;
-	LPFSettings.FilterType       = ESourceEffectFilterType::LowPass;
-	LPFSettings.CutoffFrequency  = MAX_LOW_PASS_CUTOFF_FREQUENCY;
-	LPFSettings.FilterQ          = LOW_PASS_RESONANCE;
-	SourceLPFPreset->SetSettings(LPFSettings);
-
-	SourceEffectChain = NewObject<USoundEffectSourcePresetChain>(this);
-	FSourceEffectChainEntry ChainEntry;
-	ChainEntry.Preset = SourceLPFPreset;
-	ChainEntry.bBypass = false;
-	SourceEffectChain->Chain.Add(ChainEntry);
+	Filter.Initialize(this);
 
 	bSourcePendingSpawn = true;
 }
@@ -91,7 +75,7 @@ void AVASource::TickTypeSpecific(float DeltaTime)
 
 	// Null until the main listener has raytraced this source
 	if (VALowPassFilter* lowPassFilter = GetMufflingResult())
-		ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
+		Filter.Apply(SourceAudioComponent, lowPassFilter->gainLF, lowPassFilter->gainHF);
 
 	UpdateSourceSubmix();
 
@@ -123,20 +107,19 @@ void AVASource::TrySpawnSourceSound()
 	if (SourceAudioComponent)
 	{
 		SourceAudioComponent->SetWorldLocationAndRotation(GetActorLocation(), FRotator::ZeroRotator);
-		SourceAudioComponent->SetVolumeMultiplier(1.0f);
 		SourceAudioComponent->SetPitchMultiplier(1.0f);
 		SourceAudioComponent->bAllowSpatialization = true;
 		SourceAudioComponent->bAutoDestroy = true;
 		SourceAudioComponent->bStopWhenOwnerDestroyed = false;
-		SourceAudioComponent->SetSourceEffectChain(SourceEffectChain);
 
 		if (!SourceAudioComponent->AttenuationSettings)
 		{
 			VA_WARN_NAMED(TEXT("Has no Sound Attenuation - it will not fall off with distance"));
 		}
 
-		// Apply filter immediately
-		ApplySourceFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
+		// Apply the filter immediately
+		Filter.Apply(nullptr, lowPassFilter->gainLF, lowPassFilter->gainHF);
+		Filter.Attach(SourceAudioComponent);
 
 		// Apply reverb
 		UpdateSourceSubmix();
@@ -147,22 +130,6 @@ void AVASource::TrySpawnSourceSound()
 	{
 		VA_WARN_NAMED(TEXT("Play failed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
 	}
-}
-
-void AVASource::ApplySourceFilter(float GainLF, float GainHF)
-{
-	// Sound not played yet - still waiting for raytracing
-	if (!SourceAudioComponent)
-		return;
-
-	FSourceEffectFilterSettings settings;
-	settings.FilterCircuit   = ESourceEffectFilterCircuit::StateVariable;
-	settings.FilterType      = ESourceEffectFilterType::LowPass;
-	settings.CutoffFrequency = FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, GainHF);
-	settings.FilterQ		 = LOW_PASS_RESONANCE;
-	SourceLPFPreset->SetSettings(settings);
-
-	SourceAudioComponent->SetVolumeMultiplier(GainLF);
 }
 
 void AVASource::UpdateSourceSubmix()

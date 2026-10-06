@@ -39,6 +39,9 @@ void AVASourceAmbient::BeginPlay()
 	{
 		VA_WARN_NAMED(TEXT("SourceSound '%s' must have Virtualization Mode set to 'Play When Silent', else it may stop playing when fully muffled"), *SourceSound->GetName());
 	}
+
+	Filter.Initialize(this);
+	bSourcePendingSpawn = true;
 }
 
 void AVASourceAmbient::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -77,29 +80,22 @@ void AVASourceAmbient::Tick(float DeltaTime)
 	if (!AmbientFilter)
 		return;
 
-	if (!SourceAudioComponent)
-	{
-		// Play the sound
-		TrySpawnSourceSound(AmbientFilter);
-	}
-	else
-	{
-		// Update the low pass filter
-		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, AmbientFilter->gainHF));
-		SourceAudioComponent->SetVolumeMultiplier(AmbientFilter->gainLF);
-	}
+	Filter.Apply(SourceAudioComponent, AmbientFilter->gainLF, AmbientFilter->gainHF);
+
+	if (bSourcePendingSpawn)
+		TrySpawnSourceSound();
 }
 
-void AVASourceAmbient::TrySpawnSourceSound(const VALowPassFilter* AmbientFilter)
+void AVASourceAmbient::TrySpawnSourceSound()
 {
+	bSourcePendingSpawn = false;
+
 	// CreateSound2D() builds the component without starting playback, so we can configure the low pass filter before playing any sound
 	SourceAudioComponent = UGameplayStatics::CreateSound2D(GetWorld(), SourceSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
 
 	if (SourceAudioComponent)
 	{
-		SourceAudioComponent->SetLowPassFilterEnabled(true);
-		SourceAudioComponent->SetLowPassFilterFrequency(FMath::Lerp(MIN_LOW_PASS_CUTOFF_FREQUENCY, MAX_LOW_PASS_CUTOFF_FREQUENCY, AmbientFilter->gainHF));
-		SourceAudioComponent->SetVolumeMultiplier(AmbientFilter->gainLF);
+		Filter.Attach(SourceAudioComponent);
 		SourceAudioComponent->Play();
 	}
 	else
