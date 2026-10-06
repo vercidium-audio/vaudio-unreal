@@ -5,7 +5,7 @@
 #include "VAVisualisation.generated.h"
 
 struct VAVisualisationData;
-class AVAEmitterBase;
+class AVAEmitter;
 class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 
@@ -22,15 +22,15 @@ public:
 
 	// Number of visualisation rays cast
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0"))
-	int32 VisualisationRayCount = 0;
+	int32 VisualisationRayCount = 32;
 
 	// Number of bounces per visualisation ray
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0"))
-	int32 VisualisationBounceCount = 0;
+	int32 VisualisationBounceCount = 4;
 
 	// How often to cast visualisation rays (milliseconds)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "1"))
-	int32 VisualisationUpdateFrequency = 500;
+	int32 VisualisationUpdateFrequency = 200;
 
 	// How long, in milliseconds, each diamond takes to fade in from transparent to Color's alpha
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0"))
@@ -55,11 +55,11 @@ public:
 	// How far, in world units, each diamond is pushed off the surface it landed on along the hit
 	// normal. Increase if diamonds z-fight with nearby geometry
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0.0"))
-	float NormalOffset = 2.0f;
+	float NormalOffset = 5.0f;
 
 	// Ray bounces further than this distance from the owning emitter are not rendered. 0 = no limit
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0.0"))
-	float MaxDistance = 2000.0f;
+	float MaxDistance = 3000.0f;
 
 	// Called from the VAEmitterVisualisationCallback trampoline with a batch of ray-bounce
 	// results, always on the main thread during vaWorldUpdate() - safe to touch UObjects directly
@@ -91,7 +91,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> DiamondMaterialInstance = nullptr;
 
-	AVAEmitterBase* OwnerEmitter = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<AVAEmitter> OwnerEmitter = nullptr;
 
 	int32 NextInstance = 0;
 

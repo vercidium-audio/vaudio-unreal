@@ -14,6 +14,8 @@ extern "C" {
 
 AVASource::AVASource()
 {
+	// Godot's VASource default
+	bAffectsGroupedEAX = true;
 }
 
 bool AVASource::ValidateConfig()
@@ -39,11 +41,6 @@ void AVASource::InitializeTypeSpecific()
 	if (!SourceSound->IsPlayWhenSilent())
 	{
 		VA_WARN_NAMED(TEXT("SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *SourceSound->GetName());
-	}
-
-	if (bAffectsGroupedEAX && (ReverbRayCount == 0 || ReverbBounceCount == 0))
-	{
-		VA_WARN_NAMED(TEXT("Has affectsGroupedEAX=true, but does not cast reverb rays"));
 	}
 
 	bSourcePendingSpawn = true;
@@ -79,11 +76,7 @@ void AVASource::TickTypeSpecific(float DeltaTime)
 	UpdateSourceSubmix();
 
 	if (SourceAudioComponent)
-	{
-		FVector pos = GetActorLocation();
-		SourceAudioComponent->SetWorldLocationAndRotation(pos, FRotator::ZeroRotator);
-		vaEmitterSetPositionUnreal(Emitter, pos);
-	}
+		SourceAudioComponent->SetWorldLocationAndRotation(GetActorLocation(), FRotator::ZeroRotator);
 }
 
 void AVASource::TrySpawnSourceSound()

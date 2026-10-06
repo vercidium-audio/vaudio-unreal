@@ -7,7 +7,6 @@
 #include "VAFilterConversion.h"
 #include "VASourceRelative.generated.h"
 
-class AVAEmitterBase;
 class AVAListener;
 class AVAEmitter;
 
@@ -33,7 +32,7 @@ public:
 	bool bAttachToSelf = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
-	AVAEmitterBase* ReverbSource = nullptr;
+	AVAEmitter* ReverbSource = nullptr;
 
 	UPROPERTY(Transient)
 	UAudioComponent* SourceAudioComponent = nullptr;

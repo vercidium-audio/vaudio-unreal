@@ -1,5 +1,5 @@
 #include "VASourceRelative.h"
-#include "VAEmitterBase.h"
+#include "VAEmitter.h"
 #include "VAListener.h"
 #include "VAEmitter.h"
 #include "VAWorld.h"
@@ -34,7 +34,7 @@ void AVASourceRelative::BeginPlay()
 	}
 
 	ListenerEmitter = Cast<AVAListener>(ReverbSource);
-	ContinuousEmitter = Cast<AVAEmitter>(ReverbSource);
+	ContinuousEmitter = ListenerEmitter ? nullptr : ReverbSource;
 
 	if (ListenerEmitter)
 	{

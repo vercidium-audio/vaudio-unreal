@@ -1,14 +1,131 @@
 #include "VAEmitter.h"
 #include "VAWorld.h"
 #include "VAListener.h"
-#include "VALog.h"
 
 extern "C" {
 #include "vaudio.h"
 }
 
+#include "VAConstants.h"
+#include "VALog.h"
+
+// vaEmitterSetUserData() stashes the owning actor on the VAEmitter* itself, so these trampolines
+// can resolve identity directly instead of needing a side registry.
+static void VAOnRaytracingCompleteTrampoline(VAEmitter* emitter)
+{
+	if (AVAEmitter* owner = static_cast<AVAEmitter*>(vaEmitterGetUserData(emitter)))
+		owner->QueueRaytracingComplete();
+}
+
+static void VAOnRaytracedByAnotherEmitterTrampoline(VAEmitter* source, VAEmitter* target)
+{
+	AVAEmitter* owner = static_cast<AVAEmitter*>(vaEmitterGetUserData(target));
+
+	if (!owner)
+		return;
+
+	VALowPassFilter* filter = vaEmitterGetTargetFilter(source, target);
+
+	if (filter)
+		owner->QueueRaytracedByListener(filter->gainLF, filter->gainHF);
+}
+
+static void VAOnRemovedTrampoline(VAEmitter* emitter)
+{
+	if (AVAEmitter* owner = static_cast<AVAEmitter*>(vaEmitterGetUserData(emitter)))
+	{
+		owner->OnEmitterRemoved(emitter);
+		return;
+	}
+
+	// The actor already released this handle while its removal was pending
+	AVAWorld::OnOrphanedEmitterRemoved(emitter);
+}
+
+static int32 VARandomScatteringSeed()
+{
+	return (int32)(FMath::Rand32() & 0x7fffffff);
+}
+
 AVAEmitter::AVAEmitter()
 {
+	PrimaryActorTick.bCanEverTick = true;
+
+	UBillboardComponent* Root = CreateDefaultSubobject<UBillboardComponent>(TEXT("Root"));
+	SetRootComponent(Root);
+
+	ScatteringSeed = VARandomScatteringSeed();
+}
+
+void AVAEmitter::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	// Actors created from a Blueprint or a duplicated template copy its seed, so give them their own. A seed the user changed no longer matches the template, so it's kept
+	if (const AVAEmitter* archetype = Cast<AVAEmitter>(GetArchetype()))
+	{
+		if (ScatteringSeed == archetype->ScatteringSeed)
+			ScatteringSeed = VARandomScatteringSeed();
+	}
+}
+
+void AVAEmitter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Disable the actor if validation fails
+	if (!AudioWorld)
+	{
+		VA_WARN_NAMED(TEXT("Does not have an AudioWorld assigned and will not cast rays or play sound"));
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	TryInitializeEmitter();
+}
+
+bool AVAEmitter::TryInitializeEmitter()
+{
+	// Already failed once before, don't try again
+	if (!AudioWorld || failedInitialisation)
+		return false;
+
+	// Already initialised, all is good
+	if (registered)
+		return true;
+
+	// The world may not have begun play yet, since actor BeginPlay order isn't guaranteed
+	AudioWorld->InitializeVAWorld();
+
+	if (!ValidateConfig() || !AttachToWorld())
+	{
+		// Failed validation or the SDK rejected it, so disable this actor
+		SetActorTickEnabled(false);
+		failedInitialisation = true;
+		return false;
+	}
+
+	registered = true;
+	return true;
+}
+
+bool AVAEmitter::AttachToWorld()
+{
+	CreateEmitter();
+
+	// Properties are pushed before the emitter joins the world
+	InitializeTypeSpecific();
+
+	if (AudioWorld->RegisterEmitter(this))
+		return true;
+
+	DestroyUnaddedEmitter();
+	return false;
+}
+
+void AVAEmitter::DetachFromWorld()
+{
+	AudioWorld->UnregisterEmitter(this);
 }
 
 void AVAEmitter::InitializeTypeSpecific()
@@ -19,11 +136,6 @@ void AVAEmitter::InitializeTypeSpecific()
 	}
 
 	UpdateVAEmitter();
-
-	vaEmitterSetMaxVolume(Emitter, MaxVolume);
-	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
-	vaEmitterSetKeepReverbTailAlive(Emitter, bKeepReverbTailAlive);
-	vaEmitterSetHasRelativeReverb(Emitter, false);
 }
 
 void AVAEmitter::DeinitializeTypeSpecific()
@@ -31,18 +143,301 @@ void AVAEmitter::DeinitializeTypeSpecific()
 	CurrentGroupedEAXIndex = -1;
 }
 
-void AVAEmitter::TickTypeSpecific(float DeltaTime)
+void AVAEmitter::CreateEmitter()
 {
-	if (bAffectsGroupedEAX)
-		UpdateGroupedEAXIndex();
+	VAEmitter* handle = vaEmitterCreate();
+
+	vaEmitterSetLogCallback(handle, &VASdkEmitterLogCallback);
+	vaEmitterSetLogErrorCallback(handle, &VASdkEmitterLogErrorCallback);
+	vaEmitterSetOnRaytracingCompleteCallback(handle, &VAOnRaytracingCompleteTrampoline);
+	vaEmitterSetOnRaytracedByAnotherEmitterCallback(handle, &VAOnRaytracedByAnotherEmitterTrampoline);
+	vaEmitterSetOnRemovedCallback(handle, &VAOnRemovedTrampoline);
+
+	AdoptEmitter(handle);
 }
 
-void AVAEmitter::UpdateGroupedEAXIndex()
+void AVAEmitter::AdoptEmitter(VAEmitter* handle)
+{
+	Emitter = handle;
+
+	// Lets the callback trampolines resolve this actor from the VAEmitter* alone
+	vaEmitterSetUserData(Emitter, this);
+	vaEmitterSetName(Emitter, TCHAR_TO_UTF8(*GetActorNameOrLabel()));
+	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
+}
+
+void AVAEmitter::DestroyUnaddedEmitter()
+{
+	vaEmitterSetUserData(Emitter, nullptr);
+	vaEmitterDestroy(Emitter);
+	Emitter = nullptr;
+}
+
+void AVAEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+
+	DeinitializeTypeSpecific();
+
+	if (registered)
+	{
+		DetachFromWorld();
+		registered = false;
+	}
+
+	ReleaseEmitter();
+}
+
+void AVAEmitter::ReleaseEmitter()
 {
 	if (!Emitter)
 		return;
 
-	CurrentGroupedEAXIndex = vaEmitterGetGroupedEAXIndex(Emitter);
+	VAWorld* vaWorld = AudioWorld ? AudioWorld->GetVAWorld() : nullptr;
+
+	// The world ended first, and vaWorldDestroy unlinked this emitter from it, so it can be freed now
+	if (!vaWorld)
+	{
+		vaEmitterSetUserData(Emitter, nullptr);
+		VAResult result = vaEmitterDestroy(Emitter);
+
+		if (result != VA_SUCCESS)
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to destroy the emitter after its world ended."));
+
+		Emitter = nullptr;
+		return;
+	}
+
+	// If no raytracing results were pending, OnRemoved has already run, handing the handle to the world and clearing Emitter
+	VAResult result = vaWorldRemoveEmitter(vaWorld, Emitter);
+
+	if (!Emitter)
+		return;
+
+	switch (result)
+	{
+		// OnRemoved fires once the in-flight raytracing results are handled, or once its reverb tail finishes (VA_PENDING_REMOVAL). This actor may be gone by then, so the world takes over the handle
+		case VA_SUCCESS:
+		case VA_PENDING_REMOVAL:
+			vaEmitterSetUserData(Emitter, nullptr);
+			AudioWorld->AddOrphanedEmitter(Emitter);
+			break;
+
+		// Never added to the world
+		case VA_NOT_FOUND:
+			vaEmitterSetUserData(Emitter, nullptr);
+			vaEmitterDestroy(Emitter);
+			break;
+
+		default:
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to remove the emitter from its world."));
+			vaEmitterSetUserData(Emitter, nullptr);
+			AudioWorld->AddOrphanedEmitter(Emitter);
+			break;
+	}
+
+	Emitter = nullptr;
+}
+
+void AVAEmitter::OnEmitterRemoved(VAEmitter* handle)
+{
+	AudioWorld->DeferEmitterDestroy(handle);
+
+	if (Emitter == handle)
+		Emitter = nullptr;
+}
+
+void AVAEmitter::QueueRaytracingComplete()
+{
+	pendingRaytracingComplete = true;
+	AudioWorld->QueueEmitterEvents(this);
+}
+
+void AVAEmitter::QueueRaytracedByListener(float gainLF, float gainHF)
+{
+	pendingRaytracedByListener = true;
+	pendingGainLF = gainLF;
+	pendingGainHF = gainHF;
+	AudioWorld->QueueEmitterEvents(this);
+
+	// Godot removes the emitter from inside this callback. Here it leaves at the end of its next Tick, so subclasses can apply the result first
+	if (bRaytraceOnce)
+		pendingRaytraceOnceRelease = true;
+}
+
+void AVAEmitter::FlushPendingEvents()
+{
+	if (pendingRaytracingComplete)
+	{
+		pendingRaytracingComplete = false;
+		OnRaytracingComplete.Broadcast();
+	}
+
+	// A handler above may have destroyed this actor
+	if (pendingRaytracedByListener && IsValid(this))
+	{
+		pendingRaytracedByListener = false;
+		OnRaytracedByListener.Broadcast(pendingGainLF, pendingGainHF);
+	}
+}
+
+void AVAEmitter::Tick(float DeltaTime)
+{
+	// Initialisation failed after the tick function was registered
+	if (!Emitter && !raytraceOnceReleased)
+		return;
+
+	Super::Tick(DeltaTime);
+
+	if (Emitter)
+		vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
+
+	TickTypeSpecific(DeltaTime);
+
+	if (pendingRaytraceOnceRelease)
+	{
+		pendingRaytraceOnceRelease = false;
+
+		if (VALowPassFilter* muffling = GetMufflingResult())
+		{
+			hasLastMufflingResult = true;
+			lastMufflingGainLF = muffling->gainLF;
+			lastMufflingGainHF = muffling->gainHF;
+		}
+
+		if (registered)
+		{
+			DetachFromWorld();
+			registered = false;
+		}
+
+		ReleaseEmitter();
+		raytraceOnceReleased = true;
+	}
+}
+
+void AVAEmitter::TickTypeSpecific(float DeltaTime)
+{
+	if (bAffectsGroupedEAX && Emitter)
+		CurrentGroupedEAXIndex = vaEmitterGetGroupedEAXIndex(Emitter);
+}
+
+void AVAEmitter::UpdateVAEmitter()
+{
+	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
+	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
+	vaEmitterSetReverbEnergyCap(Emitter, ReverbEnergyCap);
+	vaEmitterSetMinimumReverbEnergy(Emitter, MinimumReverbEnergy);
+	vaEmitterSetMaxVolume(Emitter, MaxVolume);
+	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
+	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
+	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
+	vaEmitterSetKeepReverbTailAlive(Emitter, bKeepReverbTailAlive);
+	vaEmitterSetHasRelativeReverb(Emitter, bHasRelativeReverb);
+
+	vaEmitterSetOcclusionEnergyCap(Emitter, OcclusionEnergyCap);
+	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
+
+	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
+	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
+	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
+	vaEmitterSetMinimumAmbientOcclusionEnergy(Emitter, MinimumAmbientOcclusionEnergy);
+	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
+	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
+	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
+	vaEmitterSetMinimumAmbientPermeationEnergy(Emitter, MinimumAmbientPermeationEnergy);
+
+	vaEmitterSetType(Emitter, Type);
+	vaEmitterSetTrailRefreshCount(Emitter, TrailRefreshCount);
+	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
+	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
+	vaEmitterSetClampPosition(Emitter, bClampPosition);
+
+	vaEmitterSetRandomTrailColor(Emitter, bRandomTrailColor);
+	vaEmitterSetTrailColor(Emitter, FColorToVA(TrailColor));
+	vaEmitterSetReverbColor(Emitter, FColorToVA(ReverbColor));
+	vaEmitterSetOcclusionColor(Emitter, FColorToVA(OcclusionColor));
+	vaEmitterSetPermeationColor(Emitter, FColorToVA(PermeationColor));
+	vaEmitterSetAmbientPermeationColor(Emitter, FColorToVA(AmbientPermeationColor));
+}
+
+bool AVAEmitter::IsRaytraced() const
+{
+	return Emitter && !vaEmitterGetInitialising(Emitter);
+}
+
+int32 AVAEmitter::GetGroupedEAXIndex() const
+{
+	return CurrentGroupedEAXIndex;
+}
+
+bool AVAEmitter::GetWithinWorldBounds() const
+{
+	return Emitter && vaEmitterGetWithinWorldBounds(Emitter);
+}
+
+FVector AVAEmitter::GetVAPosition() const
+{
+	return Emitter ? VAVectorToFVector(vaEmitterGetPosition(Emitter)) : GetActorLocation();
+}
+
+void AVAEmitter::GetReverbResult(bool& bSuccess, FVAEAXReverbResult& Result) const
+{
+	VAEAXReverb* EAX = Emitter ? vaEmitterGetEAX(Emitter) : nullptr;
+
+	// Raytracing has not completed at least once yet
+	if (!EAX)
+	{
+		bSuccess = false;
+		Result = FVAEAXReverbResult();
+		return;
+	}
+
+	bSuccess = true;
+	Result.OutsidePercent = EAX->outsidePercent;
+	Result.ReturnedPercent = EAX->returnedPercent;
+	Result.MaterialAbsorptionLF = EAX->materialAbsorptionLF;
+	Result.MaterialAbsorptionHF = EAX->materialAbsorptionHF;
+	Result.MaterialRoughness = EAX->materialRoughness;
+	Result.ReflectionsDelay = EAX->reflectionsDelay;
+	Result.Density = EAX->density;
+	Result.Diffusion = EAX->diffusion;
+	Result.GainLF = EAX->gainLF;
+	Result.GainHF = EAX->gainHF;
+	Result.Gain = EAX->gain;
+	Result.DecayTime = EAX->decayTime;
+	Result.DecayLFRatio = EAX->decayLFRatio;
+	Result.DecayHFRatio = EAX->decayHFRatio;
+	Result.ReflectionsGain = EAX->reflectionsGain;
+	Result.LateReverbGain = EAX->lateReverbGain;
+	Result.LateReverbDelay = EAX->lateReverbDelay;
+	Result.EchoTime = EAX->echoTime;
+	Result.EchoDepth = EAX->echoDepth;
+	Result.ModulationTime = EAX->modulationTime;
+	Result.ModulationDepth = EAX->modulationDepth;
+	Result.AirAbsorptionGainHF = EAX->airAbsorptionGainHF;
+	Result.HFReference = EAX->hfReference;
+	Result.LFReference = EAX->lfReference;
+	Result.RoomRolloffFactor = EAX->roomRolloffFactor;
+	Result.bDecayHFLimit = EAX->decayHFLimit != 0;
+}
+
+void AVAEmitter::GetAmbientFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
+{
+	VALowPassFilter* AmbientFilter = Emitter ? vaEmitterGetAmbientFilter(Emitter) : nullptr;
+
+	// Raytracing has not completed at least once yet
+	if (!AmbientFilter)
+	{
+		bSuccess = false;
+		GainLF = 0.0f;
+		GainHF = 0.0f;
+		return;
+	}
+
+	bSuccess = true;
+	GainLF = AmbientFilter->gainLF;
+	GainHF = AmbientFilter->gainHF;
 }
 
 VALowPassFilter* AVAEmitter::GetMufflingResult() const
@@ -63,6 +458,15 @@ VALowPassFilter* AVAEmitter::GetMufflingResult() const
 
 void AVAEmitter::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
 {
+	// A bRaytraceOnce emitter that left the world keeps the result it had
+	if (raytraceOnceReleased)
+	{
+		bSuccess = hasLastMufflingResult;
+		GainLF = hasLastMufflingResult ? lastMufflingGainLF : 0.0f;
+		GainHF = hasLastMufflingResult ? lastMufflingGainHF : 0.0f;
+		return;
+	}
+
 	VALowPassFilter* MufflingFilter = GetMufflingResult();
 
 	// Raytracing has not completed at least once yet
@@ -136,15 +540,10 @@ void AVAEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEv
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	// Emitter only exists while PIE/game is running and TryInitializeEmitter() has completed -
-	// editing properties on a placed actor in the editor (not PIE) hits this every time.
+	// Emitter only exists while PIE/game is running and TryInitializeEmitter() has completed - editing properties on a placed actor in the editor (not PIE) hits this every time
 	if (!Emitter)
 		return;
 
 	UpdateVAEmitter();
-
-	vaEmitterSetMaxVolume(Emitter, MaxVolume);
-	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
-	vaEmitterSetKeepReverbTailAlive(Emitter, bKeepReverbTailAlive);
 }
 #endif

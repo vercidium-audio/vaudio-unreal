@@ -1,13 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "VAEmitterBase.h"
+#include "VAEmitter.h"
 #include "SubmixEffects/AudioMixerSubmixEffectReverb.h"
 #include "Sound/SoundSubmix.h"
 #include "VAListener.generated.h"
 
 UCLASS(DisplayName = "VAListener")
-class VAUDIOUNREAL_API AVAListener : public AVAEmitterBase
+class VAUDIOUNREAL_API AVAListener : public AVAEmitter
 {
 	GENERATED_BODY()
 
@@ -91,7 +91,7 @@ public:
 
 public:
 	// Called by AVAWorld for every non-listener emitter, so this listener calculates how muffled it is
-	void AddTarget(AVAEmitterBase* target);
+	void AddTarget(AVAEmitter* target);
 
 	// Called by AVAWorld from the SDK's OnReverbUpdated callback while this listener is current
 	void ApplyListenerReverb();

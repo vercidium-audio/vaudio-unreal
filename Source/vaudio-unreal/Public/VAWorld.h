@@ -10,7 +10,7 @@
 
 struct VAWorld;
 struct VAEmitter;
-class AVAEmitterBase;
+class AVAEmitter;
 class AVAListener;
 class UVAMaterialBase;
 class UVAMaterialComponent;
@@ -246,7 +246,7 @@ public:
 
 	static TArray<TWeakObjectPtr<AVAWorld>> RunningWorlds;
 
-	// --- Internal API used by AVAEmitterBase subclasses ---
+	// --- Internal API used by emitters ---
 
 	void InitializeVAWorld();
 
@@ -266,11 +266,11 @@ public:
 	int32 GetGroupedEAXPresetCount() const { return GroupedEAXPresets.Num(); }
 	int32 GetMaximumGroupedEAXCount() const { return GroupedEAXSubmixes.Num(); }
 	// Adds a non-listener emitter to the vaWorld. It automatically becomes a target of the current listener, whichever of the two begins play first. Returns false (and logs why) if the SDK rejected it
-	bool RegisterEmitter(AVAEmitterBase* emitter);
-	void UnregisterEmitter(AVAEmitterBase* emitter);
+	bool RegisterEmitter(AVAEmitter* emitter);
+	void UnregisterEmitter(AVAEmitter* emitter);
 
 	// Calls vaWorldAddEmitter on the emitter's handle. Returns false (and logs why) if the SDK rejected it
-	bool AddEmitterToWorld(AVAEmitterBase* emitter);
+	bool AddEmitterToWorld(AVAEmitter* emitter);
 
 	// Every listener in a world shares one SDK emitter. The first listener creates it, and it's handed over whenever the current listener changes, so targets stay connected. Returns false if the SDK rejected the first listener's handle
 	bool RegisterListener(AVAListener* listener);
@@ -288,7 +288,7 @@ public:
 	AVAListener* GetMainListener() const { return MainListener; }
 
 	const TArray<AVAListener*>& GetListeners() const { return Listeners; }
-	const TArray<AVAEmitterBase*>& GetRegisteredEmitters() const { return RegisteredEmitters; }
+	const TArray<AVAEmitter*>& GetRegisteredEmitters() const { return RegisteredEmitters; }
 
 	// Called from the OnRemoved callback, after which the raytracing threads no longer read the emitter. Destroyed after the next vaWorldUpdate returns
 	void DeferEmitterDestroy(VAEmitter* handle) { PendingEmitterDestroys.Add(handle); }
@@ -301,7 +301,7 @@ public:
 	int32 GetPendingEmitterDestroyCount() const { return PendingEmitterDestroys.Num(); }
 
 	// Called from the SDK callbacks, so FlushPendingEvents runs after vaWorldUpdate returns
-	void QueueEmitterEvents(AVAEmitterBase* emitter);
+	void QueueEmitterEvents(AVAEmitter* emitter);
 
 	// Number of completed raytracing passes, so tests can wait for fresh results after changing the scene
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
@@ -326,7 +326,7 @@ private:
 	TSet<TWeakObjectPtr<UVAMaterialComponent>> MaterialSources;
 
 	// Non-listener emitters, which are all targets of the main listener. Raw pointers are safe as emitters unregister in EndPlay
-	TArray<AVAEmitterBase*> RegisteredEmitters;
+	TArray<AVAEmitter*> RegisteredEmitters;
 
 	// Every listener that has begun play, current or not. Raw pointers are safe as listeners unregister in EndPlay
 	TArray<AVAListener*> Listeners;
@@ -337,7 +337,7 @@ private:
 	TArray<VAEmitter*> PendingEmitterDestroys;
 	static TMap<VAEmitter*, AVAWorld*> OrphanedEmitters;
 
-	TArray<TWeakObjectPtr<AVAEmitterBase>> PendingEventEmitters;
+	TArray<TWeakObjectPtr<AVAEmitter>> PendingEventEmitters;
 
 	int32 RaytraceCount = 0;
 	static void OnReverbUpdatedTrampoline(VAWorld* world);

@@ -1,5 +1,5 @@
 #include "VAVisualisation.h"
-#include "VAEmitterBase.h"
+#include "VAEmitter.h"
 
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -35,7 +35,7 @@ static const TCHAR* RequiredVectorParameterName = TEXT("BaseColor");
 
 static void VAVisualisationCallbackTrampoline(VAEmitter* emitter, VAVisualisationData* data, int32 count)
 {
-	if (AVAEmitterBase* Owner = static_cast<AVAEmitterBase*>(vaEmitterGetUserData(emitter)))
+	if (AVAEmitter* Owner = static_cast<AVAEmitter*>(vaEmitterGetUserData(emitter)))
 		if (Owner->VisualisationComponent)
 			Owner->VisualisationComponent->OnVisualisationData(data, count);
 }
@@ -89,7 +89,7 @@ void UVAVisualisation::OnRegister()
 {
 	Super::OnRegister();
 
-	OwnerEmitter = Cast<AVAEmitterBase>(GetOwner());
+	OwnerEmitter = Cast<AVAEmitter>(GetOwner());
 }
 
 void UVAVisualisation::BeginPlay()

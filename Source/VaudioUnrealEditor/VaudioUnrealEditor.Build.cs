@@ -7,6 +7,6 @@ public class VaudioUnrealEditor : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "VaudioUnreal" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "AssetRegistry" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "AssetRegistry", "PropertyEditor", "Slate", "SlateCore" });
 	}
 }

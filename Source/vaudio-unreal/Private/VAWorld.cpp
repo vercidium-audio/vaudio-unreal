@@ -1,6 +1,6 @@
 #include "VAWorld.h"
 #include "VASubmixEffectDirectionalPan.h"
-#include "VAEmitterBase.h"
+#include "VAEmitter.h"
 #include "VASource.h"
 #include "VAEmitter.h"
 #include "VAListener.h"
@@ -350,10 +350,10 @@ void AVAWorld::Tick(float DeltaTime)
 		DestroyRemovedEmitters();
 
 		// Broadcast the Blueprint events the SDK callbacks queued during vaWorldUpdate. A handler may destroy emitters, hence the weak pointers
-		TArray<TWeakObjectPtr<AVAEmitterBase>> eventEmitters = MoveTemp(PendingEventEmitters);
+		TArray<TWeakObjectPtr<AVAEmitter>> eventEmitters = MoveTemp(PendingEventEmitters);
 
-		for (const TWeakObjectPtr<AVAEmitterBase>& emitter : eventEmitters)
-			if (AVAEmitterBase* alive = emitter.Get())
+		for (const TWeakObjectPtr<AVAEmitter>& emitter : eventEmitters)
+			if (AVAEmitter* alive = emitter.Get())
 				alive->FlushPendingEvents();
 
 		if (bReverbOnly != bWasReverbOnly)
@@ -361,9 +361,8 @@ void AVAWorld::Tick(float DeltaTime)
 			bWasReverbOnly = bReverbOnly;
 			bool bDryEnabled = !bReverbOnly;
 
-			// SetDryOutputEnabled() is only implemented on AVASource - other AVAEmitterBase
-			// subclasses don't have dry output to toggle here.
-			for (AVAEmitterBase* Emitter : RegisteredEmitters)
+			// Only sources have dry output to toggle
+			for (AVAEmitter* Emitter : RegisteredEmitters)
 				if (AVASource* ConcreteEmitter = Cast<AVASource>(Emitter))
 					ConcreteEmitter->SetDryOutputEnabled(bDryEnabled);
 		}
@@ -372,7 +371,7 @@ void AVAWorld::Tick(float DeltaTime)
 		{
 			// Per-emitter position and world-bounds check
 			// Listeners that aren't current have no handle
-			TArray<AVAEmitterBase*> statusEmitters;
+			TArray<AVAEmitter*> statusEmitters;
 
 			if (MainListener)
 				statusEmitters.Add(MainListener);
@@ -381,12 +380,9 @@ void AVAWorld::Tick(float DeltaTime)
 
 			for (int32 i = 0; i < statusEmitters.Num(); ++i)
 			{
-				AVAEmitterBase* baseEmitter = statusEmitters[i];
+				AVAEmitter* baseEmitter = statusEmitters[i];
 				AVAListener* listener = Cast<AVAListener>(baseEmitter);
-				AVAEmitter* continuousEmitter = listener ? nullptr : Cast<AVAEmitter>(baseEmitter);
-
-				if (!listener && !continuousEmitter)
-					continue;
+				AVAEmitter* continuousEmitter = listener ? nullptr : baseEmitter;
 
 				VAEmitter* vaEmitter = baseEmitter->GetVAEmitter();
 
@@ -471,7 +467,7 @@ void AVAWorld::Tick(float DeltaTime)
 				{
 					for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 					{
-						AVAEmitterBase* Target = RegisteredEmitters[i];
+						AVAEmitter* Target = RegisteredEmitters[i];
 
 						uint64 messageID = VAMessageKey(MessageListener, EVAMessageSlot::TargetStatus, i);
 
@@ -587,7 +583,7 @@ float AVAWorld::GetGroupedEAXPan(int32 Index) const
 	return PanPreset ? PanPreset->GetSettings().Pan : 0.0f;
 }
 
-bool AVAWorld::AddEmitterToWorld(AVAEmitterBase* emitter)
+bool AVAWorld::AddEmitterToWorld(AVAEmitter* emitter)
 {
 	VAResult result = vaWorldAddEmitter(World, emitter->GetVAEmitter());
 
@@ -610,7 +606,7 @@ bool AVAWorld::AddEmitterToWorld(AVAEmitterBase* emitter)
 	}
 }
 
-bool AVAWorld::RegisterEmitter(AVAEmitterBase* emitter)
+bool AVAWorld::RegisterEmitter(AVAEmitter* emitter)
 {
 	if (!AddEmitterToWorld(emitter))
 		return false;
@@ -624,7 +620,7 @@ bool AVAWorld::RegisterEmitter(AVAEmitterBase* emitter)
 	return true;
 }
 
-void AVAWorld::UnregisterEmitter(AVAEmitterBase* emitter)
+void AVAWorld::UnregisterEmitter(AVAEmitter* emitter)
 {
 	RegisteredEmitters.Remove(emitter);
 }
@@ -721,7 +717,7 @@ void AVAWorld::WirePendingTargets()
 	if (!MainListener)
 		return;
 
-	for (AVAEmitterBase* emitter : RegisteredEmitters)
+	for (AVAEmitter* emitter : RegisteredEmitters)
 	{
 		if (emitter->GetVAEmitter())
 			MainListener->AddTarget(emitter);
@@ -736,7 +732,7 @@ void AVAWorld::OnOrphanedEmitterRemoved(VAEmitter* handle)
 		world->DeferEmitterDestroy(handle);
 }
 
-void AVAWorld::QueueEmitterEvents(AVAEmitterBase* emitter)
+void AVAWorld::QueueEmitterEvents(AVAEmitter* emitter)
 {
 	PendingEventEmitters.AddUnique(emitter);
 }

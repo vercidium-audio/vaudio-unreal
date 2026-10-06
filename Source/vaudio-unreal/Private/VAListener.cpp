@@ -14,6 +14,9 @@ extern "C" {
 
 AVAListener::AVAListener()
 {
+	// Godot's VAListener defaults. Both are hidden in the Details panel
+	bHasRelativeReverb = true;
+	bAffectsGroupedEAX = false;
 }
 
 // Runs once when this listener begins play, whether or not it's current. Properties are pushed by Activate instead
@@ -93,7 +96,7 @@ void AVAListener::Deactivate()
 	Emitter = nullptr;
 }
 
-void AVAListener::AddTarget(AVAEmitterBase* target)
+void AVAListener::AddTarget(AVAEmitter* target)
 {
 	if (!vaEmitterGetOcclusionEnabled(Emitter) && !vaEmitterGetPermeationEnabled(Emitter))
 	{
@@ -172,9 +175,6 @@ void AVAListener::UpdateVAEmitter()
 	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
 	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
 	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
-
-	vaEmitterSetHasRelativeReverb(Emitter, true);
-	vaEmitterSetAffectsGroupedEAX(Emitter, false);
 }
 
 void AVAListener::ApplyListenerReverb()
@@ -200,16 +200,8 @@ void AVAListener::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
+	// Other properties are pushed by AVAEmitter while this listener is current
 	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(AVAListener, bCurrent))
-	{
 		SetCurrent(bCurrent);
-		return;
-	}
-
-	// Emitter only exists while PIE/game is running and this listener is current, so ignore edits otherwise
-	if (!Emitter)
-		return;
-
-	UpdateVAEmitter();
 }
 #endif
