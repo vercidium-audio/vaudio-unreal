@@ -137,12 +137,37 @@ void AVAWorld::AddMaterialPrimitives(UVAMaterialComponent* source)
 
 	// Safe to call again, e.g. if the component is re-registered
 	RemoveMaterialPrimitives(source);
+	MaterialSources.Add(source);
 	AddActorTree(owner, source);
 }
 
 void AVAWorld::RemoveMaterialPrimitives(UVAMaterialComponent* source)
 {
+	MaterialSources.Remove(source);
 	RemoveBindings([source](const FVAPrimitiveBinding& binding) { return binding.Source.Get() == source; });
+}
+
+void AVAWorld::RebuildPrimitives()
+{
+	if (!World)
+		return;
+
+	RemoveBindings([](const FVAPrimitiveBinding&) { return true; });
+	for (auto it = MaterialSources.CreateIterator(); it; ++it)
+	{
+		UVAMaterialComponent* source = it->Get();
+
+		if (source && source->GetOwner())
+			AddActorTree(source->GetOwner(), source);
+		else
+			it.RemoveCurrent();
+	}
+}
+
+void AVAWorld::SetCollisionObjectTypes(const TArray<TEnumAsByte<ECollisionChannel>>& objectTypes)
+{
+	CollisionObjectTypes = objectTypes;
+	RebuildPrimitives();
 }
 
 void AVAWorld::SyncPrimitive(AActor* actor)
@@ -312,9 +337,12 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 		return binding;
 	};
 
-	// If this mesh is composed of simple collision elements, add them all
-	if (source->PropagateMode != EVAPropagateMode::Visuals && bodySetup && PassesCollisionFilter(meshComponent))
+	// If this mesh is composed of simple collision elements, add them all. A mesh whose collision is filtered out is skipped rather than falling back to its triangles, since it's a collider
+	if (source->PropagateMode != EVAPropagateMode::Visuals && HasSimpleCollision(staticMesh))
 	{
+		if (!PassesCollisionFilter(meshComponent))
+			return;
+
 		const FKAggregateGeom& agg = bodySetup->AggGeom;
 
 		for (const FKSphereElem& sphereElem : agg.SphereElems)
@@ -353,8 +381,14 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 			TArray<FVector3f> vertices;
 			vertices.Reserve(convexElem.IndexData.Num());
 
-			for (int32 index : convexElem.IndexData)
-				vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[index])));
+			// The SDK's triangle test is one-sided. Render triangles already have the winding it expects, but Chaos' hull indices are wound the other way, so each triangle's last two vertices are swapped. Otherwise rays pass into the hull from outside
+			// TODO - add a winding field to Mesh and MeshPrimitives in the C SDK, so this kind of data transform below isn't required
+			for (int32 i = 0; i + 2 < convexElem.IndexData.Num(); i += 3)
+			{
+				vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]])));
+				vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 2]])));
+				vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 1]])));
+			}
 
 			addedSimple |= AddMeshPrimitive(vertices, meshComponent, source, meshTransform, materialId, false);
 		}

@@ -230,6 +230,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SyncPrimitive(AActor* actor);
 
+	// Changes CollisionObjectTypes during play, rebuilding every primitive
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void SetCollisionObjectTypes(const TArray<TEnumAsByte<ECollisionChannel>>& objectTypes);
+
+	// Rebuilds the geometry of every VAMaterialComponent in this world
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void RebuildPrimitives();
+
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	int32 GetPrimitiveCount() const { return PrimitiveBindings.Num(); }
 
@@ -293,6 +301,9 @@ private:
 	TArray<FVAPrimitiveBinding> PrimitiveBindings;
 
 	TMap<USceneComponent*, TArray<int32>> PrimitiveBindingsByComponent;
+
+	// Every material component that has begun play in this world, including those whose geometry was all filtered out, so RebuildPrimitives can re-add them
+	TSet<TWeakObjectPtr<UVAMaterialComponent>> MaterialSources;
 
 	// Non-listener emitters, which are all targets of the main listener. Raw pointers are safe as emitters unregister in EndPlay
 	TArray<AVAEmitterBase*> RegisteredEmitters;

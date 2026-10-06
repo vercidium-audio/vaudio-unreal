@@ -128,6 +128,9 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 		return;
 
 	UpdateVAWorld();
+
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes))
+		RebuildPrimitives();
 }
 #endif
 
@@ -266,6 +269,7 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		// Blocks until the raytracing threads finish, after which no primitive is in use
 		vaWorldWait(World);
 		DestroyPrimitives();
+		MaterialSources.Empty();
 
 		// Invokes OnRemoved for the emitters whose removal was waiting on raytracing results
 		VAResult result = vaWorldDestroy(World);
