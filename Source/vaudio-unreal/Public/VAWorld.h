@@ -113,6 +113,10 @@ public:
 	UPROPERTY(VisibleInstanceOnly, Category = "Vercidium Audio|World", meta = (AllowPrivateAccess = "true"))
 	UVAWorldBoundsComponent* WorldBounds;
 
+	// Colour of the bounds box drawn in the editor
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vercidium Audio|World")
+	FColor BoundsColor = FColor(223, 149, 157, 255);
+
 	// --- Physics ---
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001", Delta = "0.001"))
@@ -173,9 +177,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading", meta = (ClampMin = "1"))
 	int32 WorkItemCount = 128;
 
-	// Maximum number of background threads used for raytracing.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading", meta = (ClampMin = "1"))
-	int32 MaximumConcurrencyLevel = 8;
+	// Maximum number of background threads used for raytracing. 0 uses one less than the number of logical cores
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading", meta = (ClampMin = "0", UIMax = "32"))
+	int32 MaximumConcurrencyLevel = 0;
 
 	// When true, stops submitting work to background threads. Safe to destroy the world once threads have drained.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Threading")
@@ -187,9 +191,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug")
 	bool bRenderingEnabled = true;
 
-	// Whether to render the raytraced world to a separate debug window.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|CameraSpeed", meta = (ClampMin = "0.01", ClampMax="1000"))
+	// Free-fly speed of the debug window's camera
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug", meta = (ClampMin = "0.01", ClampMax="1000"))
 	float CameraSpeed = 10;
+
+	// While simulating or ejected from PIE, the debug window's camera follows the level editor viewport instead of the current listener
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug")
+	bool bSyncViewport = true;
+
+	// Shows emitter, grouped EAX and timing status lines on screen every tick
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug")
+	bool bShowDebugMessages = true;
 
 	// --- Mode ---
 
@@ -200,8 +212,45 @@ public:
 
 	// --- Debug ---
 
+	// Exports to vaudio_export.va in the project directory
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Export World"))
 	void ExportWorld();
+
+	// Writes the world's settings, materials, primitives and emitters to a file (dev SDK build only). A relative path is relative to the project directory
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	bool ExportToFile(const FString& Path);
+
+	// --- Stats ---
+
+	// Average milliseconds vaWorldUpdate spends on the game thread
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	double GetMainThreadTime() const;
+
+	// Average milliseconds spent in the preparation thread
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	double GetPreparationTime() const;
+
+	// Average milliseconds spent in the raytracing threads
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	double GetRaytracingTime() const;
+
+	// Average milliseconds spent in the analysis thread
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	double GetAnalysisTime() const;
+
+	// Number of grouped EAX reverbs the SDK produced in the last raytracing pass
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	int32 GetGroupedEAXCount() const;
+
+	// The grouped EAX reverb's values, or 0 if Index is out of range
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	float GetGroupedEAXGainLF(int32 Index) const;
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	float GetGroupedEAXGainHF(int32 Index) const;
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	float GetGroupedEAXDecayTime(int32 Index) const;
 
 	// --- Baked geometry (shipping fallback) ---
 
@@ -357,6 +406,11 @@ private:
 
 	void InitialiseMaterials();
 	void DestroyPrimitives();
+
+	// Moves the debug window's camera to the level editor viewport (bSyncViewport) or the current listener
+	void SyncDebugCamera();
+
+	void ShowDebugMessages();
 	// Pushes the listener and grouped EAX reverb to their submixes
 	void OnReverbUpdated();
 
