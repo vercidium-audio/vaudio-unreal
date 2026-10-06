@@ -261,6 +261,9 @@ public:
 	VAWorld* GetVAWorld() const { return World; }
 	USoundSubmix* GetGroupedEAXSubmix(int32 Index) const;
 	USubmixEffectReverbPreset* GetGroupedEAXPreset(int32 Index) const;
+
+	// The pan last pushed to this zone's submix, from -1 (left) to 1 (right) relative to the player's audio listener
+	float GetGroupedEAXPan(int32 Index) const;
 	int32 GetGroupedEAXPresetCount() const { return GroupedEAXPresets.Num(); }
 	int32 GetMaximumGroupedEAXCount() const { return GroupedEAXSubmixes.Num(); }
 	// Adds a non-listener emitter to the vaWorld. It automatically becomes a target of the current listener, whichever of the two begins play first. Returns false (and logs why) if the SDK rejected it
@@ -351,7 +354,8 @@ private:
 
 	void InitialiseMaterials();
 	void DestroyPrimitives();
-	void ApplyGroupedEAXReverb();
+	// Pushes the listener and grouped EAX reverb to their submixes
+	void OnReverbUpdated();
 
 	// Adds the actor's geometry, then recurses into attached children that don't have their own VAMaterialComponent
 	void AddActorTree(AActor* actor, UVAMaterialComponent* source);

@@ -93,11 +93,12 @@ public:
 	// Called by AVAWorld for every non-listener emitter, so this listener calculates how muffled it is
 	void AddTarget(AVAEmitterBase* target);
 
+	// Called by AVAWorld from the SDK's OnReverbUpdated callback while this listener is current
+	void ApplyListenerReverb();
+
 private:
 	UPROPERTY(Transient)
 	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;
 
 	bool warnedNoTargetRays = false;
-
-	void ApplyListenerReverb();
 };

@@ -29,7 +29,10 @@ TMap<VAEmitter*, AVAWorld*> AVAWorld::OrphanedEmitters;
 void AVAWorld::OnReverbUpdatedTrampoline(VAWorld* world)
 {
 	if (AVAWorld* self = static_cast<AVAWorld*>(vaWorldGetUserData(world)))
+	{
+		self->OnReverbUpdated();
 		self->RaytraceCount++;
+	}
 }
 
 AVAWorld::AVAWorld()
@@ -155,7 +158,7 @@ void AVAWorld::InitializeVAWorld()
 	vaWorldSetOnReverbUpdatedCallback(World, &OnReverbUpdatedTrampoline);
 
 	// Logging
-	vaWorldSetLogCallback(World, &VASdkLogCallback);
+	vaWorldSetLogCallback(World, &VASdkWorldLogCallback);
 	vaWorldSetLogMemoryAllocationWarnings(World, true);
 
 	// Coordinate system
@@ -189,13 +192,40 @@ void AVAWorld::InitializeVAWorld()
 	InitialiseMaterials();
 }
 
-void AVAWorld::ApplyGroupedEAXReverb()
+// Pan follows what the player hears, which is the player controller's audio listener rather than the listener actor
+static FRotator GetAudioListenerRotation(AVAListener* Listener)
 {
+	APlayerController* PlayerController = nullptr;
+
+	if (APawn* Pawn = Cast<APawn>(Listener->GetAttachParentActor()))
+		PlayerController = Cast<APlayerController>(Pawn->GetController());
+
+	if (!PlayerController)
+		PlayerController = Listener->GetWorld()->GetFirstPlayerController();
+
+	if (PlayerController)
+	{
+		FVector Location, Front, Right;
+		PlayerController->GetAudioListenerPosition(Location, Front, Right);
+		return Front.Rotation();
+	}
+
+	return Listener->GetActorRotation();
+}
+
+// Runs on the game thread during vaWorldUpdate, once per completed raytracing pass
+void AVAWorld::OnReverbUpdated()
+{
+	AVAListener* Listener = GetMainListener();
+	VAEmitter* ListenerVA = Listener ? Listener->GetVAEmitter() : nullptr;
+
+	if (ListenerVA)
+		Listener->ApplyListenerReverb();
+
 	const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
 	int32 Count = vaWorldGetGroupedEAXCount(World);
 
-	AVAListener* Listener = GetMainListener();
-	VAEmitter* ListenerVA = Listener ? Listener->GetVAEmitter() : nullptr;
+	FRotator ListenerRotation = ListenerVA ? GetAudioListenerRotation(Listener) : FRotator::ZeroRotator;
 
 	for (int32 i = 0; i < Count; ++i)
 	{
@@ -216,11 +246,9 @@ void AVAWorld::ApplyGroupedEAXReverb()
 
 			if (Direction)
 			{
-				FVector directionUnreal(Direction->x, Direction->y, Direction->z);
-
-				// Magnitude IS strength (OpenAL Soft EAX style) - do not normalize.
-				float pan = FVector::DotProduct(directionUnreal, Listener->GetActorRightVector());
-				pan = FMath::Clamp(pan, -1.0f, 1.0f);
+				// Listener space is X+ right. Magnitude is strength (OpenAL Soft EAX style), so it isn't normalised
+				VAVector panVector = vaWorldCalculateListenerRelativePan(World, *Direction, FMath::DegreesToRadians(ListenerRotation.Pitch), FMath::DegreesToRadians(ListenerRotation.Yaw));
+				float pan = FMath::Clamp(panVector.x, -1.0f, 1.0f);
 
 				if (UVASubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr)
 					PanPreset->SetPan(pan);
@@ -327,8 +355,6 @@ void AVAWorld::Tick(float DeltaTime)
 		for (const TWeakObjectPtr<AVAEmitterBase>& emitter : eventEmitters)
 			if (AVAEmitterBase* alive = emitter.Get())
 				alive->FlushPendingEvents();
-
-		ApplyGroupedEAXReverb();
 
 		if (bReverbOnly != bWasReverbOnly)
 		{
@@ -474,8 +500,7 @@ void AVAWorld::Tick(float DeltaTime)
 				}
 			}
 
-			// Per-grouped-EAX-zone reverb data (mirrors the settings ApplyGroupedEAXReverb() sends
-			// to each preset - recomputed here purely for display).
+			// Per-grouped-EAX-zone reverb data (mirrors the settings OnReverbUpdated() sends to each preset - recomputed here purely for display).
 			const VAEAXReverb** GroupedEAX = vaWorldGetGroupedEAX(World);
 			int32 GroupedEAXCount = vaWorldGetGroupedEAXCount(World);
 
@@ -554,6 +579,12 @@ USoundSubmix* AVAWorld::GetGroupedEAXSubmix(int32 Index) const
 USubmixEffectReverbPreset* AVAWorld::GetGroupedEAXPreset(int32 Index) const
 {
 	return GroupedEAXPresets.IsValidIndex(Index) ? GroupedEAXPresets[Index] : nullptr;
+}
+
+float AVAWorld::GetGroupedEAXPan(int32 Index) const
+{
+	UVASubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(Index) ? GroupedEAXPanPresets[Index] : nullptr;
+	return PanPreset ? PanPreset->GetSettings().Pan : 0.0f;
 }
 
 bool AVAWorld::AddEmitterToWorld(AVAEmitterBase* emitter)

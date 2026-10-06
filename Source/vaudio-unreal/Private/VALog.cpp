@@ -114,12 +114,23 @@ void VAReport(ELogVerbosity::Type verbosity, const UObject* object, uint64 messa
 	}
 }
 
-void VASdkLogCallback(const char* message)
+// The user data is null for a handle that isn't attached to an actor, e.g. during teardown
+static FString VASdkLogPrefix(void* userData)
 {
-	UE_LOG(LogVAudio, Log, TEXT("[SDK] %hs"), message ? message : "(null)");
+	return userData ? FString::Printf(TEXT("[SDK] %s: "), *VAObjectName(static_cast<const UObject*>(userData))) : FString(TEXT("[SDK] "));
 }
 
-void VASdkLogErrorCallback(const char* message)
+void VASdkWorldLogCallback(VAWorld* world, const char* message)
 {
-	UE_LOG(LogVAudio, Error, TEXT("[SDK] %hs"), message ? message : "(null)");
+	UE_LOG(LogVAudio, Log, TEXT("%s%hs"), *VASdkLogPrefix(vaWorldGetUserData(world)), message ? message : "(null)");
+}
+
+void VASdkEmitterLogCallback(VAEmitter* emitter, const char* message)
+{
+	UE_LOG(LogVAudio, Log, TEXT("%s%hs"), *VASdkLogPrefix(vaEmitterGetUserData(emitter)), message ? message : "(null)");
+}
+
+void VASdkEmitterLogErrorCallback(VAEmitter* emitter, const char* message)
+{
+	UE_LOG(LogVAudio, Error, TEXT("%s%hs"), *VASdkLogPrefix(vaEmitterGetUserData(emitter)), message ? message : "(null)");
 }

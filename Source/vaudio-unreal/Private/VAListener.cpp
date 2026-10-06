@@ -158,10 +158,6 @@ void AVAListener::TickTypeSpecific(float DeltaTime)
 			SetActorLocationAndRotation(CamPos, CamRot);
 		}
 	}
-
-	if (ListenerReverbPreset)
-		ApplyListenerReverb();
-
 }
 
 void AVAListener::UpdateVAEmitter()
@@ -183,6 +179,9 @@ void AVAListener::UpdateVAEmitter()
 
 void AVAListener::ApplyListenerReverb()
 {
+	if (!ListenerReverbPreset)
+		return;
+
 	VAEAXReverb* EAX = vaEmitterGetEAX(Emitter);
 
 	// Raytracing has not completed at least once yet

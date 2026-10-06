@@ -52,9 +52,10 @@ void VAClearMessage(uint64 key);
 // Writes to LogVAudio and, for warnings and errors, to the screen. Use the macros below rather than calling this directly
 void VAReport(ELogVerbosity::Type verbosity, const UObject* object, uint64 messageKey, const FString& message);
 
-// Passed to vaWorldSetLogCallback / vaEmitterSetLogCallback / vaEmitterSetLogErrorCallback
-void VASdkLogCallback(const char* message);
-void VASdkLogErrorCallback(const char* message);
+// Passed to vaWorldSetLogCallback / vaEmitterSetLogCallback / vaEmitterSetLogErrorCallback. Prefixed with the owning actor's name (from the handle's user data). Can run on SDK threads, so these only write to the log
+void VASdkWorldLogCallback(VAWorld* world, const char* message);
+void VASdkEmitterLogCallback(VAEmitter* emitter, const char* message);
+void VASdkEmitterLogErrorCallback(VAEmitter* emitter, const char* message);
 
 #define VA_CALL_SITE_KEY(Object) VAMessageKey(Object, VACallSiteSlot(__FILE__, __LINE__))
 #define VA_RESULT_SUFFIX(Result) FString::Printf(TEXT(" Error code: %s"), VAResultToString(Result))

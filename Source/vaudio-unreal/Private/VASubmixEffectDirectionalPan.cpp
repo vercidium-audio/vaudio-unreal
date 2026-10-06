@@ -68,7 +68,8 @@ void UVASubmixEffectDirectionalPanPreset::SetSettings(const FVASubmixEffectDirec
 
 void UVASubmixEffectDirectionalPanPreset::SetPan(float NewPan)
 {
-	FVASubmixEffectDirectionalPanSettings NewSettings = Settings;
+	// Settings is only the editor-facing default, UpdateSettings writes the live copy
+	FVASubmixEffectDirectionalPanSettings NewSettings = GetSettings();
 	NewSettings.Pan = NewPan;
 	SetSettings(NewSettings);
 }

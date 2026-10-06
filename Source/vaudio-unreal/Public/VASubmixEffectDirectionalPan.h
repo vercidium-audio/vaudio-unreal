@@ -4,7 +4,7 @@
 #include "Sound/SoundEffectSubmix.h"
 #include "VASubmixEffectDirectionalPan.generated.h"
 
-// Settings for FVASubmixEffectDirectionalPan, pushed once per tick from AVAWorld::ApplyGroupedEAXReverb() 
+// Settings for FVASubmixEffectDirectionalPan, pushed once per raytracing pass from AVAWorld::OnReverbUpdated()
 USTRUCT(BlueprintType)
 struct FVASubmixEffectDirectionalPanSettings
 {
@@ -47,8 +47,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Audio|Effects")
 	VAUDIOUNREAL_API void SetSettings(const FVASubmixEffectDirectionalPanSettings& InSettings);
 
-	// Convenience wrapper around SetSettings() for the common case of just updating Pan - matches
-	// how AVAWorld::ApplyGroupedEAXReverb() only ever has a single float to push per tick.
+	// Convenience wrapper around SetSettings() for the common case of just updating Pan
 	VAUDIOUNREAL_API void SetPan(float NewPan);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = SubmixEffectPreset, meta = (ShowOnlyInnerProperties))

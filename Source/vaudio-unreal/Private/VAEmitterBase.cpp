@@ -113,8 +113,8 @@ void AVAEmitterBase::CreateEmitter()
 {
 	VAEmitter* handle = vaEmitterCreate();
 
-	vaEmitterSetLogCallback(handle, &VASdkLogCallback);
-	vaEmitterSetLogErrorCallback(handle, &VASdkLogErrorCallback);
+	vaEmitterSetLogCallback(handle, &VASdkEmitterLogCallback);
+	vaEmitterSetLogErrorCallback(handle, &VASdkEmitterLogErrorCallback);
 	vaEmitterSetOnRaytracingCompleteCallback(handle, &VAOnRaytracingCompleteTrampoline);
 	vaEmitterSetOnRaytracedByAnotherEmitterCallback(handle, &VAOnRaytracedByAnotherEmitterTrampoline);
 	vaEmitterSetOnRemovedCallback(handle, &VAOnRemovedTrampoline);
