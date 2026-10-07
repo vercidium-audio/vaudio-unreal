@@ -78,6 +78,47 @@ You can also create material assets in the Content Browser and add them to the `
 - **VA Audio Default Material** (`UVAudioDefaultMaterialAsset`) — overrides the default properties (absorption, scattering, transmission) of one of the 23 built-in materials. Pick its name from the `MaterialType` dropdown and use **Reset To Defaults** to pull in the SDK's base values, then tweak as needed.
 - **VA Audio Custom Material** (`UVAudioCustomMaterialAsset`) — defines a brand new material with its own free-form (unique) `MaterialName` and an SDK-assigned ID. Assign it to a `UVAudioMaterialComponent`'s `MaterialAsset` field to use it on geometry.
 
+### Networked voice chat
+
+`AVANetworkedStreamSource` plays audio received over the network, e.g. another player's voice, raytraced like any other source. It works exactly like `AVAStreamSource`, and is a separate type so your netcode can find it. Sending and receiving the audio is up to you.
+
+On the speaking player, an `AVAInputStreamSource` captures the microphone and broadcasts each chunk through `OnAudioCaptured`. Send those bytes to the other players, e.g. with an unreliable RPC on the player's pawn:
+
+```cpp
+// Speaker: forward captured audio to the server, which multicasts it to everyone else
+void AMyCharacter::BeginPlay()
+{
+    Super::BeginPlay();
+
+    if (IsLocallyControlled() && Microphone)
+        Microphone->OnAudioCaptured.AddDynamic(this, &AMyCharacter::OnMicrophoneCaptured);
+}
+
+void AMyCharacter::OnMicrophoneCaptured(const TArray<uint8>& Data)
+{
+    ServerSendVoice(Data, Microphone->GetCaptureSampleRate());
+}
+
+void AMyCharacter::ServerSendVoice_Implementation(const TArray<uint8>& Data, int32 SampleRate)
+{
+    MulticastReceiveVoice(Data, SampleRate);
+}
+
+// Listeners: play it from the speaker's VANetworkedStreamSource, attached to their pawn
+void AMyCharacter::MulticastReceiveVoice_Implementation(const TArray<uint8>& Data, int32 SampleRate)
+{
+    if (IsLocallyControlled() || !Voice)
+        return;
+
+    if (!Voice->IsStreamOpen())
+        Voice->OpenStream(EVAStreamFormat::Mono16, SampleRate);
+
+    Voice->PushAudioData(Data);
+}
+```
+
+The stream must use the input source's `Format` (`Mono16` here) and the rate the device actually captures at, which is why the rate is sent along with the data. Raw 16-bit PCM is about 88 KB/s at 44.1 kHz, so compress it (e.g. Opus) before sending in production. Data pushed before the source is first raytraced is dropped, so the first moments of speech after it spawns may be lost.
+
 ## References
 - [Vercidium Audio documentation](https://vercidium.com/docs)
 - [vaudio-godot-native-openal-3d-source](https://github.com/vercidium-audio/vaudio-godot-native-openal-3d-source) — equivalent plugin for Godot (native C)
