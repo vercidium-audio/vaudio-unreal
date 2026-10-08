@@ -507,7 +507,7 @@ void AVAWorld::ShowDebugMessages()
 		bool bInBounds = vaEmitterGetWithinWorldBounds(vaEmitter);
 		VAVector P = vaEmitterGetPosition(vaEmitter);
 
-		const wchar_t* boundsStatus = bInBounds ? TEXT("[in bounds]") : TEXT("[out of bounds]");
+		const TCHAR* boundsStatus = bInBounds ? TEXT("[in bounds]") : TEXT("[out of bounds]");
 
 
 		if (listener)
@@ -643,7 +643,7 @@ void AVAWorld::ShowDebugMessages()
 		int targetCount = RegisteredEmitters.Num();
 		FColor color = targetCount == 0 ? FColor::Orange : FColor::Green;
 
-		const wchar_t* plural = targetCount == 1 ? TEXT("target") : TEXT("targets");
+		const TCHAR* plural = targetCount == 1 ? TEXT("target") : TEXT("targets");
 
 		VAShowMessage(VAMessageKey(this, EVAMessageSlot::ListenerStatus), 0.0f, color, FString::Printf(TEXT("[VA] Listener '%s' has %d %s"), *CurrentMainListener->GetActorNameOrLabel(), targetCount, plural));
 

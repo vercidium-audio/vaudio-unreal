@@ -62,6 +62,9 @@ public class VaudioUnreal : ModuleRules
 		else
 		{
 			PublicAdditionalLibraries.Add(libraryPath);
+
+			// The module links the library by name, so the loader must find it before StartupModule runs. UBT turns this into an $ORIGIN-relative rpath
+			PublicRuntimeLibraryPaths.Add(Path.Combine(PluginDirectory, "Binaries", "ThirdParty", "vaudio", platform));
 		}
 
 		RuntimeDependencies.Add(Path.Combine(binariesPath, library), libraryPath);

@@ -9,6 +9,10 @@
 
 #include "vaudio.h"
 
+#if !PLATFORM_WINDOWS
+#include <dlfcn.h>
+#endif
+
 static bool GSdkLoaded = false;
 
 void FVaudioUnrealModule::StartupModule()
@@ -33,6 +37,7 @@ void FVaudioUnrealModule::LoadSdk()
 
 	FString libraryPath = FPaths::ConvertRelativePathToFull(FPaths::Combine(plugin->GetBaseDir(), TEXT("Binaries"), TEXT("ThirdParty"), TEXT("vaudio"), VA_LIBRARY_PLATFORM, VA_LIBRARY_NAME));
 
+#if PLATFORM_WINDOWS
 	if (!FPaths::FileExists(libraryPath))
 	{
 		VA_ERROR(TEXT("The Vercidium Audio SDK library is missing from '%s'. Rebuild the project so it's staged from the plugin's Source/ThirdParty/vaudio folder."), *libraryPath);
@@ -46,6 +51,15 @@ void FVaudioUnrealModule::LoadSdk()
 		VA_ERROR(TEXT("Failed to load the Vercidium Audio SDK from '%s'."), *libraryPath);
 		return;
 	}
+#else
+	// The module links the library directly, so the dynamic linker has already loaded it via rpath. Loading the staged copy by path as well would map a second, unused instance
+	Dl_info info;
+
+	if (dladdr(reinterpret_cast<void*>(&vaGetVersion), &info) && info.dli_fname)
+	{
+		libraryPath = FPaths::ConvertRelativePathToFull(UTF8_TO_TCHAR(info.dli_fname));
+	}
+#endif
 
 	int major = 0;
 	int minor = 0;

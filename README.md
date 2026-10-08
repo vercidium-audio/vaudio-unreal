@@ -50,11 +50,12 @@ This plugin links against the native Vercidium Audio SDK, which is not included 
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/include/vaudio.h
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Win64/vaudionative.lib
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Win64/vaudionative.dll
+YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Linux/libvaudionative.so
 ```
 
-Download the SDK from [vercidium.com](https://vercidium.com) and copy the 3D native SDK's files into the above locations. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`.
+Download the SDK from [vercidium.com](https://vercidium.com) and copy the 3D native SDK's files into the above locations. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`.
 
-When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/Win64` and loads them from there. If the SDK is missing, the build fails with a message saying where to put it.
+When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platform>` and loads them from there. If the SDK is missing, the build fails with a message saying where to put it.
 
 ### 3. Enable the plugin
 
