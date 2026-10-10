@@ -76,13 +76,54 @@ void AVAEmitter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+		WorldUnregisteredHandle = subsystem->OnWorldUnregistered.AddUObject(this, &AVAEmitter::OnWorldUnregistered);
+
 	// A UVAVisualisation on this actor may have initialised it already, during Super::BeginPlay
 	if (TryInitializeEmitter() || AudioWorld)
 		return;
 
 	// The VAWorld begins play after this actor, as actor BeginPlay order isn't guaranteed. Tick returns early until then
+	WaitForWorld();
+}
+
+void AVAEmitter::WaitForWorld()
+{
+	if (WorldRegisteredHandle.IsValid())
+		return;
+
 	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
 		WorldRegisteredHandle = subsystem->OnWorldRegistered.AddUObject(this, &AVAEmitter::OnWorldRegistered);
+}
+
+void AVAEmitter::OnWorldUnregistered()
+{
+	// Still waiting for a VAWorld
+	if (!AudioWorld)
+		return;
+
+	// Misconfigured, or a bRaytraceOnce emitter that already left. Neither joins the next VAWorld
+	if (!registered)
+	{
+		AudioWorld = nullptr;
+		return;
+	}
+
+	// The handle is about to be destroyed
+	TArray<UVAVisualisation*> visualisations;
+	GetComponents(visualisations);
+
+	for (UVAVisualisation* visualisation : visualisations)
+		visualisation->TeardownVisualisation();
+
+	LeaveWorld();
+
+	AudioWorld = nullptr;
+	pendingRaytraceOnceRelease = false;
+	pendingRaytracingComplete = false;
+	pendingRaytracedByListener = false;
+
+	WaitForWorld();
 }
 
 void AVAEmitter::OnWorldRegistered()
@@ -128,6 +169,8 @@ bool AVAEmitter::TryInitializeEmitter()
 	// The level's VAWorld hasn't begun play yet
 	if (!AudioWorld)
 		return false;
+
+	foundWorld = true;
 
 	if (!ValidateConfig() || !AttachToWorld())
 	{
@@ -209,12 +252,28 @@ void AVAEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 
+	if (WorldUnregisteredHandle.IsValid())
+	{
+		if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+			subsystem->OnWorldUnregistered.Remove(WorldUnregisteredHandle);
+
+		WorldUnregisteredHandle.Reset();
+	}
+
 	if (WorldRegisteredHandle.IsValid())
 	{
 		StopWaitingForWorld();
-		VA_WARN_NAMED(TEXT("Ended play without finding a VAWorld, so it never cast rays or played sound. Place a VAWorld in the level."));
+
+		// Not when its VAWorld ended play first, e.g. as the level unloads
+		if (!foundWorld)
+			VA_WARN_NAMED(TEXT("Ended play without finding a VAWorld, so it never cast rays or played sound. Place a VAWorld in the level."));
 	}
 
+	LeaveWorld();
+}
+
+void AVAEmitter::LeaveWorld()
+{
 	DeinitializeTypeSpecific();
 
 	if (registered)

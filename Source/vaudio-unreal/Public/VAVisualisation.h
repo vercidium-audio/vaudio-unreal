@@ -68,6 +68,9 @@ public:
 	// Called from BeginPlay, or by the owner once it joins the VAWorld if that begins play later. No-op once initialised
 	void InitializeVisualisation();
 
+	// Called from EndPlay, or by the owner before it releases its handle because the VAWorld ended play. InitializeVisualisation can be called again afterwards
+	void TeardownVisualisation();
+
 #if WITH_EDITOR
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio|Visualisation")
 	void GenerateFadeNodes();
@@ -108,7 +111,6 @@ private:
 	void CreateInstancedMesh();
 	void ApplyMaterialParameters();
 	void ApplyVisualisationSettings() const;
-	void TeardownVisualisation();
 
 	void ValidateDiamondMaterial() const;
 

@@ -81,6 +81,11 @@ void UVAMaterialComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>();
+
+	if (subsystem)
+		WorldUnregisteredHandle = subsystem->OnWorldUnregistered.AddUObject(this, &UVAMaterialComponent::OnWorldUnregistered);
+
 	AudioWorld = AVAWorld::Find(this);
 
 	if (AudioWorld)
@@ -90,6 +95,19 @@ void UVAMaterialComponent::BeginPlay()
 	}
 
 	// The VAWorld begins play after this component, as actor BeginPlay order isn't guaranteed
+	if (subsystem)
+		WorldRegisteredHandle = subsystem->OnWorldRegistered.AddUObject(this, &UVAMaterialComponent::OnWorldRegistered);
+}
+
+void UVAMaterialComponent::OnWorldUnregistered()
+{
+	// Still waiting for a VAWorld
+	if (!AudioWorld)
+		return;
+
+	// The VAWorld destroyed this component's primitives as it ended play
+	AudioWorld = nullptr;
+
 	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
 		WorldRegisteredHandle = subsystem->OnWorldRegistered.AddUObject(this, &UVAMaterialComponent::OnWorldRegistered);
 }
@@ -117,6 +135,14 @@ void UVAMaterialComponent::StopWaitingForWorld()
 void UVAMaterialComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopWaitingForWorld();
+
+	if (WorldUnregisteredHandle.IsValid())
+	{
+		if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+			subsystem->OnWorldUnregistered.Remove(WorldUnregisteredHandle);
+
+		WorldUnregisteredHandle.Reset();
+	}
 
 	if (AudioWorld)
 		AudioWorld->RemoveMaterialPrimitives(this);

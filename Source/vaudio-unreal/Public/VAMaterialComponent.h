@@ -125,6 +125,11 @@ protected:
 	void OnWorldRegistered();
 	void StopWaitingForWorld();
 
+	// Bound from BeginPlay to EndPlay. When the VAWorld ends play first, this component waits for the next VAWorld
+	FDelegateHandle WorldUnregisteredHandle;
+
+	void OnWorldUnregistered();
+
 public:
 
 #if WITH_EDITOR

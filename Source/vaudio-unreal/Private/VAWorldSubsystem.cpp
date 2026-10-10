@@ -9,8 +9,11 @@ void UVAWorldSubsystem::RegisterWorld(AVAWorld* world)
 
 void UVAWorldSubsystem::UnregisterWorld(AVAWorld* world)
 {
-	if (VAWorld.Get() == world)
-		VAWorld.Reset();
+	if (VAWorld.Get() != world)
+		return;
+
+	VAWorld.Reset();
+	OnWorldUnregistered.Broadcast();
 }
 
 bool UVAWorldSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const

@@ -145,7 +145,7 @@ public:
 
 	// --- Runtime access ---
 
-	// The level's VAWorld, found automatically. Null until this emitter has joined it
+	// The level's VAWorld, found automatically. Null until this emitter has joined it, and again after that VAWorld ends play
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	AVAWorld* GetAudioWorld() const { return AudioWorld; }
 
@@ -406,7 +406,19 @@ private:
 	FDelegateHandle WorldRegisteredHandle;
 
 	void OnWorldRegistered();
+	void WaitForWorld();
 	void StopWaitingForWorld();
+
+	// Bound from BeginPlay to EndPlay. When the VAWorld ends play first, this emitter frees its handle and waits for the next VAWorld
+	FDelegateHandle WorldUnregisteredHandle;
+
+	void OnWorldUnregistered();
+
+	// Set once a VAWorld was found, even if it has ended play since
+	bool foundWorld = false;
+
+	// Tears down subclass state, leaves the world and releases the handle. Shared by EndPlay and OnWorldUnregistered
+	void LeaveWorld();
 
 	// bRaytraceOnce: set when the listener raytraces this emitter, and the emitter leaves the world at the end of the first Tick where IsReadyToPlay() is true
 	bool pendingRaytraceOnceRelease = false;

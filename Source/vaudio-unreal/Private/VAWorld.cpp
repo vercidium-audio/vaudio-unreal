@@ -326,9 +326,6 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	RunningWorlds.RemoveSingleSwap(this);
 
-	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
-		subsystem->UnregisterWorld(this);
-
 	for (int32 i = 0; i < GroupedEAXPresets.Num(); i++)
 	{
 		USoundSubmix* Sub = GroupedEAXSubmixes.IsValidIndex(i) ? GroupedEAXSubmixes[i] : nullptr;
@@ -380,6 +377,10 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Listeners.Empty();
 	MainListener = nullptr;
 	PendingEventEmitters.Empty();
+
+	// Last, so the emitters still playing free their handles against a destroyed vaWorld and wait for the next VAWorld
+	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+		subsystem->UnregisterWorld(this);
 }
 
 // Unreal FOVs are horizontal, the debug window's is vertical
