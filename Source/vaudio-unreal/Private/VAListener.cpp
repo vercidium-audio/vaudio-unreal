@@ -4,6 +4,7 @@
 #include "VAReverbConversion.h"
 #include "GameFramework/PlayerController.h"
 #include "AudioMixerBlueprintLibrary.h"
+#include "Engine/World.h"
 
 extern "C" {
 #include "vaudio.h"

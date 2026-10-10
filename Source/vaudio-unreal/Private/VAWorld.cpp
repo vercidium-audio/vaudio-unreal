@@ -19,6 +19,9 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/GameViewportClient.h"
 #include "Misc/Paths.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "UnrealClient.h"
 
 #if WITH_EDITOR
 #include "Editor.h"

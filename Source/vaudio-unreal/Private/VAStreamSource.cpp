@@ -2,6 +2,7 @@
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundWaveProcedural.h"
+#include "Engine/World.h"
 
 #include "VALog.h"
 

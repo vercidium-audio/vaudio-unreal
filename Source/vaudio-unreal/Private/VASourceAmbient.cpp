@@ -6,6 +6,8 @@
 
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
+#include "Sound/SoundBase.h"
 
 extern "C" {
 #include "vaudio.h"

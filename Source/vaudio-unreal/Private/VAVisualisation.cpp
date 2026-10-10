@@ -6,6 +6,8 @@
 #include "Engine/StaticMesh.h"
 #include "MeshDescription.h"
 #include "StaticMeshAttributes.h"
+#include "Engine/World.h"
+#include "UObject/Package.h"
 
 extern "C" {
 #include "vaudio.h"

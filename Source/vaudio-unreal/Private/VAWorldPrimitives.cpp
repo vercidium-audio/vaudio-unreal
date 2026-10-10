@@ -13,6 +13,7 @@
 #include "StaticMeshResources.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/AggregateGeom.h"
+#include "Engine/StaticMesh.h"
 
 extern "C" {
 #include "vaudio.h"

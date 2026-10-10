@@ -3,6 +3,7 @@
 #include "VAWorldSubsystem.h"
 #include "VAListener.h"
 #include "VAVisualisation.h"
+#include "Engine/World.h"
 
 extern "C" {
 #include "vaudio.h"

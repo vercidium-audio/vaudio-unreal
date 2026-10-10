@@ -4,6 +4,7 @@
 
 #include "Components/AudioComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
 
 #include "VALog.h"
 
