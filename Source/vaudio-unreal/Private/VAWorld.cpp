@@ -92,15 +92,33 @@ void AVAWorld::RefreshWorldBounds()
 
 void AVAWorld::OnRootMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport)
 {
-	FVector location = GetActorLocation();
-
-	if (World && FVector::DistSquared(location, BoundsPosition) >= FMath::Square((double)BoundsUpdateDistance) && location != BoundsPosition)
-	{
-		BoundsPosition = location;
-		vaWorldSetPositionUnreal(World, BoundsPosition);
-	}
+	if (World)
+		FollowBounds();
 
 	RefreshWorldBounds();
+}
+
+FVector AVAWorld::GetBoundsTarget() const
+{
+	if (BoundsFollow != EVABoundsFollow::Listener)
+		return GetActorLocation();
+
+	return MainListener ? MainListener->GetActorLocation() - BoundsSize * 0.5 : BoundsPosition;
+}
+
+void AVAWorld::PlaceBounds()
+{
+	BoundsPosition = GetBoundsTarget();
+	vaWorldSetPositionUnreal(World, BoundsPosition);
+	RefreshWorldBounds();
+}
+
+void AVAWorld::FollowBounds()
+{
+	FVector target = GetBoundsTarget();
+
+	if (target != BoundsPosition && FVector::DistSquared(target, BoundsPosition) >= FMath::Square((double)BoundsUpdateDistance))
+		PlaceBounds();
 }
 
 void AVAWorld::SetBoundsSize(const FVector& size)
@@ -108,8 +126,22 @@ void AVAWorld::SetBoundsSize(const FVector& size)
 	BoundsSize = size;
 	RefreshWorldBounds();
 
+	if (!World)
+		return;
+
+	vaWorldSetSizeUnreal(World, BoundsSize);
+
+	// Stay centred on the listener, where a fixed box keeps its minimum corner
+	if (BoundsFollow == EVABoundsFollow::Listener)
+		PlaceBounds();
+}
+
+void AVAWorld::SetBoundsFollow(EVABoundsFollow follow)
+{
+	BoundsFollow = follow;
+
 	if (World)
-		vaWorldSetSizeUnreal(World, BoundsSize);
+		PlaceBounds();
 }
 
 void AVAWorld::UpdateVAWorld()
@@ -119,9 +151,8 @@ void AVAWorld::UpdateVAWorld()
 	vaWorldSetCameraSpeed(World, CameraSpeed);
 
 	// World bounds
-	BoundsPosition = GetActorLocation();
-	vaWorldSetPositionUnreal(World, BoundsPosition);
 	vaWorldSetSizeUnreal(World, BoundsSize);
+	PlaceBounds();
 
 	// World config
 	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
@@ -231,6 +262,7 @@ void AVAWorld::InitializeVAWorld()
 		return;
 
 	World = vaWorldCreate();
+	BoundsPosition = GetActorLocation();
 	vaWorldSetUserData(World, this);
 	vaWorldSetOnReverbUpdatedCallback(World, &OnReverbUpdatedTrampoline);
 
@@ -475,6 +507,9 @@ void AVAWorld::Tick(float DeltaTime)
 
 	if (World)
 	{
+		if (BoundsFollow == EVABoundsFollow::Listener)
+			FollowBounds();
+
 		SyncDebugCamera();
 
 		vaWorldUpdate(World);
@@ -822,6 +857,10 @@ bool AVAWorld::SetCurrentListener(AVAListener* listener)
 	// Set up the emitters that began play before the first listener
 	if (!sharedHandle)
 		WirePendingTargets();
+
+	// A new current listener gets centred bounds whatever BoundsUpdateDistance is
+	if (World && BoundsFollow == EVABoundsFollow::Listener)
+		PlaceBounds();
 
 	return true;
 }

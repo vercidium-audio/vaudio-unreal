@@ -108,6 +108,16 @@ struct FVABakedMesh
 	TArray<FVector3f> Vertices;
 };
 
+UENUM(BlueprintType)
+enum class EVABoundsFollow : uint8
+{
+	// The actor's location is the bounds' minimum corner
+	None,
+
+	// The bounds are centred on the current listener during play
+	Listener,
+};
+
 UCLASS(DisplayName = "VAWorld", HideCategories = (Shape, Collision, Rendering, Physics, HLOD, Navigation, VirtualTexture, Tags, Cooking, LOD, AssetUserData, Mobile, RayTracing))
 class VAUDIOUNREAL_API AVAWorld : public AActor
 {
@@ -139,7 +149,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001"))
 	FVector BoundsSize = FVector(6000.f, 6000.f, 6000.f);
 
-	// How far the actor must move during play, in world units, before the bounds follow it. Every move of the bounds re-checks all raytraced trails, so a moving VAWorld should update in steps. The default is 10 m at the default MetersPerUnit. 0 follows every move
+	// What the bounds follow during play. With Listener, set BoundsSize to cover the area that's loaded around the player, e.g. twice the World Partition loading range, and the actor's location only places the box in the editor and until a listener begins play
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	EVABoundsFollow BoundsFollow = EVABoundsFollow::None;
+
+	// How far the actor (or the current listener, with BoundsFollow Listener) must move during play, in world units, before the bounds follow it. Every move of the bounds re-checks all raytraced trails, so moving bounds should update in steps. The default is 10 m at the default MetersPerUnit. 0 follows every move
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0"))
 	float BoundsUpdateDistance = 1000.0f;
 
@@ -150,6 +164,10 @@ public:
 	// Changes BoundsSize during play
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetBoundsSize(const FVector& size);
+
+	// Changes BoundsFollow during play, moving the bounds straight away
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void SetBoundsFollow(EVABoundsFollow follow);
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Vercidium Audio|World", meta = (AllowPrivateAccess = "true"))
 	UVAWorldBoundsComponent* WorldBounds;
@@ -417,8 +435,17 @@ public:
 private:
 	VAWorld* World = nullptr;
 
-	// The actor location last pushed to the SDK
+	// The bounds' minimum corner last pushed to the SDK
 	FVector BoundsPosition = FVector::ZeroVector;
+
+	// Where BoundsFollow wants the bounds' minimum corner. Following a listener while there is none leaves the bounds where they are
+	FVector GetBoundsTarget() const;
+
+	// Moves the bounds to GetBoundsTarget()
+	void PlaceBounds();
+
+	// PlaceBounds once the target is BoundsUpdateDistance from the bounds
+	void FollowBounds();
 
 	// Transient: populated in BeginPlay from NewObject() and must never be saved into the level —
 	// saving these as real exports corrupts the package (they don't round-trip through a reload).
@@ -502,7 +529,7 @@ private:
 
 	void OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
 
-	// The bounds follow the actor, in the editor and during play
+	// The bounds follow the actor in the editor, and during play unless they follow the listener
 	void OnRootMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
 
 	// Bound to the OnEndPlay of every actor that contributed primitives, so destroyed or streamed-out geometry stops affecting raytracing
