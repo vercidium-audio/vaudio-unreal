@@ -23,7 +23,7 @@ bool AVAWorld::AddBinding(FVAPrimitiveBinding binding, const TCHAR* typeName)
 	{
 		VA_WARN_NAMED_RESULT(result, TEXT("'%s': failed to add %s primitive to raytracing."), *actorName, typeName);
 		ActorsWithInvalidMaterials.AddUnique(actorName);
-		DestroyPrimitive(binding.Primitive, binding.Kind);
+		DestroyPrimitive(binding);
 		return false;
 	}
 
@@ -58,7 +58,7 @@ void AVAWorld::RemoveBindings(TFunctionRef<bool(const FVAPrimitiveBinding&)> pre
 			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to remove a primitive from the world."));
 
 		// The SDK captures what it needs in vaWorldRemovePrimitive, so the primitive can be destroyed straight away
-		DestroyPrimitive(binding.Primitive, binding.Kind);
+		DestroyPrimitive(binding);
 
 		PrimitiveBindings.RemoveAtSwap(i);
 		removedAny = true;
@@ -79,9 +79,11 @@ void AVAWorld::DestroyPrimitives()
 	RemoveBindings([](const FVAPrimitiveBinding&) { return true; });
 }
 
-void AVAWorld::DestroyPrimitive(void* primitive, EVAPrimitiveKind kind)
+void AVAWorld::DestroyPrimitive(const FVAPrimitiveBinding& binding)
 {
-	switch (kind)
+	void* primitive = binding.Primitive;
+
+	switch (binding.Kind)
 	{
 		case EVAPrimitiveKind::Sphere:
 		case EVAPrimitiveKind::SphereFromMesh:
@@ -99,7 +101,9 @@ void AVAWorld::DestroyPrimitive(void* primitive, EVAPrimitiveKind kind)
 			break;
 
 		case EVAPrimitiveKind::Mesh:
+			// The primitive references the shared mesh, so it goes first
 			vaMeshPrimitiveDestroy(static_cast<VAMeshPrimitive*>(primitive));
+			ReleaseSharedMesh(binding.MeshKey);
 			break;
 	}
 }

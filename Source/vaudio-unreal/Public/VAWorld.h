@@ -10,6 +10,7 @@
 
 struct VAWorld;
 struct VAEmitter;
+struct VAMesh;
 class AVAEmitter;
 class AVAListener;
 class UVAMaterialBase;
@@ -17,6 +18,7 @@ class UVACustomMaterial;
 class UVAMaterialComponent;
 class UShapeComponent;
 class UStaticMeshComponent;
+class UStaticMesh;
 enum class EVAPropagateMode : uint8;
 class UVASubmixEffectDirectionalPanPreset;
 
@@ -42,6 +44,27 @@ enum class EVAPrimitiveKind : uint8
 	PrismFromMesh,
 };
 
+// Identifies triangle data that every placement of a static mesh can share
+struct FVAMeshKey
+{
+	TWeakObjectPtr<UStaticMesh> Mesh;
+
+	// The render LOD, or 0 for a convex hull
+	int32 LOD = 0;
+
+	// A convex hull's index in the mesh's simple collision, or INDEX_NONE for the render triangles
+	int32 ConvexIndex = INDEX_NONE;
+
+	bool operator==(const FVAMeshKey& other) const { return Mesh == other.Mesh && LOD == other.LOD && ConvexIndex == other.ConvexIndex; }
+	friend uint32 GetTypeHash(const FVAMeshKey& key) { return HashCombine(GetTypeHash(key.Mesh), HashCombine(GetTypeHash(key.LOD), GetTypeHash(key.ConvexIndex))); }
+};
+
+struct FVASharedMesh
+{
+	VAMesh* Mesh = nullptr;
+	int32 ReferenceCount = 0;
+};
+
 struct FVAPrimitiveBinding
 {
 	TWeakObjectPtr<USceneComponent> Component;
@@ -51,6 +74,9 @@ struct FVAPrimitiveBinding
 
 	void* Primitive = nullptr;
 	EVAPrimitiveKind Kind = EVAPrimitiveKind::Mesh;
+
+	// The shared mesh a Mesh primitive was created from
+	FVAMeshKey MeshKey;
 
 	// Mesh space relative to the component, i.e. an instanced static mesh's instance transform. Identity otherwise
 	FTransform MeshTransform = FTransform::Identity;
@@ -300,6 +326,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	int32 GetPrimitiveCount() const { return PrimitiveBindings.Num(); }
 
+	// How many distinct meshes the mesh primitives were built from. Every placement of the same static mesh shares one
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	int32 GetSharedMeshCount() const { return SharedMeshes.Num(); }
+
 	// Called by UVAMaterialComponent. Adds the geometry of its actor, and of attached child actors without their own VAMaterialComponent
 	void AddMaterialPrimitives(UVAMaterialComponent* source);
 	void RemoveMaterialPrimitives(UVAMaterialComponent* source);
@@ -386,6 +416,9 @@ private:
 
 	TMap<USceneComponent*, TArray<int32>> PrimitiveBindingsByComponent;
 
+	// One SDK mesh per static mesh LOD or convex hull, shared by every mesh primitive placed from it and destroyed when the last one goes
+	TMap<FVAMeshKey, FVASharedMesh> SharedMeshes;
+
 	// Every material component that has begun play in this world, including those whose geometry was all filtered out, so RebuildPrimitives can re-add them
 	TSet<TWeakObjectPtr<UVAMaterialComponent>> MaterialSources;
 
@@ -438,14 +471,17 @@ private:
 	void AddActorPrimitives(AActor* actor, UVAMaterialComponent* source);
 	void AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId);
 	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
-	bool AddMeshPrimitive(const TArray<FVector3f>& vertices, UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
+	// readVertices is only called when no placement of this mesh exists yet. It fills the triangle list in mesh space, or returns false if there is none
+	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
 	bool PassesCollisionFilter(const UPrimitiveComponent* component) const;
 
 	// Sets the primitive's transform, adds it to the vaWorld and tracks its component's movement. Destroys it if the SDK rejects it
 	bool AddBinding(FVAPrimitiveBinding binding, const TCHAR* typeName);
 
 	void RemoveBindings(TFunctionRef<bool(const FVAPrimitiveBinding&)> predicate);
-	static void DestroyPrimitive(void* primitive, EVAPrimitiveKind kind);
+	void DestroyPrimitive(const FVAPrimitiveBinding& binding);
+	VAMesh* AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, const UStaticMeshComponent* meshComponent);
+	void ReleaseSharedMesh(const FVAMeshKey& key);
 	static void RefreshPrimitiveTransform(const FVAPrimitiveBinding& Binding);
 
 	void OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);

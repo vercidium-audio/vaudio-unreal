@@ -364,30 +364,34 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 		}
 
 		// Convex hulls are closed, so they become watertight mesh primitives with the element transform baked into mesh space
-		for (const FKConvexElem& sourceElem : agg.ConvexElems)
+		for (int32 convexIndex = 0; convexIndex < agg.ConvexElems.Num(); convexIndex++)
 		{
-			FKConvexElem convexElem = sourceElem;
-
-			if (convexElem.IndexData.IsEmpty())
-				convexElem.ComputeChaosConvexIndices();
-
-			if (convexElem.IndexData.IsEmpty())
-				continue;
-
-			FTransform elementTransform = convexElem.GetTransform();
-			TArray<FVector3f> vertices;
-			vertices.Reserve(convexElem.IndexData.Num());
-
-			// The SDK's triangle test is one-sided. Render triangles already have the winding it expects, but Chaos' hull indices are wound the other way, so each triangle's last two vertices are swapped. Otherwise rays pass into the hull from outside
-			// TODO - add a winding field to Mesh and MeshPrimitives in the C SDK, so this kind of data transform below isn't required
-			for (int32 i = 0; i + 2 < convexElem.IndexData.Num(); i += 3)
+			auto readHull = [&](TArray<FVector3f>& vertices)
 			{
-				vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]])));
-				vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 2]])));
-				vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 1]])));
-			}
+				FKConvexElem convexElem = agg.ConvexElems[convexIndex];
 
-			addedSimple |= AddMeshPrimitive(vertices, meshComponent, source, meshTransform, materialId, false);
+				if (convexElem.IndexData.IsEmpty())
+					convexElem.ComputeChaosConvexIndices();
+
+				if (convexElem.IndexData.IsEmpty())
+					return false;
+
+				FTransform elementTransform = convexElem.GetTransform();
+				vertices.Reserve(convexElem.IndexData.Num());
+
+				// The SDK's triangle test is one-sided. Render triangles already have the winding it expects, but Chaos' hull indices are wound the other way, so each triangle's last two vertices are swapped. Otherwise rays pass into the hull from outside
+				// TODO - add a winding field to Mesh and MeshPrimitives in the C SDK, so this kind of data transform below isn't required
+				for (int32 i = 0; i + 2 < convexElem.IndexData.Num(); i += 3)
+				{
+					vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]])));
+					vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 2]])));
+					vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 1]])));
+				}
+
+				return true;
+			};
+
+			addedSimple |= AddMeshPrimitive(FVAMeshKey{ staticMesh, 0, convexIndex }, readHull, meshComponent, source, meshTransform, materialId, false);
 		}
 	}
 
@@ -395,24 +399,39 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 		return;
 
 	// Attempt to use baked geometry. Fall back to mesh data (may be unavailable in cooked builds)
-	TArray<FVector3f> localVertices;
-	const FVABakedMesh* bakedMesh = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return baked.ComponentName == meshComponent->GetFName() && baked.ActorName == actor->GetName(); });
+	auto readTriangles = [&](TArray<FVector3f>& vertices)
+	{
+		const FVABakedMesh* bakedMesh = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return baked.ComponentName == meshComponent->GetFName() && baked.ActorName == actor->GetName(); });
 
-	if (bakedMesh)
-	{
-		localVertices = bakedMesh->Vertices;
-	}
-	else if (!GetRenderVertices(staticMesh, source->MeshLOD, localVertices))
-	{
+		if (bakedMesh)
+		{
+			vertices = bakedMesh->Vertices;
+			return true;
+		}
+
+		if (GetRenderVertices(staticMesh, source->MeshLOD, vertices))
+			return true;
+
 		VA_WARN_NAMED(TEXT("Mesh '%s' will not affect raytracing as it has no baked geometry and no render mesh data. Run 'Bake Geometry For Shipping' on the VAWorld and save the level."), *staticMesh->GetName());
-		return;
-	}
+		return false;
+	};
 
-	AddMeshPrimitive(localVertices, meshComponent, source, meshTransform, materialId, useFlatTransmission);
+	AddMeshPrimitive(FVAMeshKey{ staticMesh, source->MeshLOD, INDEX_NONE }, readTriangles, meshComponent, source, meshTransform, materialId, useFlatTransmission);
 }
 
-bool AVAWorld::AddMeshPrimitive(const TArray<FVector3f>& vertices, UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
+VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, const UStaticMeshComponent* meshComponent)
 {
+	if (FVASharedMesh* shared = SharedMeshes.Find(key))
+	{
+		shared->ReferenceCount++;
+		return shared->Mesh;
+	}
+
+	TArray<FVector3f> vertices;
+
+	if (!readVertices(vertices))
+		return nullptr;
+
 	TArray<VAVector> vaVertices;
 	vaVertices.Reserve(vertices.Num());
 
@@ -429,14 +448,52 @@ bool AVAWorld::AddMeshPrimitive(const TArray<FVector3f>& vertices, UStaticMeshCo
 		maxBounds = vaVectorMax(maxBounds, vaPosition);
 	}
 
+	VAMesh* mesh;
+	VAResult result = vaMeshCreate(vaVertices.GetData(), vaVertices.Num(), minBounds, maxBounds, &mesh);
+
+	if (result != VA_SUCCESS)
+	{
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a mesh for '%s' on '%s'."), *meshComponent->GetName(), *meshComponent->GetOwner()->GetActorNameOrLabel());
+		return nullptr;
+	}
+
+	SharedMeshes.Add(key, FVASharedMesh{ mesh, 1 });
+	return mesh;
+}
+
+void AVAWorld::ReleaseSharedMesh(const FVAMeshKey& key)
+{
+	FVASharedMesh* shared = SharedMeshes.Find(key);
+
+	if (!shared || --shared->ReferenceCount > 0)
+		return;
+
+	// The SDK frees it once its raytracing threads have finished with it
+	VAResult result = vaMeshDestroy(shared->Mesh);
+
+	if (result != VA_SUCCESS)
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to destroy a mesh."));
+
+	SharedMeshes.Remove(key);
+}
+
+bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
+{
+	VAMesh* sharedMesh = AcquireSharedMesh(key, readVertices, meshComponent);
+
+	if (!sharedMesh)
+		return false;
+
+	// The vertices are in mesh space, so component scale and an instance's transform only go into the primitive's transform
 	VAMatrix vaTransform = MakeScaleRotTransMatrix(meshTransform * meshComponent->GetComponentTransform());
 	VAMeshPrimitive* mesh;
 
-	VAResult result = vaMeshPrimitiveCreate((VAMaterialType)materialId, vaVertices.GetData(), vaVertices.Num(), minBounds, maxBounds, &vaTransform, &mesh);
+	VAResult result = vaMeshPrimitiveCreateFromMesh((VAMaterialType)materialId, sharedMesh, &vaTransform, &mesh);
 
 	if (result != VA_SUCCESS)
 	{
 		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a mesh primitive for '%s' on '%s'."), *meshComponent->GetName(), *meshComponent->GetOwner()->GetActorNameOrLabel());
+		ReleaseSharedMesh(key);
 		return false;
 	}
 
@@ -447,6 +504,7 @@ bool AVAWorld::AddMeshPrimitive(const TArray<FVector3f>& vertices, UStaticMeshCo
 	binding.Source = source;
 	binding.Primitive = mesh;
 	binding.Kind = EVAPrimitiveKind::Mesh;
+	binding.MeshKey = key;
 	binding.MeshTransform = meshTransform;
 	return AddBinding(binding, TEXT("mesh"));
 }
