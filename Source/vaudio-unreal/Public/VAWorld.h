@@ -124,6 +124,10 @@ protected:
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+
+	// The bounds are always an axis-aligned box, so the rotate and scale gizmos do nothing
+	virtual void EditorApplyRotation(const FRotator& DeltaRotation, bool bAltDown, bool bShiftDown, bool bCtrlDown) override {}
+	virtual void EditorApplyScale(const FVector& DeltaScale, const FVector* PivotLocation, bool bAltDown, bool bShiftDown, bool bCtrlDown) override {}
 #endif
 
 public:
@@ -131,11 +135,21 @@ public:
 
 	// --- World bounds ---
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
-	FVector WorldPosition = FVector(-3000.f, -3000.f, -3000.f);
+	// Size of the raytraced box. The actor's location is the box's minimum corner, like Godot's VAWorld, and its rotation and scale are ignored
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001"))
+	FVector BoundsSize = FVector(6000.f, 6000.f, 6000.f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
-	FVector WorldSize = FVector(6000.f, 6000.f, 6000.f);
+	// How far the actor must move during play, in world units, before the bounds follow it. Every move of the bounds re-checks all raytraced trails, so a moving VAWorld should update in steps. The default is 10 m at the default MetersPerUnit. 0 follows every move
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0"))
+	float BoundsUpdateDistance = 1000.0f;
+
+	// The bounds' minimum corner: the position last pushed to the SDK during play, otherwise the actor's location
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	FVector GetBoundsPosition() const { return World ? BoundsPosition : GetActorLocation(); }
+
+	// Changes BoundsSize during play
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void SetBoundsSize(const FVector& size);
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Vercidium Audio|World", meta = (AllowPrivateAccess = "true"))
 	UVAWorldBoundsComponent* WorldBounds;
@@ -344,8 +358,7 @@ public:
 
 	void InitializeVAWorld();
 
-	// Repositions/resizes WorldBounds from the current WorldPosition/WorldSize. Called from the
-	// constructor and PostEditChangeProperty whenever either property changes in the editor.
+	// Repositions/resizes WorldBounds from GetBoundsPosition() and BoundsSize
 	void RefreshWorldBounds();
 
 	// Update the vaWorld with the latest properties
@@ -403,6 +416,9 @@ public:
 
 private:
 	VAWorld* World = nullptr;
+
+	// The actor location last pushed to the SDK
+	FVector BoundsPosition = FVector::ZeroVector;
 
 	// Transient: populated in BeginPlay from NewObject() and must never be saved into the level —
 	// saving these as real exports corrupts the package (they don't round-trip through a reload).
@@ -485,6 +501,9 @@ private:
 	static void RefreshPrimitiveTransform(const FVAPrimitiveBinding& Binding);
 
 	void OnPrimitiveComponentMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
+
+	// The bounds follow the actor, in the editor and during play
+	void OnRootMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport);
 
 	// Bound to the OnEndPlay of every actor that contributed primitives, so destroyed or streamed-out geometry stops affecting raytracing
 	UFUNCTION()

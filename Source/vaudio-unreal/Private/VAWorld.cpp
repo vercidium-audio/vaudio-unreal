@@ -61,6 +61,13 @@ AVAWorld::AVAWorld()
 	WorldBounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	WorldBounds->SetGenerateOverlapEvents(false);
 	WorldBounds->SetHiddenInGame(false);
+
+	// The box stays axis-aligned and unscaled whatever the actor's rotation and scale, so RefreshWorldBounds places it in world space
+	WorldBounds->SetUsingAbsoluteLocation(true);
+	WorldBounds->SetUsingAbsoluteRotation(true);
+	WorldBounds->SetUsingAbsoluteScale(true);
+
+	Root->TransformUpdated.AddUObject(this, &AVAWorld::OnRootMoved);
 }
 
 void AVAWorld::OnConstruction(const FTransform& Transform)
@@ -72,18 +79,37 @@ void AVAWorld::OnConstruction(const FTransform& Transform)
 
 void AVAWorld::RefreshWorldBounds()
 {
-	// Convert position + size to location + extent
-	WorldBounds->SetWorldLocation(WorldPosition + WorldSize * 0.5f);
-	WorldBounds->SetBoxExtent(WorldSize * 0.5f);
-
-	// No rotation
-	WorldBounds->SetWorldRotation(FQuat::Identity);
+	// Convert min corner + size to location + extent
+	WorldBounds->SetWorldLocation(GetBoundsPosition() + BoundsSize * 0.5f);
+	WorldBounds->SetBoxExtent(BoundsSize * 0.5f);
 
 	if (WorldBounds->ShapeColor != BoundsColor)
 	{
 		WorldBounds->ShapeColor = BoundsColor;
 		WorldBounds->MarkRenderStateDirty();
 	}
+}
+
+void AVAWorld::OnRootMoved(USceneComponent* UpdatedComponent, EUpdateTransformFlags UpdateTransformFlags, ETeleportType Teleport)
+{
+	FVector location = GetActorLocation();
+
+	if (World && FVector::DistSquared(location, BoundsPosition) >= FMath::Square((double)BoundsUpdateDistance) && location != BoundsPosition)
+	{
+		BoundsPosition = location;
+		vaWorldSetPositionUnreal(World, BoundsPosition);
+	}
+
+	RefreshWorldBounds();
+}
+
+void AVAWorld::SetBoundsSize(const FVector& size)
+{
+	BoundsSize = size;
+	RefreshWorldBounds();
+
+	if (World)
+		vaWorldSetSizeUnreal(World, BoundsSize);
 }
 
 void AVAWorld::UpdateVAWorld()
@@ -93,8 +119,9 @@ void AVAWorld::UpdateVAWorld()
 	vaWorldSetCameraSpeed(World, CameraSpeed);
 
 	// World bounds
-	vaWorldSetPositionUnreal(World, WorldPosition);
-	vaWorldSetSizeUnreal(World, WorldSize);
+	BoundsPosition = GetActorLocation();
+	vaWorldSetPositionUnreal(World, BoundsPosition);
+	vaWorldSetSizeUnreal(World, BoundsSize);
 
 	// World config
 	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
@@ -141,8 +168,7 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	// Unlike the vaWorldSet* calls below, the box should reflect WorldPosition/WorldSize even
-	// before BeginPlay (or after EndPlay), since World is null until then.
+	// Unlike the vaWorldSet* calls below, the box should reflect BoundsSize even before BeginPlay (or after EndPlay), since World is null until then
 	RefreshWorldBounds();
 
 	// Ignore edits before pressing Play
