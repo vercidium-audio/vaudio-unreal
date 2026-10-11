@@ -423,6 +423,9 @@ public:
 	static void OnOrphanedEmitterRemoved(VAEmitter* handle);
 
 	int32 GetOrphanedEmitterCount() const;
+
+	// Across every VAWorld in the process, as each map (UWorld) has its own
+	static int32 GetTotalOrphanedEmitterCount();
 	int32 GetPendingEmitterDestroyCount() const { return PendingEmitterDestroys.Num(); }
 
 	// Called from the SDK callbacks, so FlushPendingEvents runs after vaWorldUpdate returns

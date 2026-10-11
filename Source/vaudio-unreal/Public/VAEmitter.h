@@ -8,6 +8,7 @@
 struct VAEmitter;
 class AVAWorld;
 class UVAVisualisation;
+class UVAWorldSubsystem;
 class USoundSubmix;
 struct VALowPassFilter;
 
@@ -142,6 +143,7 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PostRename(UObject* OldOuter, const FName OldName) override;
 
 	// --- Runtime access ---
 
@@ -413,6 +415,15 @@ private:
 	FDelegateHandle WorldUnregisteredHandle;
 
 	void OnWorldUnregistered();
+
+	// The subsystem both delegates are bound on. It belongs to the map this actor is in, which changes when seamless travel carries the actor into a new map
+	TWeakObjectPtr<UVAWorldSubsystem> BoundSubsystem;
+
+	void BindWorld();
+	void UnbindWorld();
+
+	// Seamless travel moved this actor into another map without EndPlay or BeginPlay, so it rebinds to that map's subsystem and joins its VAWorld
+	void OnWorldChanged();
 
 	// Set once a VAWorld was found, even if it has ended play since
 	bool foundWorld = false;

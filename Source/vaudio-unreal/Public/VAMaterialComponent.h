@@ -6,6 +6,7 @@
 
 class AVAWorld;
 class UVAMaterialBase;
+class UVAWorldSubsystem;
 
 UENUM(BlueprintType)
 enum class EVAMaterial : uint8
@@ -130,11 +131,20 @@ protected:
 
 	void OnWorldUnregistered();
 
+	// The subsystem both delegates are bound on. It belongs to the map this component is in, which changes when seamless travel carries its actor into a new map
+	TWeakObjectPtr<UVAWorldSubsystem> BoundSubsystem;
+
+	// Binds to the map's subsystem and adds this component's geometry to its VAWorld, or waits for one
+	void JoinWorld();
+
+	// Removes this component's geometry and unbinds
+	void LeaveWorld();
+
 public:
+	virtual void OnRegister() override;
 
 #if WITH_EDITOR
 	virtual void PostLoad() override;
-	virtual void OnRegister() override;
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 
 private:

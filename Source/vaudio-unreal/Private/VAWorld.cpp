@@ -935,6 +935,11 @@ int32 AVAWorld::GetOrphanedEmitterCount() const
 	return count;
 }
 
+int32 AVAWorld::GetTotalOrphanedEmitterCount()
+{
+	return OrphanedEmitters.Num();
+}
+
 void AVAWorld::ExportWorld()
 {
 	if (!World)

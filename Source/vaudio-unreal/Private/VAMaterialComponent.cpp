@@ -80,8 +80,15 @@ TArray<FString> UVAMaterialComponent::GetComponentNames() const
 void UVAMaterialComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	JoinWorld();
+}
 
-	UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>();
+void UVAMaterialComponent::JoinWorld()
+{
+	UWorld* world = GetWorld();
+	BoundSubsystem = world ? world->GetSubsystem<UVAWorldSubsystem>() : nullptr;
+
+	UVAWorldSubsystem* subsystem = BoundSubsystem.Get();
 
 	if (subsystem)
 		WorldUnregisteredHandle = subsystem->OnWorldUnregistered.AddUObject(this, &UVAMaterialComponent::OnWorldUnregistered);
@@ -99,6 +106,23 @@ void UVAMaterialComponent::BeginPlay()
 		WorldRegisteredHandle = subsystem->OnWorldRegistered.AddUObject(this, &UVAMaterialComponent::OnWorldRegistered);
 }
 
+void UVAMaterialComponent::LeaveWorld()
+{
+	StopWaitingForWorld();
+
+	// The subsystem is already gone if its map was
+	if (UVAWorldSubsystem* subsystem = BoundSubsystem.Get())
+		subsystem->OnWorldUnregistered.Remove(WorldUnregisteredHandle);
+
+	WorldUnregisteredHandle.Reset();
+	BoundSubsystem.Reset();
+
+	if (AudioWorld)
+		AudioWorld->RemoveMaterialPrimitives(this);
+
+	AudioWorld = nullptr;
+}
+
 void UVAMaterialComponent::OnWorldUnregistered()
 {
 	// Still waiting for a VAWorld
@@ -108,7 +132,7 @@ void UVAMaterialComponent::OnWorldUnregistered()
 	// The VAWorld destroyed this component's primitives as it ended play
 	AudioWorld = nullptr;
 
-	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+	if (UVAWorldSubsystem* subsystem = BoundSubsystem.Get())
 		WorldRegisteredHandle = subsystem->OnWorldRegistered.AddUObject(this, &UVAMaterialComponent::OnWorldRegistered);
 }
 
@@ -126,7 +150,7 @@ void UVAMaterialComponent::StopWaitingForWorld()
 	if (!WorldRegisteredHandle.IsValid())
 		return;
 
-	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+	if (UVAWorldSubsystem* subsystem = BoundSubsystem.Get())
 		subsystem->OnWorldRegistered.Remove(WorldRegisteredHandle);
 
 	WorldRegisteredHandle.Reset();
@@ -134,22 +158,28 @@ void UVAMaterialComponent::StopWaitingForWorld()
 
 void UVAMaterialComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	StopWaitingForWorld();
-
-	if (WorldUnregisteredHandle.IsValid())
-	{
-		if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
-			subsystem->OnWorldUnregistered.Remove(WorldUnregisteredHandle);
-
-		WorldUnregisteredHandle.Reset();
-	}
-
-	if (AudioWorld)
-		AudioWorld->RemoveMaterialPrimitives(this);
-
-	AudioWorld = nullptr;
+	LeaveWorld();
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void UVAMaterialComponent::OnRegister()
+{
+	Super::OnRegister();
+
+#if WITH_EDITOR
+	EnsureMeshesAllowCPUAccess();
+#endif
+
+	UWorld* world = GetWorld();
+	UVAWorldSubsystem* subsystem = world ? world->GetSubsystem<UVAWorldSubsystem>() : nullptr;
+
+	// Seamless travel moves a kept actor into the new map without EndPlay or BeginPlay, and re-registers its components there
+	if (HasBegunPlay() && subsystem != BoundSubsystem.Get())
+	{
+		LeaveWorld();
+		JoinWorld();
+	}
 }
 
 #if WITH_EDITOR
@@ -167,13 +197,6 @@ void UVAMaterialComponent::PostLoad()
 	Super::PostLoad();
 	EnsureMeshesAllowCPUAccess();
 }
-
-void UVAMaterialComponent::OnRegister()
-{
-	Super::OnRegister();
-	EnsureMeshesAllowCPUAccess();
-}
-
 
 void UVAMaterialComponent::EnsureMeshesAllowCPUAccess() const
 {

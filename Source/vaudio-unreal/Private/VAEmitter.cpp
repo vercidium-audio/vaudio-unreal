@@ -76,8 +76,7 @@ void AVAEmitter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
-		WorldUnregisteredHandle = subsystem->OnWorldUnregistered.AddUObject(this, &AVAEmitter::OnWorldUnregistered);
+	BindWorld();
 
 	// A UVAVisualisation on this actor may have initialised it already, during Super::BeginPlay
 	if (TryInitializeEmitter() || AudioWorld)
@@ -87,12 +86,66 @@ void AVAEmitter::BeginPlay()
 	WaitForWorld();
 }
 
+void AVAEmitter::BindWorld()
+{
+	UWorld* world = GetWorld();
+	BoundSubsystem = world ? world->GetSubsystem<UVAWorldSubsystem>() : nullptr;
+
+	if (UVAWorldSubsystem* subsystem = BoundSubsystem.Get())
+		WorldUnregisteredHandle = subsystem->OnWorldUnregistered.AddUObject(this, &AVAEmitter::OnWorldUnregistered);
+}
+
+void AVAEmitter::UnbindWorld()
+{
+	StopWaitingForWorld();
+
+	// The subsystem is already gone if its map was
+	if (UVAWorldSubsystem* subsystem = BoundSubsystem.Get())
+		subsystem->OnWorldUnregistered.Remove(WorldUnregisteredHandle);
+
+	WorldUnregisteredHandle.Reset();
+	BoundSubsystem.Reset();
+}
+
+void AVAEmitter::PostRename(UObject* OldOuter, const FName OldName)
+{
+	Super::PostRename(OldOuter, OldName);
+
+	UWorld* world = GetWorld();
+	UVAWorldSubsystem* subsystem = world ? world->GetSubsystem<UVAWorldSubsystem>() : nullptr;
+
+	// Seamless travel renames a kept actor into the new map's level
+	if (HasActorBegunPlay() && subsystem != BoundSubsystem.Get())
+		OnWorldChanged();
+}
+
+void AVAEmitter::OnWorldChanged()
+{
+	// The old map's VAWorld normally ends play before kept actors are moved, so this emitter has left it already
+	if (AudioWorld)
+		OnWorldUnregistered();
+
+	// An emitter that failed validation, or a bRaytraceOnce emitter that already left, isn't waiting and doesn't join the new map's VAWorld either
+	const bool waiting = WorldRegisteredHandle.IsValid();
+
+	UnbindWorld();
+	BindWorld();
+
+	if (!waiting)
+		return;
+
+	if (AVAWorld::Find(this))
+		OnWorldRegistered();
+	else
+		WaitForWorld();
+}
+
 void AVAEmitter::WaitForWorld()
 {
 	if (WorldRegisteredHandle.IsValid())
 		return;
 
-	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+	if (UVAWorldSubsystem* subsystem = BoundSubsystem.Get())
 		WorldRegisteredHandle = subsystem->OnWorldRegistered.AddUObject(this, &AVAEmitter::OnWorldRegistered);
 }
 
@@ -147,7 +200,7 @@ void AVAEmitter::StopWaitingForWorld()
 	if (!WorldRegisteredHandle.IsValid())
 		return;
 
-	if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
+	if (UVAWorldSubsystem* subsystem = BoundSubsystem.Get())
 		subsystem->OnWorldRegistered.Remove(WorldRegisteredHandle);
 
 	WorldRegisteredHandle.Reset();
@@ -252,22 +305,13 @@ void AVAEmitter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 
-	if (WorldUnregisteredHandle.IsValid())
-	{
-		if (UVAWorldSubsystem* subsystem = GetWorld()->GetSubsystem<UVAWorldSubsystem>())
-			subsystem->OnWorldUnregistered.Remove(WorldUnregisteredHandle);
+	const bool waiting = WorldRegisteredHandle.IsValid();
 
-		WorldUnregisteredHandle.Reset();
-	}
+	UnbindWorld();
 
-	if (WorldRegisteredHandle.IsValid())
-	{
-		StopWaitingForWorld();
-
-		// Not when its VAWorld ended play first, e.g. as the level unloads
-		if (!foundWorld)
-			VA_WARN_NAMED(TEXT("Ended play without finding a VAWorld, so it never cast rays or played sound. Place a VAWorld in the level."));
-	}
+	// Not when its VAWorld ended play first, e.g. as the level unloads
+	if (waiting && !foundWorld)
+		VA_WARN_NAMED(TEXT("Ended play without finding a VAWorld, so it never cast rays or played sound. Place a VAWorld in the level."));
 
 	LeaveWorld();
 }
