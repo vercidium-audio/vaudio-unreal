@@ -66,6 +66,13 @@ bool AVASourceRelative::Play()
 	// Play() may be called before this tick's update
 	UpdatePlayback();
 
+	// Having no audio device (e.g. -nosound) isn't worth a warning
+	if (!GetWorld()->GetAudioDeviceRaw())
+	{
+		VA_LOG_NAMED(TEXT("No audio device, so the source is not heard"));
+		return false;
+	}
+
 	USoundBase* chosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
 
 	// CreateSound2D() builds the component without starting playback

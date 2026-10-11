@@ -3,6 +3,7 @@
 #include "VAListener.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
+#include "Engine/World.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -143,6 +144,13 @@ bool AVASourceLeech::Play()
 
 	// Play() may be called before this tick's update
 	UpdatePlayback(GetLeechedEmitter());
+
+	// Raytracing doesn't need the sound, so having no audio device (e.g. -nosound) isn't worth a warning
+	if (!GetWorld()->GetAudioDeviceRaw())
+	{
+		VA_LOG_NAMED(TEXT("No audio device, so the source is not heard"));
+		return false;
+	}
 
 	USoundBase* chosenSound = SourceSounds[FMath::RandHelper(SourceSounds.Num())];
 

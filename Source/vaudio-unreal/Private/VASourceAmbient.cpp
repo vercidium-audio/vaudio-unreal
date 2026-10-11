@@ -86,6 +86,13 @@ void AVASourceAmbient::TrySpawnSourceSound()
 {
 	bSourcePendingSpawn = false;
 
+	// Having no audio device (e.g. -nosound) isn't worth a warning
+	if (!GetWorld()->GetAudioDeviceRaw())
+	{
+		VA_LOG_NAMED(TEXT("No audio device, so the source is not heard"));
+		return;
+	}
+
 	// CreateSound2D() builds the component without starting playback, so we can configure the low pass filter before playing any sound
 	UAudioComponent* component = UGameplayStatics::CreateSound2D(GetWorld(), SourceSound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
 

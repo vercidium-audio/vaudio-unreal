@@ -1,6 +1,7 @@
 #include "VASource.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
+#include "Engine/World.h"
 
 #include "VALog.h"
 
@@ -55,6 +56,13 @@ bool AVASource::Play()
 
 	// Play() may be called before this tick's update
 	UpdatePlayback();
+
+	// Raytracing doesn't need the sound, so having no audio device (e.g. -nosound) isn't worth a warning
+	if (!GetWorld()->GetAudioDeviceRaw())
+	{
+		VA_LOG_NAMED(TEXT("No audio device, so the source is raytraced but not heard"));
+		return false;
+	}
 
 	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
 	Params.SetLocation(GetActorLocation());
