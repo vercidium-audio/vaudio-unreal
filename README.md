@@ -54,7 +54,7 @@ YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Linux/libvaudiona
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Mac/libvaudionative.dylib
 ```
 
-Download the SDK from [vercidium.com](https://vercidium.com) and copy the 3D native SDK's files into the above locations. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`.
+Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. The plugin only works with the double precision SDK: Unreal positions are doubles, and it keeps them that way, so raytracing stays accurate any distance from the origin. The single precision SDK (`3d/native`) fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`.
 
 When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platform>` and loads them from there. If the SDK is missing, the build fails with a message saying where to put it.
 

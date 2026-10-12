@@ -143,7 +143,7 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 		{
 			FVector extent = CastChecked<UBoxComponent>(component)->GetScaledBoxExtent();
 			VAPrismPrimitive* vaPrism = static_cast<VAPrismPrimitive*>(binding.Primitive);
-			vaPrismPrimitiveSetSize(vaPrism, vaVectorCreate(extent.X * 2.0f, extent.Y * 2.0f, extent.Z * 2.0f));
+			vaPrismPrimitiveSetSize(vaPrism, FVectorToVAVector(extent * 2.0));
 			vaPrismPrimitiveSetTransformUnreal(vaPrism, componentTransform);
 			break;
 		}
@@ -165,7 +165,7 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 		{
 			VASpherePrimitive* vaSphere = static_cast<VASpherePrimitive*>(binding.Primitive);
 			vaSpherePrimitiveSetCenterUnreal(vaSphere, meshTransform.TransformPosition(binding.ElementTransform.GetTranslation()));
-			vaSpherePrimitiveSetRadius(vaSphere, binding.LocalExtent.X * meshScale.GetMax());
+			vaSpherePrimitiveSetRadius(vaSphere, (VAFloat)(binding.LocalExtent.X * meshScale.GetMax()));
 			break;
 		}
 		case EVAPrimitiveKind::PrismFromMesh:
@@ -181,8 +181,8 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 		{
 			FTransform elementTransform(meshTransform.GetRotation() * binding.ElementTransform.GetRotation(), meshTransform.TransformPosition(binding.ElementTransform.GetTranslation()));
 			VACapsulePrimitive* vaCapsule = static_cast<VACapsulePrimitive*>(binding.Primitive);
-			vaCapsulePrimitiveSetRadius(vaCapsule, binding.LocalExtent.X * FMath::Max(meshScale.X, meshScale.Y));
-			vaCapsulePrimitiveSetLength(vaCapsule, binding.LocalExtent.Z * meshScale.Z);
+			vaCapsulePrimitiveSetRadius(vaCapsule, (VAFloat)(binding.LocalExtent.X * FMath::Max(meshScale.X, meshScale.Y)));
+			vaCapsulePrimitiveSetLength(vaCapsule, (VAFloat)(binding.LocalExtent.Z * meshScale.Z));
 			vaCapsulePrimitiveSetTransformUnreal(vaCapsule, elementTransform);
 			break;
 		}

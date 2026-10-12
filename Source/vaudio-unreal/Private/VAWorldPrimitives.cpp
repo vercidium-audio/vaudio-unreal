@@ -435,9 +435,8 @@ VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TAr
 	TArray<VAVector> vaVertices;
 	vaVertices.Reserve(vertices.Num());
 
-	// Not vaudio.h's VECTOR_MIN, which is FLT_MIN (the smallest positive float), so it would be wrong for a mesh entirely in negative coordinates
-	VAVector minBounds = vaVectorCreate(FLT_MAX, FLT_MAX, FLT_MAX);
-	VAVector maxBounds = vaVectorCreate(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+	VAVector minBounds = VECTOR_MAX;
+	VAVector maxBounds = VECTOR_MIN;
 
 	for (const FVector3f& localPosition : vertices)
 	{

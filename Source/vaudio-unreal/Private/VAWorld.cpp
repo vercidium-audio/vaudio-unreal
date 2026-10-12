@@ -493,7 +493,7 @@ void AVAWorld::SyncDebugCamera()
 			fieldOfView = VerticalFOVRadians(playerController->PlayerCameraManager->GetFOVAngle(), gameViewport->Viewport->GetSizeXY());
 	}
 
-	vaWorldSetCameraPosition(World, vaVectorCreate((float)position.X, (float)position.Y, (float)position.Z));
+	vaWorldSetCameraPosition(World, FVectorToVAVector(position));
 	vaWorldSetCameraPitch(World, FMath::DegreesToRadians(rotation.Pitch));
 	vaWorldSetCameraYaw(World, FMath::DegreesToRadians(rotation.Yaw));
 

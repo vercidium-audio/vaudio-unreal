@@ -4,10 +4,18 @@ extern "C" {
 #include "vaudio.h"
 }
 
+// The plugin only supports the double precision SDK, so FVector's doubles go into the SDK without narrowing
+static_assert(VA_FLOAT_SIZE == 8, "vaudio-unreal needs the double precision Vercidium Audio SDK (3d/native-double), but Source/ThirdParty/vaudio/include/vaudio.h is the single precision one");
+
+static inline VAVector FVectorToVAVector(const FVector& vector)
+{
+	return vaVectorCreate((VAFloat)vector.X, (VAFloat)vector.Y, (VAFloat)vector.Z);
+}
+
 // FVector position helpers
 static inline void vaEmitterSetPositionUnreal(VAEmitter* emitter, const FVector& position)
 {
-	vaEmitterSetPosition(emitter, vaVectorCreate((float)position.X, (float)position.Y, (float)position.Z));
+	vaEmitterSetPosition(emitter, FVectorToVAVector(position));
 }
 
 // VAColor (byte RGBA) <-> FColor (byte RGBA) helpers. FColor rather than FLinearColor since these
@@ -29,22 +37,22 @@ static inline FVector VAVectorToFVector(const VAVector& vector)
 
 static inline void vaSpherePrimitiveSetCenterUnreal(VASpherePrimitive* sphere, const FVector& center)
 {
-	vaSpherePrimitiveSetCenter(sphere, vaVectorCreate((float)center.X, (float)center.Y, (float)center.Z));
+	vaSpherePrimitiveSetCenter(sphere, FVectorToVAVector(center));
 }
 
 static inline void vaPrismPrimitiveSetSizeUnreal(VAPrismPrimitive* prism, const FVector& size)
 {
-	vaPrismPrimitiveSetSize(prism, vaVectorCreate((float)size.X, (float)size.Y, (float)size.Z));
+	vaPrismPrimitiveSetSize(prism, FVectorToVAVector(size));
 }
 
 static inline void vaWorldSetPositionUnreal(VAWorld* world, const FVector& position)
 {
-	vaWorldSetPosition(world, vaVectorCreate((float)position.X, (float)position.Y, (float)position.Z));
+	vaWorldSetPosition(world, FVectorToVAVector(position));
 }
 
 static inline void vaWorldSetSizeUnreal(VAWorld* world, const FVector& position)
 {
-	vaWorldSetSize(world, vaVectorCreate((float)position.X, (float)position.Y, (float)position.Z));
+	vaWorldSetSize(world, FVectorToVAVector(position));
 }
 
 static VAMatrix MakeRotTransMatrix(const FTransform& transform)
@@ -57,10 +65,10 @@ static VAMatrix MakeRotTransMatrix(const FTransform& transform)
 	FVector AxZ = rot.GetAxisZ();
 
 	return vaMatrixCreate(
-		(float)AxX.X, (float)AxX.Y, (float)AxX.Z, 0.f,
-		(float)AxY.X, (float)AxY.Y, (float)AxY.Z, 0.f,
-		(float)AxZ.X, (float)AxZ.Y, (float)AxZ.Z, 0.f,
-		(float)pos.X, (float)pos.Y, (float)pos.Z, 1.f
+		(VAFloat)AxX.X, (VAFloat)AxX.Y, (VAFloat)AxX.Z, 0,
+		(VAFloat)AxY.X, (VAFloat)AxY.Y, (VAFloat)AxY.Z, 0,
+		(VAFloat)AxZ.X, (VAFloat)AxZ.Y, (VAFloat)AxZ.Z, 0,
+		(VAFloat)pos.X, (VAFloat)pos.Y, (VAFloat)pos.Z, 1
 	);
 }
 
@@ -68,7 +76,7 @@ static VAMatrix MakeScaleRotTransMatrix(const FTransform& T)
 {
 	VAMatrix RotTrans = MakeRotTransMatrix(T);
 	FVector Scale = T.GetScale3D();
-	VAMatrix ScaleMat = vaMatrixCreateScale((float)Scale.X, (float)Scale.Y, (float)Scale.Z);
+	VAMatrix ScaleMat = vaMatrixCreateScale((VAFloat)Scale.X, (VAFloat)Scale.Y, (VAFloat)Scale.Z);
 	return vaMatrixMultiply(&ScaleMat, &RotTrans);
 }
 
