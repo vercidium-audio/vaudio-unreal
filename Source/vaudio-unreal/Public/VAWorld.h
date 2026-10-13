@@ -19,6 +19,8 @@ class UVAMaterialComponent;
 class UShapeComponent;
 class UStaticMeshComponent;
 class UStaticMesh;
+class UPrimitiveComponent;
+class ULandscapeHeightfieldCollisionComponent;
 enum class EVAPropagateMode : uint8;
 class UVASubmixEffectDirectionalPanPreset;
 
@@ -44,10 +46,11 @@ enum class EVAPrimitiveKind : uint8
 	PrismFromMesh,
 };
 
-// Identifies triangle data that every placement of a static mesh can share
+// Identifies triangle data that every placement of a static mesh can share. A landscape component is its own key, as its triangles belong to it alone
 struct FVAMeshKey
 {
-	TWeakObjectPtr<UStaticMesh> Mesh;
+	// The static mesh, or the landscape collision component
+	TWeakObjectPtr<const UObject> Mesh;
 
 	// The render LOD, or 0 for a convex hull
 	int32 LOD = 0;
@@ -517,8 +520,9 @@ private:
 	void AddActorPrimitives(AActor* actor, UVAMaterialComponent* source);
 	void AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId);
 	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
+	void AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId, bool useFlatTransmission);
 	// readVertices is only called when no placement of this mesh exists yet. It fills the triangle list in mesh space, or returns false if there is none
-	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
+	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
 	bool PassesCollisionFilter(const UPrimitiveComponent* component) const;
 
 	// Sets the primitive's transform, adds it to the vaWorld and tracks its component's movement. Destroys it if the SDK rejects it
@@ -526,7 +530,7 @@ private:
 
 	void RemoveBindings(TFunctionRef<bool(const FVAPrimitiveBinding&)> predicate);
 	void DestroyPrimitive(const FVAPrimitiveBinding& binding);
-	VAMesh* AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, const UStaticMeshComponent* meshComponent);
+	VAMesh* AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, const UPrimitiveComponent* meshComponent);
 	void ReleaseSharedMesh(const FVAMeshKey& key);
 	static void RefreshPrimitiveTransform(const FVAPrimitiveBinding& Binding);
 

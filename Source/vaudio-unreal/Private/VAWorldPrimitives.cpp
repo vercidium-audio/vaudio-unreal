@@ -14,6 +14,9 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/AggregateGeom.h"
 #include "Engine/StaticMesh.h"
+#include "LandscapeHeightfieldCollisionComponent.h"
+#include "LandscapeDataAccess.h"
+#include "Chaos/HeightField.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -31,6 +34,9 @@ static UVAMaterialComponent* FindMaterialInChain(AActor* Actor)
 	}
 	return nullptr;
 }
+
+// How far below its lowest point each landscape component's block of ground extends, in cm
+static const double LandscapeThickness = 100.0;
 
 // True if this mesh would use its simple collision rather than its render triangles
 static bool HasSimpleCollision(UStaticMesh* Mesh)
@@ -265,6 +271,16 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 				AddStaticMeshPrimitives(meshComponent, source, FTransform::Identity, materialId, useFlatTransmission);
 			}
 		}
+		else if (ULandscapeHeightfieldCollisionComponent* landscapeComponent = Cast<ULandscapeHeightfieldCollisionComponent>(component))
+		{
+			if (!source->GetMaterialFor(landscapeComponent, materialId, useFlatTransmission))
+			{
+				ActorsWithInvalidMaterials.AddUnique(actor->GetActorNameOrLabel());
+				continue;
+			}
+
+			AddLandscapePrimitive(landscapeComponent, source, materialId, useFlatTransmission);
+		}
 	}
 }
 
@@ -419,7 +435,101 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 	AddMeshPrimitive(FVAMeshKey{ staticMesh, source->MeshLOD, INDEX_NONE }, readTriangles, meshComponent, source, meshTransform, materialId, useFlatTransmission);
 }
 
-VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, const UStaticMeshComponent* meshComponent)
+void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId, bool useFlatTransmission)
+{
+	// A landscape is both a collider and a visual, so only the collision filter can leave it out
+	if (source->PropagateMode != EVAPropagateMode::Visuals && !PassesCollisionFilter(landscapeComponent))
+		return;
+
+	const Chaos::FHeightField* heightField = nullptr;
+	bool useSimple = false;
+
+	if (IsValidRef(landscapeComponent->HeightfieldRef))
+	{
+		// MeshLOD above 0 uses the landscape's simple collision, if it has one
+		useSimple = source->MeshLOD > 0 && landscapeComponent->HeightfieldRef->HeightfieldSimpleGeometry.IsValid();
+		heightField = useSimple ? landscapeComponent->HeightfieldRef->HeightfieldSimpleGeometry.GetReference() : landscapeComponent->HeightfieldRef->HeightfieldGeometry.GetReference();
+	}
+
+	if (!heightField || heightField->GetNumCols() < 2 || heightField->GetNumRows() < 2)
+	{
+		VA_WARN_NAMED(TEXT("Landscape '%s' will not affect raytracing as its component '%s' has no collision. Enable collision on the landscape."), *landscapeComponent->GetOwner()->GetActorNameOrLabel(), *landscapeComponent->GetName());
+		return;
+	}
+
+	// The collision heightfield exists in cooked builds, unlike the heightmap. Its triangles are in component space, with the landscape's scale left to the primitive's transform
+	auto readHeightField = [&](TArray<FVector3f>& vertices)
+	{
+		int32 columns = heightField->GetNumCols();
+		int32 rows = heightField->GetNumRows();
+		float spacing = landscapeComponent->CollisionScale * landscapeComponent->CollisionSizeQuads / (columns - 1);
+
+		auto top = [&](int32 x, int32 y) { return FVector3f(x * spacing, y * spacing, (float)heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE); };
+
+		float lowest = TNumericLimits<float>::Max();
+
+		for (int32 y = 0; y < rows; y++)
+			for (int32 x = 0; x < columns; x++)
+				lowest = FMath::Min(lowest, top(x, y).Z);
+
+		// The SDK measures how far a ray travels between entering and leaving a mesh, so an open sheet wouldn't muffle anything. Each component is closed into a solid block of ground, down to LandscapeThickness below its lowest point
+		double scaleZ = FMath::Abs(landscapeComponent->GetComponentTransform().GetScale3D().Z);
+		float base = lowest - (float)(LandscapeThickness / FMath::Max(scaleZ, UE_DOUBLE_KINDA_SMALL_NUMBER));
+
+		auto bottom = [&](int32 x, int32 y) { return FVector3f(x * spacing, y * spacing, base); };
+
+		// The SDK's triangle test is one-sided, and hits the side that Unreal's render triangles face. That's the reverse of Chaos' winding
+		auto addTriangle = [&](const FVector3f& a, const FVector3f& b, const FVector3f& c)
+		{
+			vertices.Add(a);
+			vertices.Add(c);
+			vertices.Add(b);
+		};
+
+		// The wall below one edge of the surface, facing right of the direction from (x0, y0) to (x1, y1)
+		auto addSkirt = [&](int32 x0, int32 y0, int32 x1, int32 y1)
+		{
+			addTriangle(top(x0, y0), bottom(x0, y0), bottom(x1, y1));
+			addTriangle(top(x0, y0), bottom(x1, y1), top(x1, y1));
+		};
+
+		vertices.Reserve((columns - 1) * (rows - 1) * 6 + (columns + rows - 2) * 12 + 6);
+
+		for (int32 y = 0; y + 1 < rows; y++)
+		{
+			for (int32 x = 0; x + 1 < columns; x++)
+			{
+				// Painted with the visibility layer
+				if (heightField->IsHole(x, y))
+					continue;
+
+				addTriangle(top(x, y), top(x + 1, y), top(x + 1, y + 1));
+				addTriangle(top(x, y), top(x + 1, y + 1), top(x, y + 1));
+			}
+		}
+
+		for (int32 x = 0; x + 1 < columns; x++)
+		{
+			addSkirt(x, 0, x + 1, 0);
+			addSkirt(x + 1, rows - 1, x, rows - 1);
+		}
+
+		for (int32 y = 0; y + 1 < rows; y++)
+		{
+			addSkirt(0, y + 1, 0, y);
+			addSkirt(columns - 1, y, columns - 1, y + 1);
+		}
+
+		addTriangle(bottom(0, 0), bottom(columns - 1, rows - 1), bottom(columns - 1, 0));
+		addTriangle(bottom(0, 0), bottom(0, rows - 1), bottom(columns - 1, rows - 1));
+
+		return true;
+	};
+
+	AddMeshPrimitive(FVAMeshKey{ landscapeComponent, useSimple ? 1 : 0, INDEX_NONE }, readHeightField, landscapeComponent, source, FTransform::Identity, materialId, useFlatTransmission);
+}
+
+VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, const UPrimitiveComponent* meshComponent)
 {
 	if (FVASharedMesh* shared = SharedMeshes.Find(key))
 	{
@@ -476,7 +586,7 @@ void AVAWorld::ReleaseSharedMesh(const FVAMeshKey& key)
 	SharedMeshes.Remove(key);
 }
 
-bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
+bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
 {
 	VAMesh* sharedMesh = AcquireSharedMesh(key, readVertices, meshComponent);
 

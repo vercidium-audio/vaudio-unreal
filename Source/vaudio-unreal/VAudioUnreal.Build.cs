@@ -8,7 +8,7 @@ public class VaudioUnreal : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "AudioMixer", "MeshDescription", "StaticMeshDescription", "AudioCaptureCore" });
-		PrivateDependencyModuleNames.Add("Projects");
+		PrivateDependencyModuleNames.AddRange(new string[] { "Projects", "Landscape", "Chaos" });
 
 		if (Target.bBuildEditor)
 		{

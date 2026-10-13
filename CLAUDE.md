@@ -73,10 +73,11 @@ A `UVAVisualisation` on a listener follows the handle: `AVAListener::Deactivate`
 
 - Shape components and static mesh simple collision become SDK prisms, spheres and capsules. Convex hulls and render triangles become mesh primitives
 - `PropagateMode`, `MeshLOD`, `MaterialOverrides` and the world's `CollisionObjectTypes` decide what is added
-- Mesh primitives share triangle data through `AVAWorld::SharedMeshes`, keyed by static mesh, LOD and convex hull index
+- Mesh primitives share triangle data through `AVAWorld::SharedMeshes`, keyed by static mesh (or landscape collision component), LOD and convex hull index
 - The SDK's mesh triangle test is one-sided. Unreal render triangles already have the winding it expects, but Chaos convex hull `IndexData` is wound the other way and is reversed
 - Unreal has no global attach event, so a child attached after its parent began play, instances added to an ISM at runtime and a swapped mesh are only picked up by `AVAWorld::SyncPrimitive`
-- Landscapes, skeletal meshes, spline meshes and BSP brushes aren't supported
+- A landscape (`ALandscapeProxy`) adds one mesh primitive per `ULandscapeHeightfieldCollisionComponent`, read from its Chaos heightfield (which exists in cooked builds) in component space. The SDK only muffles through a closed mesh (depth-based transmission needs an entry and an exit hit, and a mesh with flat transmission currently does not muffle at all), so each component is closed with a skirt and a base `LandscapeThickness` below its lowest point
+- Skeletal meshes, spline meshes and BSP brushes aren't supported
 
 ## Audio seams
 

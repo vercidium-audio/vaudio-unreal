@@ -109,7 +109,9 @@ A **VAMaterialComponent** (`UVAMaterialComponent`) makes its actor part of the r
 - `MaterialOverrides` gives individual components another material, e.g. a glass window in a brick wall.
 - `CollisionObjectTypes` on the `VAWorld` limits colliders to certain object types.
 
-Geometry is added and removed as actors spawn, are destroyed or stream in and out, and follows them when they move. Hidden actors and actors with collision disabled still block sound. Call `SyncPrimitive(Actor)` on the `VAWorld` after attaching an actor to one that has a material component, changing an actor's meshes, or adding instances to an instanced static mesh. Landscapes aren't supported yet.
+Geometry is added and removed as actors spawn, are destroyed or stream in and out, and follows them when they move. Hidden actors and actors with collision disabled still block sound. Call `SyncPrimitive(Actor)` on the `VAWorld` after attaching an actor to one that has a material component, changing an actor's meshes, or adding instances to an instanced static mesh.
+
+**Landscapes** work the same way: add a `VAMaterialComponent` to the landscape actor (and to each streaming proxy, which is its own actor). Every landscape component becomes one mesh built from its collision, so it works in cooked builds without baking, and it needs collision to be enabled on the landscape. Each component is treated as solid ground reaching 1 m below its lowest point, so sound from under the surface is muffled. Holes painted with the visibility layer are left open. `MeshLOD` above 0 uses the landscape's simple collision if it has one (`Simple Collision Mip Level`), which is cheaper to raytrace. Call `SyncPrimitive` on the landscape actor after sculpting it during play.
 
 Material assets are created in the Content Browser and added to the `VAWorld`'s `Materials` array:
 - **VADefaultMaterial** (`UVADefaultMaterial`) changes the properties of one of the built-in materials everywhere it's used. Pick it with `MaterialType`, and use **Reset To Defaults** to load the SDK's values.
