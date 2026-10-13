@@ -65,6 +65,8 @@ A source only plays once `AVAEmitter::IsReadyToPlay()` is true: the listener has
 
 Every listener in a world shares one SDK emitter, held by the current listener (`bCurrent`, `MakeCurrent()`). `AVAWorld::SetCurrentListener` hands the handle over, so targets stay connected. A listener that isn't current has no handle and doesn't tick. When the current listener leaves, the first remaining one is promoted.
 
+A `UVAVisualisation` on a listener follows the handle: `AVAListener::Deactivate` tears it down (callback and visualisation ray count cleared, so a listener without one doesn't inherit the rays) and `Activate` starts the new current listener's. The Godot plugin doesn't do this yet.
+
 ## Geometry
 
 `UVAMaterialComponent` is the registration point. On BeginPlay it calls `AVAWorld::AddMaterialPrimitives`, which adds its actor and every attached child actor that has no material component of its own, and on EndPlay it removes them. That covers spawned actors, streamed levels, World Partition cells and level instances with no extra code.

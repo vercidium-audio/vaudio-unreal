@@ -128,12 +128,9 @@ void UVAVisualisation::InitializeVisualisation()
 		return;
 	}
 
-	// Every listener shares one handle, which only the current listener holds
+	// Every listener shares one handle, which only the current listener holds. The owner calls this again when it becomes current
 	if (!OwnerEmitter->GetVAEmitter())
-	{
-		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Is attached to a listener that isn't current when play begins and will not render"));
 		return;
-	}
 
 	ValidateDiamondMaterial();
 	CreateInstancedMesh();
@@ -156,11 +153,23 @@ void UVAVisualisation::InitializeVisualisation()
 
 void UVAVisualisation::TeardownVisualisation()
 {
-	if (bCallbackRegistered && OwnerEmitter && OwnerEmitter->GetVAEmitter())
+	if (bCallbackRegistered)
 	{
-		vaEmitterSetVisualisationCallback(OwnerEmitter->GetVAEmitter(), nullptr);
-		OwnerEmitter->VisualisationComponent = nullptr;
+		if (OwnerEmitter)
+		{
+			// The handle is already gone if the owner released it first. It keeps casting visualisation rays until its ray count is cleared, even with no callback
+			if (VAEmitter* handle = OwnerEmitter->GetVAEmitter())
+			{
+				vaEmitterSetVisualisationCallback(handle, nullptr);
+				vaEmitterSetVisualisationRayCount(handle, 0);
+			}
+
+			if (OwnerEmitter->VisualisationComponent == this)
+				OwnerEmitter->VisualisationComponent = nullptr;
+		}
+
 		bCallbackRegistered = false;
+		SetComponentTickEnabled(false);
 	}
 
 	if (InstancedMesh)
@@ -168,6 +177,8 @@ void UVAVisualisation::TeardownVisualisation()
 		InstancedMesh->DestroyComponent();
 		InstancedMesh = nullptr;
 	}
+
+	DiamondMaterialInstance = nullptr;
 
 	VAClearMessage(VAMessageKey(this, EVAMessageSlot::Status));
 }

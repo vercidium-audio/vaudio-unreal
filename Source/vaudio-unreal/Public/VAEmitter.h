@@ -391,6 +391,12 @@ protected:
 
 	bool IsRegistered() const { return registered; }
 
+	// Starts every UVAVisualisation on this actor that has begun play, once this actor holds a handle
+	void InitializeVisualisations();
+
+	// Stops them. Call before this actor lets go of its handle
+	void TeardownVisualisations();
+
 	VAEmitter* Emitter = nullptr;
 
 	// Resolved by TryInitializeEmitter

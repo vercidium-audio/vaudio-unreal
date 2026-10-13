@@ -75,6 +75,11 @@ bool AVAListener::Activate(VAEmitter* sharedHandle)
 	{
 		AdoptEmitter(sharedHandle);
 		UpdateVAEmitter();
+
+		// While this listener is still joining the world, its visualisations start once it has joined instead
+		if (IsRegistered())
+			InitializeVisualisations();
+
 		return true;
 	}
 
@@ -93,6 +98,9 @@ bool AVAListener::Activate(VAEmitter* sharedHandle)
 
 void AVAListener::Deactivate()
 {
+	// The next current listener takes the handle, so its visualisation callback and ray counts are cleared first
+	TeardownVisualisations();
+
 	bCurrent = false;
 	Emitter = nullptr;
 }

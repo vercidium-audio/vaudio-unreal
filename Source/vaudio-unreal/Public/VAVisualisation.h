@@ -65,11 +65,14 @@ public:
 	// results, always on the main thread during vaWorldUpdate() - safe to touch UObjects directly
 	void OnVisualisationData(VAVisualisationData* data, int32 count);
 
-	// Called from BeginPlay, or by the owner once it joins the VAWorld if that begins play later. No-op once initialised
+	// Called from BeginPlay, or by the owner once it has a handle: when it joins a VAWorld that began play later, or when a listener becomes current. No-op once initialised
 	void InitializeVisualisation();
 
-	// Called from EndPlay, or by the owner before it releases its handle because the VAWorld ended play. InitializeVisualisation can be called again afterwards
+	// Called from EndPlay, or by the owner before it lets go of its handle: when the VAWorld ends play, or when a listener stops being current. InitializeVisualisation can be called again afterwards
 	void TeardownVisualisation();
+
+	// True while this component receives its owner's visualisation data
+	bool IsCallbackRegistered() const { return bCallbackRegistered; }
 
 #if WITH_EDITOR
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio|Visualisation")

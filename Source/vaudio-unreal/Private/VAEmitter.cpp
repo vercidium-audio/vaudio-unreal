@@ -163,11 +163,7 @@ void AVAEmitter::OnWorldUnregistered()
 	}
 
 	// The handle is about to be destroyed
-	TArray<UVAVisualisation*> visualisations;
-	GetComponents(visualisations);
-
-	for (UVAVisualisation* visualisation : visualisations)
-		visualisation->TeardownVisualisation();
+	TeardownVisualisations();
 
 	LeaveWorld();
 
@@ -187,12 +183,26 @@ void AVAEmitter::OnWorldRegistered()
 		return;
 
 	// A visualisation that began play while this emitter was waiting
+	InitializeVisualisations();
+}
+
+void AVAEmitter::InitializeVisualisations()
+{
 	TArray<UVAVisualisation*> visualisations;
 	GetComponents(visualisations);
 
 	for (UVAVisualisation* visualisation : visualisations)
 		if (visualisation->HasBegunPlay())
 			visualisation->InitializeVisualisation();
+}
+
+void AVAEmitter::TeardownVisualisations()
+{
+	TArray<UVAVisualisation*> visualisations;
+	GetComponents(visualisations);
+
+	for (UVAVisualisation* visualisation : visualisations)
+		visualisation->TeardownVisualisation();
 }
 
 void AVAEmitter::StopWaitingForWorld()
