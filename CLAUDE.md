@@ -13,7 +13,7 @@ The Godot plugins are the reference implementation. `vaudio-godot-native-openal-
 # Modules and layout
 
 - `Source/vaudio-unreal` is the `VaudioUnreal` runtime module. `Public/` has one header per class, `Private/` has the implementations plus internal helpers (`VALog.h`, `VASubmixSend.h`, `VAReverbConversion.h`, `VAMaterialConversion.h`, `VAConstants.h`)
-- `Source/VaudioUnrealEditor` is the `VaudioUnrealEditor` editor module: the material asset factories, the `VAListener` details customisation that hides properties a listener doesn't use, and `UVABakeCommandlet` (`-run=VABake`)
+- `Source/VaudioUnrealEditor` is the `VaudioUnrealEditor` editor module: the material asset factories, the `VAListener` and `VARaytracedSource` details customisations that hide inherited `AVAEmitter` properties a listener or a source doesn't use (they stay reachable from Blueprint and C++), and `UVABakeCommandlet` (`-run=VABake`)
 - `AVAWorld` is split across `VAWorld.cpp` (lifecycle, bounds, emitters, listeners, reverb, materials), `VAWorldPrimitives.cpp` (building geometry) and `VAWorldPrimitiveTracking.cpp` (transforms and removal)
 
 # Classes
