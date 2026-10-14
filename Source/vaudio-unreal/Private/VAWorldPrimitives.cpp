@@ -382,7 +382,7 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 		// Convex hulls are closed, so they become watertight mesh primitives with the element transform baked into mesh space
 		for (int32 convexIndex = 0; convexIndex < agg.ConvexElems.Num(); convexIndex++)
 		{
-			auto readHull = [&](TArray<FVector3f>& vertices)
+			auto readHull = [&](TArray<FVector>& vertices)
 			{
 				FKConvexElem convexElem = agg.ConvexElems[convexIndex];
 
@@ -399,9 +399,9 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 				// TODO - add a winding field to Mesh and MeshPrimitives in the C SDK, so this kind of data transform below isn't required
 				for (int32 i = 0; i + 2 < convexElem.IndexData.Num(); i += 3)
 				{
-					vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]])));
-					vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 2]])));
-					vertices.Add(FVector3f(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 1]])));
+					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]]));
+					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 2]]));
+					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 1]]));
 				}
 
 				return true;
@@ -415,21 +415,31 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 		return;
 
 	// Attempt to use baked geometry. Fall back to mesh data (may be unavailable in cooked builds)
-	auto readTriangles = [&](TArray<FVector3f>& vertices)
+	auto readTriangles = [&](TArray<FVector>& vertices)
 	{
 		const FVABakedMesh* bakedMesh = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return baked.ComponentName == meshComponent->GetFName() && baked.ActorName == actor->GetName(); });
 
+		// Render vertices are float, both baked and live
+		TArray<FVector3f> liveVertices;
+		const TArray<FVector3f>* renderVertices = nullptr;
+
 		if (bakedMesh)
+			renderVertices = &bakedMesh->Vertices;
+		else if (GetRenderVertices(staticMesh, source->MeshLOD, liveVertices))
+			renderVertices = &liveVertices;
+
+		if (!renderVertices)
 		{
-			vertices = bakedMesh->Vertices;
-			return true;
+			VA_WARN_NAMED(TEXT("Mesh '%s' will not affect raytracing as it has no baked geometry and no render mesh data. Run 'Bake Geometry For Shipping' on the VAWorld and save the level."), *staticMesh->GetName());
+			return false;
 		}
 
-		if (GetRenderVertices(staticMesh, source->MeshLOD, vertices))
-			return true;
+		vertices.Reserve(renderVertices->Num());
 
-		VA_WARN_NAMED(TEXT("Mesh '%s' will not affect raytracing as it has no baked geometry and no render mesh data. Run 'Bake Geometry For Shipping' on the VAWorld and save the level."), *staticMesh->GetName());
-		return false;
+		for (const FVector3f& vertex : *renderVertices)
+			vertices.Add(FVector(vertex));
+
+		return true;
 	};
 
 	AddMeshPrimitive(FVAMeshKey{ staticMesh, source->MeshLOD, INDEX_NONE }, readTriangles, meshComponent, source, meshTransform, materialId, useFlatTransmission);
@@ -458,15 +468,15 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 	}
 
 	// The collision heightfield exists in cooked builds, unlike the heightmap. Its triangles are in component space, with the landscape's scale left to the primitive's transform
-	auto readHeightField = [&](TArray<FVector3f>& vertices)
+	auto readHeightField = [&](TArray<FVector>& vertices)
 	{
 		int32 columns = heightField->GetNumCols();
 		int32 rows = heightField->GetNumRows();
-		float spacing = landscapeComponent->CollisionScale * landscapeComponent->CollisionSizeQuads / (columns - 1);
+		double spacing = landscapeComponent->CollisionScale * landscapeComponent->CollisionSizeQuads / (columns - 1);
 
-		auto top = [&](int32 x, int32 y) { return FVector3f(x * spacing, y * spacing, (float)heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE); };
+		auto top = [&](int32 x, int32 y) { return FVector(x * spacing, y * spacing, heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE); };
 
-		float lowest = TNumericLimits<float>::Max();
+		double lowest = TNumericLimits<double>::Max();
 
 		for (int32 y = 0; y < rows; y++)
 			for (int32 x = 0; x < columns; x++)
@@ -474,12 +484,12 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 
 		// The SDK measures how far a ray travels between entering and leaving a mesh, so an open sheet wouldn't muffle anything. Each component is closed into a solid block of ground, down to LandscapeThickness below its lowest point
 		double scaleZ = FMath::Abs(landscapeComponent->GetComponentTransform().GetScale3D().Z);
-		float base = lowest - (float)(LandscapeThickness / FMath::Max(scaleZ, UE_DOUBLE_KINDA_SMALL_NUMBER));
+		double base = lowest - LandscapeThickness / FMath::Max(scaleZ, UE_DOUBLE_KINDA_SMALL_NUMBER);
 
-		auto bottom = [&](int32 x, int32 y) { return FVector3f(x * spacing, y * spacing, base); };
+		auto bottom = [&](int32 x, int32 y) { return FVector(x * spacing, y * spacing, base); };
 
 		// The SDK's triangle test is one-sided, and hits the side that Unreal's render triangles face. That's the reverse of Chaos' winding
-		auto addTriangle = [&](const FVector3f& a, const FVector3f& b, const FVector3f& c)
+		auto addTriangle = [&](const FVector& a, const FVector& b, const FVector& c)
 		{
 			vertices.Add(a);
 			vertices.Add(c);
@@ -529,7 +539,7 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 	AddMeshPrimitive(FVAMeshKey{ landscapeComponent, useSimple ? 1 : 0, INDEX_NONE }, readHeightField, landscapeComponent, source, FTransform::Identity, materialId, useFlatTransmission);
 }
 
-VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, const UPrimitiveComponent* meshComponent)
+VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, const UPrimitiveComponent* meshComponent)
 {
 	if (FVASharedMesh* shared = SharedMeshes.Find(key))
 	{
@@ -537,7 +547,7 @@ VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TAr
 		return shared->Mesh;
 	}
 
-	TArray<FVector3f> vertices;
+	TArray<FVector> vertices;
 
 	if (!readVertices(vertices))
 		return nullptr;
@@ -548,7 +558,7 @@ VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TAr
 	VAVector minBounds = VECTOR_MAX;
 	VAVector maxBounds = VECTOR_MIN;
 
-	for (const FVector3f& localPosition : vertices)
+	for (const FVector& localPosition : vertices)
 	{
 		VAVector vaPosition = vaVectorCreate(localPosition.X, localPosition.Y, localPosition.Z);
 		vaVertices.Add(vaPosition);
@@ -586,7 +596,7 @@ void AVAWorld::ReleaseSharedMesh(const FVAMeshKey& key)
 	SharedMeshes.Remove(key);
 }
 
-bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
+bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
 {
 	VAMesh* sharedMesh = AcquireSharedMesh(key, readVertices, meshComponent);
 

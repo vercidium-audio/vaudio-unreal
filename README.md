@@ -90,7 +90,7 @@ Every source is muffled relative to the current listener automatically. Sounds s
 - **VASourceRelative** (`AVASourceRelative`) is a 2D sound for the player's own sounds. It isn't muffled, and uses the listener's reverb.
 - **VASourceAmbient** (`AVASourceAmbient`) is a 2D sound for rain, wind or room tone, filtered by how enclosed the listener is. The listener needs ambient rays (`AmbientOcclusionRayCount` or `AmbientPermeationRayCount`).
 - **VAStreamSource** (`AVAStreamSource`) is a raytraced sound that plays raw PCM pushed at runtime: `OpenStream`, `PushAudioData`, `CloseStream`.
-- **VAInputStreamSource** (`AVAInputStreamSource`) is a stream fed by a microphone, with an `OnAudioCaptured` event for sending it elsewhere. Linux has no capture backend in Unreal.
+- **VAInputStreamSource** (`AVAInputStreamSource`) is a stream fed by a microphone, with an `OnAudioCaptured` event for sending it elsewhere. Microphone capture doesn't work on Linux: Unreal has no capture backend there, so `OpenCapture` logs a warning and returns false, and with `bAutoCapture` the source stays silent.
 - **VANetworkedStreamSource** (`AVANetworkedStreamSource`) is a stream for audio received over the network, see below.
 - **VAVisualisation** (`UVAVisualisation`) is a component for an emitter that draws where its rays land in the level.
 
@@ -182,7 +182,7 @@ Only the box at the `VAWorld`'s location (its minimum corner) with size `BoundsS
 - `None` (default): a fixed box. Good for levels that fit inside one box. It still follows the `VAWorld` actor if you move it.
 - `Listener`: the box is centred on the current `VAListener`. Use this with World Partition, and set `BoundsSize` to cover the area that's loaded around the player, e.g. twice the runtime grid's loading range. The plugin can't read the loading range itself. The actor's location only places the box in the editor, and until a listener begins play.
 
-Moving the bounds makes the SDK re-check every raytraced trail, so they move in steps instead of every frame: the box only follows once the listener (or the `VAWorld` actor) is `BoundsUpdateDistance` away, 10 m by default. `SetBoundsFollow` and `SetBoundsSize` change these during play.
+Moving the bounds makes the SDK re-check every raytraced trail, so they move in steps instead of every frame: the box only follows once the listener (or the `VAWorld` actor) is `BoundsUpdateDistance` away, 100 m by default. `SetBoundsFollow` and `SetBoundsSize` change these during play.
 
 Sources that are loaded but outside the box aren't raytraced. `bEmittersOutsideTheWorldAreMuffled` on the `VAWorld` decides whether they're fully muffled (default) or not muffled at all.
 

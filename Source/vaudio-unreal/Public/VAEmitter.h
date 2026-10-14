@@ -183,7 +183,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool GetWithinWorldBounds() const;
 
-	// The position the SDK raytraces from. Differs from the actor location when bClampPosition keeps it inside the world bounds
+	// The position last given to the SDK, or the actor location before this emitter has joined a world. It is not clamped: bClampPosition only clamps the copy the SDK raytraces from, which it doesn't expose
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	FVector GetVAPosition() const;
 
@@ -315,7 +315,7 @@ public:
 
 	// The allowed distance between new and old bounce positions when refreshing trails. See TrailRefreshCount for more information.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced", meta = (ClampMin = "0.0"))
-	float RefreshDistanceThreshold = 1.0f;
+	double RefreshDistanceThreshold = 1.0;
 
 	// Seed used to randomise scattering vectors. Each new emitter gets a random seed
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced")

@@ -117,7 +117,7 @@ void AVAWorld::FollowBounds()
 {
 	FVector target = GetBoundsTarget();
 
-	if (target != BoundsPosition && FVector::DistSquared(target, BoundsPosition) >= FMath::Square((double)BoundsUpdateDistance))
+	if (target != BoundsPosition && FVector::DistSquared(target, BoundsPosition) >= FMath::Square(BoundsUpdateDistance))
 		PlaceBounds();
 }
 

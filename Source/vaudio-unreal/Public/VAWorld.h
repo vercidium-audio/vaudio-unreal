@@ -156,9 +156,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
 	EVABoundsFollow BoundsFollow = EVABoundsFollow::None;
 
-	// How far the actor (or the current listener, with BoundsFollow Listener) must move during play, in world units, before the bounds follow it. Every move of the bounds re-checks all raytraced trails, so moving bounds should update in steps. The default is 10 m at the default MetersPerUnit. 0 follows every move
+	// How far the actor (or the current listener, with BoundsFollow Listener) must move during play, in world units, before the bounds follow it. Every move of the bounds re-checks all raytraced trails, so moving bounds should update in steps. The default is 100 m at the default MetersPerUnit. 0 follows every move
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0"))
-	float BoundsUpdateDistance = 1000.0f;
+	double BoundsUpdateDistance = 10000.0;
 
 	// The bounds' minimum corner: the position last pushed to the SDK during play, otherwise the actor's location
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
@@ -189,7 +189,7 @@ public:
 
 	// Epsilon value used for ray offsets, world bounds clamping and line-of-sight tests.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
-	float Epsilon = 0.01f;
+	double Epsilon = 0.01;
 
 	// --- Air Absorption ---
 
@@ -522,7 +522,7 @@ private:
 	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
 	void AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId, bool useFlatTransmission);
 	// readVertices is only called when no placement of this mesh exists yet. It fills the triangle list in mesh space, or returns false if there is none
-	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
+	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
 	bool PassesCollisionFilter(const UPrimitiveComponent* component) const;
 
 	// Sets the primitive's transform, adds it to the vaWorld and tracks its component's movement. Destroys it if the SDK rejects it
@@ -530,7 +530,7 @@ private:
 
 	void RemoveBindings(TFunctionRef<bool(const FVAPrimitiveBinding&)> predicate);
 	void DestroyPrimitive(const FVAPrimitiveBinding& binding);
-	VAMesh* AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector3f>&)> readVertices, const UPrimitiveComponent* meshComponent);
+	VAMesh* AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, const UPrimitiveComponent* meshComponent);
 	void ReleaseSharedMesh(const FVAMeshKey& key);
 	static void RefreshPrimitiveTransform(const FVAPrimitiveBinding& Binding);
 
