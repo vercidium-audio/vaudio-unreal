@@ -179,6 +179,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vercidium Audio|World")
 	FColor BoundsColor = FColor(223, 149, 157, 255);
 
+	// Name displayed in the debug window and log messages. Uses the actor's name when empty.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	FString WorldName;
+
 	// --- Physics ---
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001", Delta = "0.001"))

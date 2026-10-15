@@ -146,6 +146,8 @@ void AVAWorld::SetBoundsFollow(EVABoundsFollow follow)
 
 void AVAWorld::UpdateVAWorld()
 {
+	vaWorldSetName(World, TCHAR_TO_UTF8(*(WorldName.IsEmpty() ? GetActorNameOrLabel() : WorldName)));
+
 	// Rendering
 	vaWorldSetRenderingEnabled(World, bRenderingEnabled);
 	vaWorldSetCameraSpeed(World, CameraSpeed);
