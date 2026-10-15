@@ -32,14 +32,15 @@ namespace
 
 			for (int32 i = 0; i < VAMaterialTypeCount; i++)
 			{
-				Defaults[i].AbsorptionLF       = vaWorldGetMaterialAbsorptionLF(World, i);
-				Defaults[i].AbsorptionHF       = vaWorldGetMaterialAbsorptionHF(World, i);
-				Defaults[i].Scattering         = vaWorldGetMaterialScattering(World, i);
-				Defaults[i].TransmissionLF     = vaWorldGetMaterialTransmissionLF(World, i);
-				Defaults[i].TransmissionHF     = vaWorldGetMaterialTransmissionHF(World, i);
-				Defaults[i].FlatTransmissionLF = vaWorldGetMaterialFlatTransmissionLF(World, i);
-				Defaults[i].FlatTransmissionHF = vaWorldGetMaterialFlatTransmissionHF(World, i);
-				Defaults[i].Color              = vaWorldGetMaterialColor(World, i);
+				// Materials that don't exist (e.g. Air) are left zeroed
+				vaWorldGetMaterialAbsorptionLF(World, i, &Defaults[i].AbsorptionLF);
+				vaWorldGetMaterialAbsorptionHF(World, i, &Defaults[i].AbsorptionHF);
+				vaWorldGetMaterialScattering(World, i, &Defaults[i].Scattering);
+				vaWorldGetMaterialTransmissionLF(World, i, &Defaults[i].TransmissionLF);
+				vaWorldGetMaterialTransmissionHF(World, i, &Defaults[i].TransmissionHF);
+				vaWorldGetMaterialFlatTransmissionLF(World, i, &Defaults[i].FlatTransmissionLF);
+				vaWorldGetMaterialFlatTransmissionHF(World, i, &Defaults[i].FlatTransmissionHF);
+				vaWorldGetMaterialColor(World, i, &Defaults[i].Color);
 			}
 
 			VAResult result = vaWorldDestroy(World);

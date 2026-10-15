@@ -27,9 +27,9 @@ static void VAOnRaytracedByAnotherEmitterTrampoline(VAEmitter* source, VAEmitter
 	if (!owner)
 		return;
 
-	VALowPassFilter* filter = vaEmitterGetTargetFilter(source, target);
+	VALowPassFilter* filter = nullptr;
 
-	if (filter)
+	if (vaEmitterGetTargetFilter(source, target, &filter) == VA_SUCCESS)
 		owner->QueueRaytracedByListener(filter->gainLF, filter->gainHF);
 }
 
@@ -617,10 +617,9 @@ VALowPassFilter* AVAEmitter::GetMufflingResult() const
 	if (!Listener || !Listener->GetVAEmitter())
 		return nullptr;
 
-	if (!vaEmitterHasRaytracedTarget(Listener->GetVAEmitter(), Emitter))
-		return nullptr;
-
-	return vaEmitterGetTargetFilter(Listener->GetVAEmitter(), Emitter);
+	VALowPassFilter* filter = nullptr;
+	vaEmitterGetTargetFilter(Listener->GetVAEmitter(), Emitter, &filter);
+	return filter;
 }
 
 void AVAEmitter::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const

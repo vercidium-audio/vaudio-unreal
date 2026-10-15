@@ -358,7 +358,8 @@ void AVAWorld::OnReverbUpdated()
 			if (Direction)
 			{
 				// Listener space is X+ right. Magnitude is strength (OpenAL Soft EAX style), so it isn't normalised
-				VAVector panVector = vaWorldCalculateListenerRelativePan(World, *Direction, FMath::DegreesToRadians(ListenerRotation.Pitch), FMath::DegreesToRadians(ListenerRotation.Yaw));
+				VAVector panVector = {};
+				vaWorldCalculateListenerRelativePan(World, *Direction, FMath::DegreesToRadians(ListenerRotation.Pitch), FMath::DegreesToRadians(ListenerRotation.Yaw), &panVector);
 				float pan = FMath::Clamp(panVector.x, -1.0f, 1.0f);
 
 				if (UVASubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr)
@@ -651,15 +652,15 @@ void AVAWorld::ShowDebugMessages()
 					continue;
 				}
 
-				if (!vaEmitterHasRaytracedTarget(ListenerVA, Target->GetVAEmitter()))
+				if (vaEmitterHasRaytracedTarget(ListenerVA, Target->GetVAEmitter()) != VA_TRUE)
 				{
 					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has not raytraced the '%s' emitter yet"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
 					continue;
 				}
 
-				VALowPassFilter* lowPassFilter = vaEmitterGetTargetFilter(ListenerVA, Target->GetVAEmitter());
+				VALowPassFilter* lowPassFilter = nullptr;
 
-				if (!lowPassFilter)
+				if (vaEmitterGetTargetFilter(ListenerVA, Target->GetVAEmitter(), &lowPassFilter) != VA_SUCCESS)
 				{
 					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has raytraced the '%s' emitter, but has an invalid low pass filter"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
 					continue;
