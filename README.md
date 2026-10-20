@@ -184,7 +184,7 @@ A level can only have one `VAWorld`, and everything else finds it automatically.
 
 **World bounds**
 
-Only the box at the `VAWorld`'s location (its minimum corner) with size `BoundsSize` is raytraced. The box is always axis-aligned, so the Details panel only shows the VAWorld's location and the rotate and scale gizmos do nothing. `BoundsFollow` decides what that box does during play:
+Only the box at the `VAWorld`'s location (its minimum corner) with size `BoundsSize` is raytraced. The box is always axis-aligned, so the Details panel only shows the VAWorld's location and the rotate and scale gizmos do nothing. Select the VAWorld to show a handle in the middle of each face of the box: click one and drag the translate widget to move that face along its axis while the opposite face stays put (dragging a min face moves the VAWorld too). The handles only show in the editor, not during play. `BoundsFollow` decides what that box does during play:
 - `None` (default): a fixed box. Good for levels that fit inside one box. It still follows the `VAWorld` actor if you move it.
 - `Listener`: the box is centred on the current `VAListener`. Use this with World Partition, and set `BoundsSize` to cover the area that's loaded around the player, e.g. twice the runtime grid's loading range. The plugin can't read the loading range itself. The actor's location only places the box in the editor, and until a listener begins play.
 
