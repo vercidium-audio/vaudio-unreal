@@ -117,6 +117,18 @@ void AVAWorld::OnGeometryActorEndPlay(AActor* actor, EEndPlayReason::Type endPla
 	});
 }
 
+// A negative mesh scale mirrors a collision element. Boxes and capsules are symmetric about their own axes, so the mirrored element is the same shape with its rotation conjugated by the sign flip, and its size from the absolute scale
+static FQuat MirrorElementRotation(const FQuat& rotation, const FVector& meshScale)
+{
+	FVector sign = meshScale.GetSignVector();
+
+	if (sign == FVector::OneVector)
+		return rotation;
+
+	FScaleMatrix flip(sign);
+	return FQuat(flip * FRotationMatrix::Make(rotation) * flip);
+}
+
 void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 {
 	USceneComponent* component = binding.Component.Get();
@@ -128,7 +140,8 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 
 	// The space the mesh's vertices and simple collision elements are defined in, including scale
 	FTransform meshTransform = binding.MeshTransform * componentTransform;
-	FVector meshScale = meshTransform.GetScale3D().GetAbs();
+	FVector signedMeshScale = meshTransform.GetScale3D();
+	FVector meshScale = signedMeshScale.GetAbs();
 
 	switch (binding.Kind)
 	{
@@ -141,7 +154,8 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 		}
 		case EVAPrimitiveKind::Prism:
 		{
-			FVector extent = CastChecked<UBoxComponent>(component)->GetScaledBoxExtent();
+			// Negative with a negative scale, and a box is symmetric about its own axes, so the mirror only needs the absolute size
+			FVector extent = CastChecked<UBoxComponent>(component)->GetScaledBoxExtent().GetAbs();
 			VAPrismPrimitive* vaPrism = static_cast<VAPrismPrimitive*>(binding.Primitive);
 			vaPrismPrimitiveSetSize(vaPrism, FVectorToVAVector(extent * 2.0));
 			vaPrismPrimitiveSetTransformUnreal(vaPrism, componentTransform);
@@ -171,7 +185,7 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 		case EVAPrimitiveKind::PrismFromMesh:
 		{
 			// Rotated and positioned like the element, with the scale applied to its size rather than its transform
-			FTransform elementTransform(meshTransform.GetRotation() * binding.ElementTransform.GetRotation(), meshTransform.TransformPosition(binding.ElementTransform.GetTranslation()));
+			FTransform elementTransform(meshTransform.GetRotation() * MirrorElementRotation(binding.ElementTransform.GetRotation(), signedMeshScale), meshTransform.TransformPosition(binding.ElementTransform.GetTranslation()));
 			VAPrismPrimitive* vaPrism = static_cast<VAPrismPrimitive*>(binding.Primitive);
 			vaPrismPrimitiveSetSizeUnreal(vaPrism, binding.LocalExtent * meshScale);
 			vaPrismPrimitiveSetTransformUnreal(vaPrism, elementTransform);
@@ -179,7 +193,7 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 		}
 		case EVAPrimitiveKind::CapsuleFromMesh:
 		{
-			FTransform elementTransform(meshTransform.GetRotation() * binding.ElementTransform.GetRotation(), meshTransform.TransformPosition(binding.ElementTransform.GetTranslation()));
+			FTransform elementTransform(meshTransform.GetRotation() * MirrorElementRotation(binding.ElementTransform.GetRotation(), signedMeshScale), meshTransform.TransformPosition(binding.ElementTransform.GetTranslation()));
 			VACapsulePrimitive* vaCapsule = static_cast<VACapsulePrimitive*>(binding.Primitive);
 			vaCapsulePrimitiveSetRadius(vaCapsule, (VAFloat)(binding.LocalExtent.X * FMath::Max(meshScale.X, meshScale.Y)));
 			vaCapsulePrimitiveSetLength(vaCapsule, (VAFloat)(binding.LocalExtent.Z * meshScale.Z));
