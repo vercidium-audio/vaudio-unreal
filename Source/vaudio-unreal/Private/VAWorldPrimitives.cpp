@@ -396,7 +396,6 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 				vertices.Reserve(convexElem.IndexData.Num());
 
 				// The SDK's triangle test is one-sided. Render triangles already have the winding it expects, but Chaos' hull indices are wound the other way, so each triangle's last two vertices are swapped. Otherwise rays pass into the hull from outside
-				// TODO - add a winding field to Mesh and MeshPrimitives in the C SDK, so this kind of data transform below isn't required
 				for (int32 i = 0; i + 2 < convexElem.IndexData.Num(); i += 3)
 				{
 					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]]));
