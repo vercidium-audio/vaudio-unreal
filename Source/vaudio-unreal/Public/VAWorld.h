@@ -137,6 +137,7 @@ protected:
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PreSave(FObjectPreSaveContext ObjectSaveContext) override;
 
 	// The bounds are always an axis-aligned box, so the rotate and scale gizmos do nothing
 	virtual void EditorApplyRotation(const FRotator& DeltaRotation, bool bAltDown, bool bShiftDown, bool bCtrlDown) override {}
@@ -323,6 +324,9 @@ public:
 #if WITH_EDITOR
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Bake Geometry For Shipping"))
 	void BakeGeometry();
+
+	// True if BakeGeometry would now produce something different: a mesh was added, removed, swapped or edited, or its material component changed. Always false if nothing is baked. Checked when the level is saved or cooked
+	bool IsBakedGeometryStale(FString* OutReason = nullptr) const;
 #endif
 
 	// Populated by BakeGeometry and saved with the level. Used as a fallback source of triangle data when the live mesh's render data is unavailable

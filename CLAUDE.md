@@ -95,7 +95,7 @@ Don't "fix" these:
 - Grouped EAX reverbs map to `GroupedEAXSubmixes`. `FSubmixEffectReverbSettings` has no echo, modulation, LF decay ratio or reference frequency fields, so those are dropped, and reverb can only be panned left/right
 - Reverb sends are pre distance attenuation, and clamped to [0, 1] by the engine
 - Sounds must use the "Play When Silent" virtualization mode, or a fully muffled sound stops
-- `BakeGeometry` and the bake commandlet exist because cooked builds can drop CPU mesh data
+- `BakeGeometry` and the bake commandlet exist because cooked builds can drop CPU mesh data. `AVAWorld::PreSave` warns when `IsBakedGeometryStale` (a re-bake would differ), which skips meshes with no render data and, in World Partition maps, baked entries with no loaded actor
 - Units are cm (`MetersPerUnit = 0.01`) with `VACoordinateSystemUnreal`
 - Materials are DataAssets plus a component rather than scene nodes and metadata
 - `bAutoCapture` on `AVAInputStreamSource`, `bAutoFollowCamera` and `ListenerReverbSubmix` on `AVAListener`, `bAirAbsorptionEnabled`, `BoundsFollow` and `BoundsUpdateDistance` on `AVAWorld` are Unreal-only

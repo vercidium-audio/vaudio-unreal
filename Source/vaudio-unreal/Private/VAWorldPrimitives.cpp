@@ -17,6 +17,7 @@
 #include "LandscapeHeightfieldCollisionComponent.h"
 #include "LandscapeDataAccess.h"
 #include "Chaos/HeightField.h"
+#include "UObject/ObjectSaveContext.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -75,21 +76,9 @@ static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVector3f>& v
 }
 
 #if WITH_EDITOR
-void AVAWorld::BakeGeometry()
+// Calls visit for every mesh component BakeGeometry bakes, i.e. the ones that add their render triangles, with the LOD they use
+static void ForEachBakeTarget(UWorld* UEWorld, TFunctionRef<void(AActor*, UStaticMeshComponent*, UStaticMesh*, int32)> visit)
 {
-	UWorld* UEWorld = GetWorld();
-
-	if (!UEWorld)
-	{
-		VA_WARN_NAMED(TEXT("No Unreal World found (open a level first)."));
-		return;
-	}
-
-	Modify();
-	BakedMeshes.Reset();
-
-	int32 BakedCount = 0;
-
 	for (TActorIterator<AActor> ActorIt(UEWorld); ActorIt; ++ActorIt)
 	{
 		AActor* Actor = *ActorIt;
@@ -108,26 +97,107 @@ void AVAWorld::BakeGeometry()
 			// Meshes with simple collision use it instead of their triangles, unless only visuals are added
 			if (!Mesh || (HasSimpleCollision(Mesh) && MatComp->PropagateMode != EVAPropagateMode::Visuals)) continue;
 
-			FVABakedMesh& Baked = BakedMeshes.AddDefaulted_GetRef();
-
-			if (!GetRenderVertices(Mesh, MatComp->MeshLOD, Baked.Vertices))
-			{
-				VA_WARN_NAMED(TEXT("Mesh '%s' on '%s' has no render data in-editor, skipping"), *Mesh->GetName(), *Actor->GetActorNameOrLabel());
-				BakedMeshes.Pop();
-				continue;
-			}
-
-			Baked.ActorName = Actor->GetName();
-			Baked.ComponentName = MeshComp->GetFName();
-
-			++BakedCount;
-
-			VA_LOG_NAMED(TEXT("Baked '%s'.'%s' tris=%d"), *Actor->GetActorNameOrLabel(), *MeshComp->GetName(), Baked.Vertices.Num() / 3);
+			visit(Actor, MeshComp, Mesh, MatComp->MeshLOD);
 		}
 	}
+}
+
+void AVAWorld::BakeGeometry()
+{
+	UWorld* UEWorld = GetWorld();
+
+	if (!UEWorld)
+	{
+		VA_WARN_NAMED(TEXT("No Unreal World found (open a level first)."));
+		return;
+	}
+
+	Modify();
+	BakedMeshes.Reset();
+
+	int32 BakedCount = 0;
+
+	ForEachBakeTarget(UEWorld, [&](AActor* Actor, UStaticMeshComponent* MeshComp, UStaticMesh* Mesh, int32 LOD)
+	{
+		FVABakedMesh& Baked = BakedMeshes.AddDefaulted_GetRef();
+
+		if (!GetRenderVertices(Mesh, LOD, Baked.Vertices))
+		{
+			VA_WARN_NAMED(TEXT("Mesh '%s' on '%s' has no render data in-editor, skipping"), *Mesh->GetName(), *Actor->GetActorNameOrLabel());
+			BakedMeshes.Pop();
+			return;
+		}
+
+		Baked.ActorName = Actor->GetName();
+		Baked.ComponentName = MeshComp->GetFName();
+
+		++BakedCount;
+
+		VA_LOG_NAMED(TEXT("Baked '%s'.'%s' tris=%d"), *Actor->GetActorNameOrLabel(), *MeshComp->GetName(), Baked.Vertices.Num() / 3);
+	});
 
 	MarkPackageDirty();
 	VA_LOG_NAMED(TEXT("Baked %d mesh component(s). Save the level to persist."), BakedCount);
+}
+
+bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
+{
+	UWorld* UEWorld = GetWorld();
+
+	// Never baked, so there's nothing to go stale
+	if (!UEWorld || BakedMeshes.IsEmpty())
+		return false;
+
+	TArray<bool> matched;
+	matched.SetNumZeroed(BakedMeshes.Num());
+	FString reason;
+
+	ForEachBakeTarget(UEWorld, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
+	{
+		if (!reason.IsEmpty())
+			return;
+
+		int32 index = BakedMeshes.IndexOfByPredicate([&](const FVABakedMesh& baked) { return baked.ComponentName == meshComponent->GetFName() && baked.ActorName == actor->GetName(); });
+		TArray<FVector3f> vertices;
+
+		// A mesh with no render data can't be compared, and is what the bake is for
+		if (!GetRenderVertices(mesh, lod, vertices))
+		{
+			if (index != INDEX_NONE)
+				matched[index] = true;
+		}
+		else if (index == INDEX_NONE)
+			reason = FString::Printf(TEXT("'%s'.'%s' isn't baked"), *actor->GetActorNameOrLabel(), *meshComponent->GetName());
+		else if (BakedMeshes[index].Vertices != vertices)
+			reason = FString::Printf(TEXT("'%s'.'%s' has changed since it was baked (%d baked triangles, %d now)"), *actor->GetActorNameOrLabel(), *meshComponent->GetName(), BakedMeshes[index].Vertices.Num() / 3, vertices.Num() / 3);
+		else
+			matched[index] = true;
+	});
+
+	// World Partition only bakes loaded actors, so a baked entry with no match may just be in an unloaded cell
+	if (reason.IsEmpty() && !UEWorld->IsPartitionedWorld())
+	{
+		int32 unmatched = matched.Find(false);
+
+		if (unmatched != INDEX_NONE)
+			reason = FString::Printf(TEXT("'%s'.'%s' is baked but no longer adds its render triangles, or no longer exists"), *BakedMeshes[unmatched].ActorName, *BakedMeshes[unmatched].ComponentName.ToString());
+	}
+
+	if (OutReason)
+		*OutReason = reason;
+
+	return !reason.IsEmpty();
+}
+
+void AVAWorld::PreSave(FObjectPreSaveContext ObjectSaveContext)
+{
+	Super::PreSave(ObjectSaveContext);
+
+	// Covers saving the level and cooking it
+	FString reason;
+
+	if (IsBakedGeometryStale(&reason))
+		VA_WARN_NAMED(TEXT("The baked geometry is out of date: %s. Run 'Bake Geometry For Shipping' on the VAWorld and save the level again."), *reason);
 }
 #endif
 

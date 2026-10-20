@@ -123,7 +123,7 @@ Use `SetMaterials` on the `VAWorld` to change the list during play.
 
 ### Shipping builds
 
-Cooked builds can drop the CPU copy of a mesh's triangles. The material component marks its actor's meshes as CPU-accessible, and as a fallback **Bake Geometry For Shipping** on the `VAWorld` (or the `-run=VABake` commandlet) stores the triangles in the level.
+Cooked builds can drop the CPU copy of a mesh's triangles. The material component marks its actor's meshes as CPU-accessible, and as a fallback **Bake Geometry For Shipping** on the `VAWorld` (or the `-run=VABake` commandlet) stores the triangles in the level. The bake doesn't update itself, so saving or cooking a level whose meshes no longer match it (one was added, removed, swapped or edited, or its material component changed) logs a warning naming the mesh. Bake again and save to clear it.
 
 On-screen warnings don't exist in Shipping builds, so check the log (`LogVAudio`) there.
 
