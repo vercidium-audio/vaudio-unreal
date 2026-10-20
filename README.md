@@ -108,6 +108,8 @@ To convert an existing level, select its **Ambient Sound** actors, right-click a
 
 A **VAMaterialComponent** (`UVAMaterialComponent`) makes its actor part of the raytraced scene, along with any attached child actors that don't have their own. Shape components and simple collision are used where they exist, and render triangles otherwise.
 
+On a **Level Instance** actor, it also covers the actors in the instance's level that don't have their own, added once that level has loaded. In World Partition maps, level instances with the default "Partitioned" Level Behavior are embedded into the map's cells when played, so for those put the `VAMaterialComponent` on actors inside the instance's level instead.
+
 - `Material` picks a built-in material (concrete, wood, glass, ...). `MaterialAsset` uses a material asset instead.
 - `PropagateMode` chooses between colliders, render triangles or both, and `MeshLOD` picks which LOD is raytraced.
 - `MaterialOverrides` gives individual components another material, e.g. a glass window in a brick wall.

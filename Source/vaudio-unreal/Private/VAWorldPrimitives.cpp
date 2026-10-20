@@ -18,15 +18,47 @@
 #include "LandscapeDataAccess.h"
 #include "Chaos/HeightField.h"
 #include "UObject/ObjectSaveContext.h"
+#include "LevelInstance/LevelInstanceInterface.h"
+#include "LevelInstance/LevelInstanceSubsystem.h"
 
 extern "C" {
 #include "vaudio.h"
 }
 
-// Walk the attach-parent chain to find the nearest UVAMaterialComponent.
+// The attach parent, or for an unattached actor in a level instance's level, the level instance that placed it
+static AActor* GetMaterialParent(AActor* actor)
+{
+	if (AActor* parent = actor->GetAttachParentActor())
+		return parent;
+
+	UWorld* world = actor->GetWorld();
+	ULevelInstanceSubsystem* subsystem = world ? world->GetSubsystem<ULevelInstanceSubsystem>() : nullptr;
+	return subsystem ? Cast<AActor>(subsystem->GetOwningLevelInstance(actor->GetLevel())) : nullptr;
+}
+
+// The unattached actors in a loaded and visible level instance's level that don't have their own VAMaterialComponent. Nothing if the level isn't visible yet
+static void ForEachLevelInstanceRoot(AActor* instance, TFunctionRef<void(AActor*)> operation)
+{
+	ILevelInstanceInterface* levelInstance = Cast<ILevelInstanceInterface>(instance);
+	UWorld* world = instance->GetWorld();
+	ULevelInstanceSubsystem* subsystem = world ? world->GetSubsystem<ULevelInstanceSubsystem>() : nullptr;
+	ULevel* level = levelInstance && subsystem ? subsystem->GetLevelInstanceLevel(levelInstance) : nullptr;
+
+	// Its actors are added once, from AVAWorld::OnLevelAddedToWorld, if it's loaded but not yet added to the world
+	if (!level || !level->bIsVisible)
+		return;
+
+	for (AActor* actor : level->Actors)
+	{
+		if (IsValid(actor) && !actor->GetAttachParentActor() && !actor->FindComponentByClass<UVAMaterialComponent>())
+			operation(actor);
+	}
+}
+
+// Walk the attach-parent chain (and out of level instances) to find the nearest UVAMaterialComponent.
 static UVAMaterialComponent* FindMaterialInChain(AActor* Actor)
 {
-	for (AActor* actor = Actor; actor != nullptr; actor = actor->GetAttachParentActor())
+	for (AActor* actor = Actor; actor != nullptr; actor = GetMaterialParent(actor))
 	{
 		UVAMaterialComponent* materialComponent = actor->FindComponentByClass<UVAMaterialComponent>();
 
@@ -217,6 +249,7 @@ void AVAWorld::AddMaterialPrimitives(UVAMaterialComponent* source)
 void AVAWorld::RemoveMaterialPrimitives(UVAMaterialComponent* source)
 {
 	MaterialSources.Remove(source);
+	LevelInstanceSources.RemoveAll([source](const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry) { return entry.Value.Get() == source; });
 	RemoveBindings([source](const FVAPrimitiveBinding& binding) { return binding.Source.Get() == source; });
 }
 
@@ -226,6 +259,8 @@ void AVAWorld::RebuildPrimitives()
 		return;
 
 	RemoveBindings([](const FVAPrimitiveBinding&) { return true; });
+	LevelInstanceSources.Empty();
+
 	for (auto it = MaterialSources.CreateIterator(); it; ++it)
 	{
 		UVAMaterialComponent* source = it->Get();
@@ -263,6 +298,8 @@ void AVAWorld::SyncPrimitive(AActor* actor)
 		for (AActor* child : children)
 			if (!child->FindComponentByClass<UVAMaterialComponent>())
 				pending.Add(child);
+
+		ForEachLevelInstanceRoot(current, [&pending](AActor* root) { pending.Add(root); });
 	}
 
 	RemoveBindings([&tree](const FVAPrimitiveBinding& binding)
@@ -291,6 +328,40 @@ void AVAWorld::AddActorTree(AActor* actor, UVAMaterialComponent* source)
 			continue;
 
 		AddActorTree(child, source);
+	}
+
+	if (Cast<ILevelInstanceInterface>(actor))
+		AddLevelInstanceContents(actor, source);
+}
+
+void AVAWorld::AddLevelInstanceContents(AActor* instance, UVAMaterialComponent* source)
+{
+	TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>> entry(instance, source);
+	LevelInstanceSources.AddUnique(entry);
+
+	ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
+}
+
+void AVAWorld::OnLevelAddedToWorld(ULevel* level, UWorld* world)
+{
+	if (world != GetWorld() || !World)
+		return;
+
+	ULevelInstanceSubsystem* subsystem = world->GetSubsystem<ULevelInstanceSubsystem>();
+
+	if (!subsystem)
+		return;
+
+	LevelInstanceSources.RemoveAll([](const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry) { return !entry.Key.IsValid() || !entry.Value.IsValid(); });
+
+	// Copied, as adding the level's actors can reach nested level instances
+	for (const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry : TArray<TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>>(LevelInstanceSources))
+	{
+		AActor* instance = entry.Key.Get();
+		UVAMaterialComponent* source = entry.Value.Get();
+
+		if (instance && source && subsystem->GetLevelInstanceLevel(Cast<ILevelInstanceInterface>(instance)) == level)
+			ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
 	}
 }
 

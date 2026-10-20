@@ -246,6 +246,9 @@ void AVAWorld::BeginPlay()
 
 	InitializeVAWorld();
 
+	// A level instance's actors are added once its level is, see AddLevelInstanceContents
+	LevelAddedToWorldHandle = FWorldDelegates::LevelAddedToWorld.AddUObject(this, &AVAWorld::OnLevelAddedToWorld);
+
 	// Actors that began play before this one join it now
 	subsystem->RegisterWorld(this);
 }
@@ -386,6 +389,7 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 
 	RunningWorlds.RemoveSingleSwap(this);
+	FWorldDelegates::LevelAddedToWorld.Remove(LevelAddedToWorldHandle);
 
 	for (int32 i = 0; i < GroupedEAXPresets.Num(); i++)
 	{
@@ -410,6 +414,7 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		vaWorldWait(World);
 		DestroyPrimitives();
 		MaterialSources.Empty();
+		LevelInstanceSources.Empty();
 		CustomMaterialIds.Empty();
 		AppliedMaterials.Empty();
 

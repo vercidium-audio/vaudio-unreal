@@ -479,6 +479,10 @@ private:
 	// Every material component that has begun play in this world, including those whose geometry was all filtered out, so RebuildPrimitives can re-add them
 	TSet<TWeakObjectPtr<UVAMaterialComponent>> MaterialSources;
 
+	// Level instances reached through a material component's actor tree. Their level's actors aren't attached to them, so they're added once that level is visible, and again whenever it's reloaded
+	TArray<TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>> LevelInstanceSources;
+	FDelegateHandle LevelAddedToWorldHandle;
+
 	// Non-listener emitters, which are all targets of the main listener. Raw pointers are safe as emitters unregister in EndPlay
 	TArray<AVAEmitter*> RegisteredEmitters;
 
@@ -523,8 +527,10 @@ private:
 	// Pushes the listener and grouped EAX reverb to their submixes
 	void OnReverbUpdated();
 
-	// Adds the actor's geometry, then recurses into attached children that don't have their own VAMaterialComponent
+	// Adds the actor's geometry, then recurses into attached children that don't have their own VAMaterialComponent, and into a level instance's actors
 	void AddActorTree(AActor* actor, UVAMaterialComponent* source);
+	void AddLevelInstanceContents(AActor* instance, UVAMaterialComponent* source);
+	void OnLevelAddedToWorld(ULevel* level, UWorld* world);
 	void AddActorPrimitives(AActor* actor, UVAMaterialComponent* source);
 	void AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId);
 	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
