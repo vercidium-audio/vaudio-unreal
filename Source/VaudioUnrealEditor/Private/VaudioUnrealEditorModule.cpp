@@ -1,5 +1,6 @@
 #include "VaudioUnrealEditorModule.h"
 #include "PropertyEditorModule.h"
+#include "VAAmbientSoundConversion.h"
 #include "VAListener.h"
 #include "VAListenerDetails.h"
 #include "VARaytracedSource.h"
@@ -10,10 +11,14 @@ void FVaudioUnrealEditorModule::StartupModule()
 	FPropertyEditorModule& propertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	propertyEditor.RegisterCustomClassLayout(AVAListener::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FVAListenerDetails::MakeInstance));
 	propertyEditor.RegisterCustomClassLayout(AVARaytracedSource::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FVARaytracedSourceDetails::MakeInstance));
+
+	VAAmbientSoundConversion::RegisterMenus();
 }
 
 void FVaudioUnrealEditorModule::ShutdownModule()
 {
+	VAAmbientSoundConversion::UnregisterMenus();
+
 	if (FPropertyEditorModule* propertyEditor = FModuleManager::GetModulePtr<FPropertyEditorModule>("PropertyEditor"))
 	{
 		propertyEditor->UnregisterCustomClassLayout(AVAListener::StaticClass()->GetFName());

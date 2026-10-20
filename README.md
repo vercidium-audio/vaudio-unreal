@@ -102,6 +102,8 @@ Useful emitter properties, shared by the listener and the raytraced sources:
 
 Reverb is sent before distance attenuation, and the send level is divided by the muffled volume so the reverb hears the unmuffled sound. Unreal caps submix send levels at 1, so a heavily muffled source (its volume below its reverb send level) has quieter reverb than the raytraced result says. `GetReverbSendLevel` on a source returns the level actually sent.
 
+To convert an existing level, select its **Ambient Sound** actors, right-click and choose **Vercidium Audio → Convert to VASource**. Each one is replaced by a `VASource` with the same sound, transform, label, folder, tags and attachments, and its Auto Activate, Volume Multiplier and Pitch Multiplier become `bAutoPlay`, `VolumeMultiplier` and `PitchMultiplier`. A `VASource` uses the Sound Attenuation on its sound, so attenuation set on the ambient sound's audio component isn't kept, and neither are its low and high pass filters. The Output Log lists anything that wasn't kept. The conversion can be undone, and the new sources still need reverb rays.
+
 ### Geometry and materials
 
 A **VAMaterialComponent** (`UVAMaterialComponent`) makes its actor part of the raytraced scene, along with any attached child actors that don't have their own. Shape components and simple collision are used where they exist, and render triangles otherwise.
