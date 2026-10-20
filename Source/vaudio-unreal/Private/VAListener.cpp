@@ -26,8 +26,22 @@ void AVAListener::InitializeTypeSpecific()
 	// Initialise the submix
 	if (ListenerReverbSubmix)
 	{
-		ListenerReverbPreset = NewObject<USubmixEffectReverbPreset>(this);
-		UAudioMixerBlueprintLibrary::AddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
+		// Listeners that share a submix share its reverb effect, otherwise the submix would run one reverb per listener in series, the current one feeding through the others' stale settings
+		for (AVAListener* other : AudioWorld->GetListeners())
+		{
+			if (other->ListenerReverbSubmix == ListenerReverbSubmix && other->ListenerReverbPreset)
+			{
+				ListenerReverbPreset = other->ListenerReverbPreset;
+				break;
+			}
+		}
+
+		// Owned by the VAWorld, since it can outlive the listener that created it
+		if (!ListenerReverbPreset)
+		{
+			ListenerReverbPreset = NewObject<USubmixEffectReverbPreset>(AudioWorld);
+			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
+		}
 
 		if (ReverbRayCount == 0 || ReverbBounceCount == 0)
 		{
@@ -145,7 +159,12 @@ void AVAListener::DeinitializeTypeSpecific()
 {
 	if (ListenerReverbPreset)
 	{
-		UAudioMixerBlueprintLibrary::RemoveSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
+		bool shared = AudioWorld && AudioWorld->GetListeners().ContainsByPredicate([this](AVAListener* other) { return other != this && other->ListenerReverbPreset == ListenerReverbPreset; });
+
+		// The last listener using it removes it
+		if (!shared)
+			UAudioMixerBlueprintLibrary::RemoveSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
+
 		ListenerReverbPreset = nullptr;
 	}
 

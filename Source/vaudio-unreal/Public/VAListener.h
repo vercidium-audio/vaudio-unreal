@@ -96,6 +96,9 @@ public:
 	// Called by AVAWorld from the SDK's OnReverbUpdated callback while this listener is current
 	void ApplyListenerReverb();
 
+	// The reverb effect on ListenerReverbSubmix, shared by every listener in the world with the same submix. Null if there's no submix or this listener hasn't begun play
+	USubmixEffectReverbPreset* GetListenerReverbPreset() const { return ListenerReverbPreset; }
+
 private:
 	UPROPERTY(Transient)
 	USubmixEffectReverbPreset* ListenerReverbPreset = nullptr;
