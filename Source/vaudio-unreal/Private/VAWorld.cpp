@@ -151,6 +151,7 @@ void AVAWorld::UpdateVAWorld()
 	// Rendering
 	vaWorldSetRenderingEnabled(World, bRenderingEnabled);
 	vaWorldSetCameraSpeed(World, CameraSpeed);
+	vaWorldSetVisualisationScale(World, VisualisationScale);
 
 	// World bounds
 	vaWorldSetSizeUnreal(World, BoundsSize);

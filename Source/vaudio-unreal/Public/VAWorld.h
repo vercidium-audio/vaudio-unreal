@@ -262,6 +262,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug", meta = (ClampMin = "0.01", ClampMax="1000"))
 	float CameraSpeed = 10;
 
+	// Multiplier for the size of visualisation rays in the debug window
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug", meta = (ClampMin = "0", UIMax = "10"))
+	float VisualisationScale = 1;
+
 	// While simulating or ejected from PIE, the debug window's camera follows the level editor viewport instead of the current listener
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Debug")
 	bool bSyncViewport = true;
