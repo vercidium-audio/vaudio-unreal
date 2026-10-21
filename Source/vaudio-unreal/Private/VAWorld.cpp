@@ -224,7 +224,7 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 
 	FName memberName = PropertyChangedEvent.GetMemberPropertyName();
 
-	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes))
+	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, LandscapeLOD))
 		RebuildPrimitives();
 	else if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, Materials) && SyncMaterials())
 		RebuildPrimitives();

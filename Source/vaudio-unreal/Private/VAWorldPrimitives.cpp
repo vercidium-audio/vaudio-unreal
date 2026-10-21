@@ -74,9 +74,6 @@ static UVAMaterialComponent* FindMaterialInChain(AActor* Actor)
 	return nullptr;
 }
 
-// How far below its lowest point each landscape component's block of ground extends, in cm
-static const double LandscapeThickness = 100.0;
-
 // True if this mesh would use its simple collision rather than its render triangles
 static bool HasSimpleCollision(UStaticMesh* Mesh)
 {
@@ -341,6 +338,22 @@ void AVAWorld::SetCollisionObjectTypes(const TArray<TEnumAsByte<ECollisionChanne
 	RebuildPrimitives();
 }
 
+void AVAWorld::SetLandscapeLOD(int32 lod)
+{
+	LandscapeLOD = FMath::Clamp(lod, 0, 7);
+	RebuildPrimitives();
+}
+
+int32 AVAWorld::GetSharedMeshTriangleCount() const
+{
+	int32 triangles = 0;
+
+	for (const TPair<FVAMeshKey, FVASharedMesh>& shared : SharedMeshes)
+		triangles += shared.Value.TriangleCount;
+
+	return triangles;
+}
+
 void AVAWorld::SyncPrimitive(AActor* actor)
 {
 	if (!actor || !World)
@@ -483,7 +496,7 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 				continue;
 			}
 
-			AddLandscapePrimitive(landscapeComponent, source, materialId, useFlatTransmission);
+			AddLandscapePrimitive(landscapeComponent, source, materialId);
 		}
 	}
 }
@@ -645,21 +658,13 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 	AddMeshPrimitive(FVAMeshKey{ staticMesh, source->MeshLOD, INDEX_NONE }, readTriangles, meshComponent, source, meshTransform, materialId, useFlatTransmission);
 }
 
-void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId, bool useFlatTransmission)
+void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId)
 {
 	// A landscape is both a collider and a visual, so only the collision filter can leave it out
 	if (source->PropagateMode != EVAPropagateMode::Visuals && !PassesCollisionFilter(landscapeComponent))
 		return;
 
-	const Chaos::FHeightField* heightField = nullptr;
-	bool useSimple = false;
-
-	if (IsValidRef(landscapeComponent->HeightfieldRef))
-	{
-		// MeshLOD above 0 uses the landscape's simple collision, if it has one
-		useSimple = source->MeshLOD > 0 && landscapeComponent->HeightfieldRef->HeightfieldSimpleGeometry.IsValid();
-		heightField = useSimple ? landscapeComponent->HeightfieldRef->HeightfieldSimpleGeometry.GetReference() : landscapeComponent->HeightfieldRef->HeightfieldGeometry.GetReference();
-	}
+	const Chaos::FHeightField* heightField = IsValidRef(landscapeComponent->HeightfieldRef) ? landscapeComponent->HeightfieldRef->HeightfieldGeometry.GetReference() : nullptr;
 
 	if (!heightField || heightField->GetNumCols() < 2 || heightField->GetNumRows() < 2)
 	{
@@ -676,6 +681,34 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 
 		auto top = [&](int32 x, int32 y) { return FVector(x * spacing, y * spacing, heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE); };
 
+		// LandscapeLOD keeps every stride-th column and row. The last is always kept, so the edges match the neighbouring components' whatever the component size
+		const int32 stride = 1 << FMath::Clamp(LandscapeLOD, 0, 7);
+
+		auto keptIndices = [stride](int32 count)
+		{
+			TArray<int32> indices;
+
+			for (int32 i = 0; i < count - 1; i += stride)
+				indices.Add(i);
+
+			indices.Add(count - 1);
+			return indices;
+		};
+
+		TArray<int32> xs = keptIndices(columns);
+		TArray<int32> ys = keptIndices(rows);
+
+		// Painted with the visibility layer. A coarse quad stays open if any quad under it is, so a small opening isn't closed over
+		auto isHole = [&](int32 x0, int32 y0, int32 x1, int32 y1)
+		{
+			for (int32 y = y0; y < y1; y++)
+				for (int32 x = x0; x < x1; x++)
+					if (heightField->IsHole(x, y))
+						return true;
+
+			return false;
+		};
+
 		// The SDK's triangle test is one-sided (except for flat transmission meshes), and hits the side that Unreal's render triangles face. That's the reverse of Chaos' winding
 		auto addTriangle = [&](const FVector& a, const FVector& b, const FVector& c)
 		{
@@ -684,63 +717,30 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 			vertices.Add(b);
 		};
 
-		vertices.Reserve((columns - 1) * (rows - 1) * 6 + (useFlatTransmission ? 0 : (columns + rows - 2) * 12 + 6));
+		int32 quadsX = xs.Num() - 1;
+		int32 quadsY = ys.Num() - 1;
+		vertices.Reserve(quadsX * quadsY * 6);
 
-		for (int32 y = 0; y + 1 < rows; y++)
+		for (int32 j = 0; j < quadsY; j++)
 		{
-			for (int32 x = 0; x + 1 < columns; x++)
+			for (int32 i = 0; i < quadsX; i++)
 			{
-				// Painted with the visibility layer
-				if (heightField->IsHole(x, y))
+				int32 x0 = xs[i], x1 = xs[i + 1];
+				int32 y0 = ys[j], y1 = ys[j + 1];
+
+				if (isHole(x0, y0, x1, y1))
 					continue;
 
-				addTriangle(top(x, y), top(x + 1, y), top(x + 1, y + 1));
-				addTriangle(top(x, y), top(x + 1, y + 1), top(x, y + 1));
+				addTriangle(top(x0, y0), top(x1, y0), top(x1, y1));
+				addTriangle(top(x0, y0), top(x1, y1), top(x0, y1));
 			}
 		}
-
-		// A flat transmission mesh is two-sided and muffles once per crossing, so the open surface is enough
-		if (useFlatTransmission)
-			return true;
-
-		double lowest = TNumericLimits<double>::Max();
-
-		for (int32 y = 0; y < rows; y++)
-			for (int32 x = 0; x < columns; x++)
-				lowest = FMath::Min(lowest, top(x, y).Z);
-
-		// Otherwise the SDK measures how far a ray travels between entering and leaving the mesh, so an open sheet wouldn't muffle anything. Each component is closed into a solid block of ground, down to LandscapeThickness below its lowest point
-		double scaleZ = FMath::Abs(landscapeComponent->GetComponentTransform().GetScale3D().Z);
-		double base = lowest - LandscapeThickness / FMath::Max(scaleZ, UE_DOUBLE_KINDA_SMALL_NUMBER);
-
-		auto bottom = [&](int32 x, int32 y) { return FVector(x * spacing, y * spacing, base); };
-
-		// The wall below one edge of the surface, facing right of the direction from (x0, y0) to (x1, y1)
-		auto addSkirt = [&](int32 x0, int32 y0, int32 x1, int32 y1)
-		{
-			addTriangle(top(x0, y0), bottom(x0, y0), bottom(x1, y1));
-			addTriangle(top(x0, y0), bottom(x1, y1), top(x1, y1));
-		};
-
-		for (int32 x = 0; x + 1 < columns; x++)
-		{
-			addSkirt(x, 0, x + 1, 0);
-			addSkirt(x + 1, rows - 1, x, rows - 1);
-		}
-
-		for (int32 y = 0; y + 1 < rows; y++)
-		{
-			addSkirt(0, y + 1, 0, y);
-			addSkirt(columns - 1, y, columns - 1, y + 1);
-		}
-
-		addTriangle(bottom(0, 0), bottom(columns - 1, rows - 1), bottom(columns - 1, 0));
-		addTriangle(bottom(0, 0), bottom(0, rows - 1), bottom(columns - 1, rows - 1));
 
 		return true;
 	};
 
-	AddMeshPrimitive(FVAMeshKey{ landscapeComponent, useSimple ? 1 : 0, INDEX_NONE }, readHeightField, landscapeComponent, source, FTransform::Identity, materialId, useFlatTransmission);
+	// An open sheet always uses flat transmission, which is two-sided and muffles once per crossing
+	AddMeshPrimitive(FVAMeshKey{ landscapeComponent, FMath::Clamp(LandscapeLOD, 0, 7), INDEX_NONE }, readHeightField, landscapeComponent, source, FTransform::Identity, materialId, true);
 }
 
 VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, const UPrimitiveComponent* meshComponent)
@@ -780,7 +780,7 @@ VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TAr
 		return nullptr;
 	}
 
-	SharedMeshes.Add(key, FVASharedMesh{ mesh, 1 });
+	SharedMeshes.Add(key, FVASharedMesh{ mesh, 1, vaVertices.Num() / 3 });
 	return mesh;
 }
 

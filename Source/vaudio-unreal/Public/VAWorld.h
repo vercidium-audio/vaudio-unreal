@@ -52,7 +52,7 @@ struct FVAMeshKey
 	// The static mesh, or the landscape collision component
 	TWeakObjectPtr<const UObject> Mesh;
 
-	// The render LOD, or 0 for a convex hull
+	// The render LOD, 0 for a convex hull, or the world's LandscapeLOD for a landscape
 	int32 LOD = 0;
 
 	// A convex hull's index in the mesh's simple collision, or INDEX_NONE for the render triangles
@@ -66,6 +66,7 @@ struct FVASharedMesh
 {
 	VAMesh* Mesh = nullptr;
 	int32 ReferenceCount = 0;
+	int32 TriangleCount = 0;
 };
 
 struct FVAPrimitiveBinding
@@ -364,9 +365,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SyncPrimitive(AActor* actor);
 
+	// How much every landscape's collision is simplified before it's raytraced. LOD N keeps every 2^N-th row and column of each component's heightfield (plus its last), so 1 halves the resolution and 2 quarters it. Heights stay exact at the kept points and neighbouring components still meet without gaps. Higher LODs are much cheaper to set up when landscape streams in, and to raytrace. The default of 3 turns 1 m quads into 8 m ones
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Geometry", meta = (ClampMin = "0", ClampMax = "7"))
+	int32 LandscapeLOD = 3;
+
 	// Changes CollisionObjectTypes during play, rebuilding every primitive
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetCollisionObjectTypes(const TArray<TEnumAsByte<ECollisionChannel>>& objectTypes);
+
+	// Changes LandscapeLOD during play, rebuilding every primitive
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void SetLandscapeLOD(int32 lod);
 
 	// Rebuilds the geometry of every VAMaterialComponent in this world
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
@@ -378,6 +387,9 @@ public:
 	// How many distinct meshes the mesh primitives were built from. Every placement of the same static mesh shares one
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	int32 GetSharedMeshCount() const { return SharedMeshes.Num(); }
+
+	// The triangles in every shared mesh, each counted once however many primitives use it
+	int32 GetSharedMeshTriangleCount() const;
 
 	// Called by UVAMaterialComponent. Adds the geometry of its actor, and of attached child actors without their own VAMaterialComponent
 	void AddMaterialPrimitives(UVAMaterialComponent* source);
@@ -540,7 +552,7 @@ private:
 	void AddActorPrimitives(AActor* actor, UVAMaterialComponent* source);
 	void AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId);
 	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
-	void AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId, bool useFlatTransmission);
+	void AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId);
 	// readVertices is only called when no placement of this mesh exists yet. It fills the triangle list in mesh space, or returns false if there is none
 	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
 	bool PassesCollisionFilter(const UPrimitiveComponent* component) const;
