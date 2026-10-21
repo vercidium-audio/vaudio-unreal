@@ -616,19 +616,7 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 
 		auto top = [&](int32 x, int32 y) { return FVector(x * spacing, y * spacing, heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE); };
 
-		double lowest = TNumericLimits<double>::Max();
-
-		for (int32 y = 0; y < rows; y++)
-			for (int32 x = 0; x < columns; x++)
-				lowest = FMath::Min(lowest, top(x, y).Z);
-
-		// The SDK measures how far a ray travels between entering and leaving a mesh, so an open sheet wouldn't muffle anything. Each component is closed into a solid block of ground, down to LandscapeThickness below its lowest point
-		double scaleZ = FMath::Abs(landscapeComponent->GetComponentTransform().GetScale3D().Z);
-		double base = lowest - LandscapeThickness / FMath::Max(scaleZ, UE_DOUBLE_KINDA_SMALL_NUMBER);
-
-		auto bottom = [&](int32 x, int32 y) { return FVector(x * spacing, y * spacing, base); };
-
-		// The SDK's triangle test is one-sided, and hits the side that Unreal's render triangles face. That's the reverse of Chaos' winding
+		// The SDK's triangle test is one-sided (except for flat transmission meshes), and hits the side that Unreal's render triangles face. That's the reverse of Chaos' winding
 		auto addTriangle = [&](const FVector& a, const FVector& b, const FVector& c)
 		{
 			vertices.Add(a);
@@ -636,14 +624,7 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 			vertices.Add(b);
 		};
 
-		// The wall below one edge of the surface, facing right of the direction from (x0, y0) to (x1, y1)
-		auto addSkirt = [&](int32 x0, int32 y0, int32 x1, int32 y1)
-		{
-			addTriangle(top(x0, y0), bottom(x0, y0), bottom(x1, y1));
-			addTriangle(top(x0, y0), bottom(x1, y1), top(x1, y1));
-		};
-
-		vertices.Reserve((columns - 1) * (rows - 1) * 6 + (columns + rows - 2) * 12 + 6);
+		vertices.Reserve((columns - 1) * (rows - 1) * 6 + (useFlatTransmission ? 0 : (columns + rows - 2) * 12 + 6));
 
 		for (int32 y = 0; y + 1 < rows; y++)
 		{
@@ -657,6 +638,29 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 				addTriangle(top(x, y), top(x + 1, y + 1), top(x, y + 1));
 			}
 		}
+
+		// A flat transmission mesh is two-sided and muffles once per crossing, so the open surface is enough
+		if (useFlatTransmission)
+			return true;
+
+		double lowest = TNumericLimits<double>::Max();
+
+		for (int32 y = 0; y < rows; y++)
+			for (int32 x = 0; x < columns; x++)
+				lowest = FMath::Min(lowest, top(x, y).Z);
+
+		// Otherwise the SDK measures how far a ray travels between entering and leaving the mesh, so an open sheet wouldn't muffle anything. Each component is closed into a solid block of ground, down to LandscapeThickness below its lowest point
+		double scaleZ = FMath::Abs(landscapeComponent->GetComponentTransform().GetScale3D().Z);
+		double base = lowest - LandscapeThickness / FMath::Max(scaleZ, UE_DOUBLE_KINDA_SMALL_NUMBER);
+
+		auto bottom = [&](int32 x, int32 y) { return FVector(x * spacing, y * spacing, base); };
+
+		// The wall below one edge of the surface, facing right of the direction from (x0, y0) to (x1, y1)
+		auto addSkirt = [&](int32 x0, int32 y0, int32 x1, int32 y1)
+		{
+			addTriangle(top(x0, y0), bottom(x0, y0), bottom(x1, y1));
+			addTriangle(top(x0, y0), bottom(x1, y1), top(x1, y1));
+		};
 
 		for (int32 x = 0; x + 1 < columns; x++)
 		{
