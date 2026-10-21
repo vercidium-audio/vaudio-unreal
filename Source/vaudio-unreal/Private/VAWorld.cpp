@@ -7,10 +7,12 @@
 #include "VAMaterial.h"
 #include "VAReverbConversion.h"
 #include "VAConstants.h"
+#include "VAEditorSprite.h"
 #include "VALog.h"
 #include "VaudioUnrealModule.h"
 
 #include "EngineUtils.h"
+#include "Components/BillboardComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "AudioMixerBlueprintLibrary.h"
 #include "GameFramework/Controller.h"
@@ -66,6 +68,14 @@ AVAWorld::AVAWorld()
 	WorldBounds->SetUsingAbsoluteLocation(true);
 	WorldBounds->SetUsingAbsoluteRotation(true);
 	WorldBounds->SetUsingAbsoluteScale(true);
+
+#if WITH_EDITORONLY_DATA
+	if (UBillboardComponent* sprite = CreateEditorOnlyDefaultSubobject<UBillboardComponent>(TEXT("Sprite")))
+	{
+		sprite->SetupAttachment(Root);
+		VASetEditorSprite(sprite, GetClass());
+	}
+#endif
 
 	Root->TransformUpdated.AddUObject(this, &AVAWorld::OnRootMoved);
 }

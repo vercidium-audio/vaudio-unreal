@@ -10,6 +10,7 @@ extern "C" {
 }
 
 #include "VAConstants.h"
+#include "VAEditorSprite.h"
 #include "VALog.h"
 
 // vaEmitterSetUserData() stashes the owning actor on the VAEmitter* itself, so these trampolines
@@ -56,6 +57,10 @@ AVAEmitter::AVAEmitter()
 
 	UBillboardComponent* Root = CreateDefaultSubobject<UBillboardComponent>(TEXT("Root"));
 	SetRootComponent(Root);
+
+#if WITH_EDITORONLY_DATA
+	VASetEditorSprite(Root, GetClass());
+#endif
 
 	ScatteringSeed = VARandomScatteringSeed();
 }

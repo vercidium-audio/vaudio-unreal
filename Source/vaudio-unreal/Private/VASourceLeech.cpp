@@ -3,12 +3,14 @@
 #include "VAListener.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
+#include "Components/BillboardComponent.h"
 #include "Engine/World.h"
 
 extern "C" {
 #include "vaudio.h"
 }
 
+#include "VAEditorSprite.h"
 #include "VALog.h"
 
 AVASourceLeech::AVASourceLeech()
@@ -17,6 +19,14 @@ AVASourceLeech::AVASourceLeech()
 
 	SourceRootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(SourceRootComponent);
+
+#if WITH_EDITORONLY_DATA
+	if (UBillboardComponent* sprite = CreateEditorOnlyDefaultSubobject<UBillboardComponent>(TEXT("Sprite")))
+	{
+		sprite->SetupAttachment(SourceRootComponent);
+		VASetEditorSprite(sprite, GetClass());
+	}
+#endif
 }
 
 void AVASourceLeech::BeginPlay()

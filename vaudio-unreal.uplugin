@@ -6,7 +6,7 @@
 	"Description": "Raytraced audio simulation, powered by the Vercidium Audio C SDK.",
 	"Category": "Audio",
 	"CreatedBy": "Vercidium",
-	"CanContainContent": false,
+	"CanContainContent": true,
 	"Installed": false,
 	"Modules": [
 		{

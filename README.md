@@ -68,6 +68,8 @@ When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platfo
 
 Once the plugin is enabled, these actors and components are available. Nothing needs a reference to the world: every actor and component finds the level's `VAWorld` by itself, in whatever order they begin play.
 
+In the editor, every Vercidium Audio actor has the VA logo as its icon in the Outliner and Place Actors panel. The `VAWorld`, listeners, emitters and 3D sources also show a sprite in the viewport (**Show → Sprites → Sounds**), which is hidden in game. `VASourceRelative` and `VASourceAmbient` have no position, so they have no sprite.
+
 ### Quick start
 
 1. Place one **VAWorld** in the level. Its location is the minimum corner of the raytraced box and `BoundsSize` is the box's size, so move and size it to cover the playable area. Add at least one submix to `GroupedEAXSubmixes` (three is a good default): each one plays one of the reverbs the SDK produces.
