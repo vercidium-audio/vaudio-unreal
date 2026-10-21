@@ -144,12 +144,6 @@ public:
 	virtual void OnRegister() override;
 
 #if WITH_EDITOR
-	virtual void PostLoad() override;
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-
-private:
-	// Ensures sibling static meshes keep a CPU-readable copy of their vertex/index buffers
-	// in cooked builds, since AVAWorld's triangle-mesh fallback reads them at runtime.
-	void EnsureMeshesAllowCPUAccess() const;
 #endif
 };

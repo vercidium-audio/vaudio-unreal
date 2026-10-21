@@ -23,58 +23,58 @@ int32 UVABakeCommandlet::Main(const FString& Params)
 
 	UE_LOG(LogVABakeCommandlet, Log, TEXT("VABake: found %d level(s) to check"), WorldAssets.Num());
 
-	int32 LevelsBaked = 0;
+	int32 PackagesSaved = 0;
 	int32 WorldsBaked = 0;
 
 	for (const FAssetData& WorldAsset : WorldAssets)
 	{
 		const FString LongPackageName = WorldAsset.PackageName.ToString();
 
-		UPackage* WorldPackage = LoadWorldPackageForEditor(LongPackageName);
-		if (!WorldPackage)
+		// Initialised, as World Partition needs it to load unloaded actors while baking
+		UWorld::InitializationValues IVS;
+		IVS.RequiresHitProxies(false);
+		IVS.ShouldSimulatePhysics(false);
+		IVS.EnableTraceCollision(false);
+		IVS.CreateNavigation(false);
+		IVS.CreateAISystem(false);
+		IVS.AllowAudioPlayback(false);
+		IVS.CreatePhysicsScene(true);
+		FScopedEditorWorld EditorWorld(LongPackageName, IVS);
+		UWorld* World = EditorWorld.GetWorld();
+
+		if (!World)
 		{
 			UE_LOG(LogVABakeCommandlet, Warning, TEXT("VABake: failed to load '%s', skipping"), *LongPackageName);
 			continue;
 		}
 
-		// Null if the package loaded but doesn't actually contain a UWorld (asset registry
-		// listed it as a world asset, but the loaded package disagrees) - nothing to bake.
-		UWorld* World = UWorld::FindWorldInPackage(WorldPackage);
-		if (!World) continue;
-
-		bool bAnyBaked = false;
 		for (TActorIterator<AVAWorld> It(World); It; ++It)
 		{
 			AVAWorld* VAWorld = *It;
-#if WITH_EDITOR
 			VAWorld->BakeGeometry();
-#endif
-			bAnyBaked = true;
 			++WorldsBaked;
-		}
 
-		if (!bAnyBaked) continue;
+			// The level's package, or in a World Partition map the VAWorld's own external actor package
+			UPackage* Package = VAWorld->GetPackage();
+			const bool bIsMap = Package == World->GetPackage();
+			const FString PackageFileName = FPackageName::LongPackageNameToFilename(Package->GetName(), bIsMap ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 
-		const FString PackageFileName = FPackageName::LongPackageNameToFilename(LongPackageName, FPackageName::GetMapPackageExtension());
+			FSavePackageArgs SaveArgs;
+			SaveArgs.TopLevelFlags = RF_Standalone;
+			SaveArgs.SaveFlags = SAVE_NoError;
 
-		FSavePackageArgs SaveArgs;
-		SaveArgs.TopLevelFlags = RF_Standalone;
-		SaveArgs.SaveFlags = SAVE_NoError;
-
-		WorldPackage->MarkPackageDirty();
-		const bool bSaved = UPackage::SavePackage(WorldPackage, World, *PackageFileName, SaveArgs);
-
-		if (bSaved)
-		{
-			++LevelsBaked;
-			UE_LOG(LogVABakeCommandlet, Log, TEXT("VABake: baked and saved '%s'"), *LongPackageName);
-		}
-		else
-		{
-			UE_LOG(LogVABakeCommandlet, Error, TEXT("VABake: failed to save '%s' after baking"), *LongPackageName);
+			if (UPackage::SavePackage(Package, bIsMap ? World : nullptr, *PackageFileName, SaveArgs))
+			{
+				++PackagesSaved;
+				UE_LOG(LogVABakeCommandlet, Log, TEXT("VABake: baked '%s' and saved '%s'"), *LongPackageName, *Package->GetName());
+			}
+			else
+			{
+				UE_LOG(LogVABakeCommandlet, Error, TEXT("VABake: failed to save '%s' after baking"), *Package->GetName());
+			}
 		}
 	}
 
-	UE_LOG(LogVABakeCommandlet, Log, TEXT("VABake: done. %d VAWorld actor(s) baked across %d level(s) saved."), WorldsBaked, LevelsBaked);
+	UE_LOG(LogVABakeCommandlet, Log, TEXT("VABake: done. %d VAWorld actor(s) baked, %d package(s) saved."), WorldsBaked, PackagesSaved);
 	return 0;
 }

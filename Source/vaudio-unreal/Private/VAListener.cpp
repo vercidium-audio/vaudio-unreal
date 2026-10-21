@@ -2,6 +2,7 @@
 #include "VAWorld.h"
 #include "VASource.h"
 #include "VAReverbConversion.h"
+#include "VASubmixSend.h"
 #include "GameFramework/PlayerController.h"
 #include "AudioMixerBlueprintLibrary.h"
 #include "Engine/World.h"
@@ -40,7 +41,7 @@ void AVAListener::InitializeTypeSpecific()
 		if (!ListenerReverbPreset)
 		{
 			ListenerReverbPreset = NewObject<USubmixEffectReverbPreset>(AudioWorld);
-			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
+			VAAddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
 		}
 
 		if (ReverbRayCount == 0 || ReverbBounceCount == 0)

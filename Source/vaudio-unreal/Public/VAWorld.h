@@ -98,15 +98,15 @@ struct FVABakedMesh
 {
 	GENERATED_BODY()
 
-	// Owning actor + component name, used to match this entry back to its UStaticMeshComponent at runtime.
+	// Soft, so the VAWorld doesn't keep every baked mesh loaded, e.g. ones in unloaded World Partition cells
 	UPROPERTY()
-	FString ActorName;
+	TSoftObjectPtr<UStaticMesh> Mesh;
 
+	// The material component's MeshLOD, as requested rather than clamped to the mesh's LOD count
 	UPROPERTY()
-	FName ComponentName;
+	int32 LOD = 0;
 
-	// Local-space (component space) vertex positions, already expanded/duplicated per-index
-	// (i.e. Vertices[i] corresponds to triangle-list index i — no separate index array needed).
+	// Mesh-space triangle-list vertices, i.e. Vertices[i] is triangle-list index i
 	UPROPERTY()
 	TArray<FVector3f> Vertices;
 };
@@ -329,13 +329,15 @@ public:
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Bake Geometry For Shipping"))
 	void BakeGeometry();
 
-	// True if BakeGeometry would now produce something different: a mesh was added, removed, swapped or edited, or its material component changed. Always false if nothing is baked. Checked when the level is saved or cooked
+	// True if BakeGeometry would now produce something different: a mesh was added, removed, swapped or edited, or its material component changed. Always false if nothing is baked. Only looks at loaded actors, so it's checked when the level is saved or cooked without loading World Partition cells
 	bool IsBakedGeometryStale(FString* OutReason = nullptr) const;
 #endif
 
-	// Populated by BakeGeometry and saved with the level. Used as a fallback source of triangle data when the live mesh's render data is unavailable
+	// One entry per static mesh + LOD whose render triangles are raytraced, shared by every placement. Populated by BakeGeometry and saved with the level, and used when a cooked build has dropped the mesh's CPU render data
 	UPROPERTY(VisibleAnywhere, Category = "Vercidium Audio", AdvancedDisplay)
 	TArray<FVABakedMesh> BakedMeshes;
+
+	const FVABakedMesh* FindBakedMesh(const UStaticMesh* mesh, int32 lod) const;
 
 	// --- Materials ---
 

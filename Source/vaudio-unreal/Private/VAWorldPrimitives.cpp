@@ -21,6 +21,12 @@
 #include "LevelInstance/LevelInstanceInterface.h"
 #include "LevelInstance/LevelInstanceSubsystem.h"
 
+#if WITH_EDITOR
+#include "WorldPartition/WorldPartition.h"
+#include "WorldPartition/WorldPartitionHelpers.h"
+#include "WorldPartition/WorldPartitionActorDescInstance.h"
+#endif
+
 extern "C" {
 #include "vaudio.h"
 }
@@ -83,7 +89,7 @@ static bool HasSimpleCollision(UStaticMesh* Mesh)
 	return !Agg.SphylElems.IsEmpty() || !Agg.SphereElems.IsEmpty() || !Agg.BoxElems.IsEmpty() || !Agg.ConvexElems.IsEmpty();
 }
 
-// One LOD's triangle-list vertices in mesh space, i.e. vertices[i] is triangle-list index i
+// One LOD's triangle-list vertices in mesh space, i.e. vertices[i] is triangle-list index i. False if the mesh has no CPU render data, e.g. in a cooked build
 static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVector3f>& vertices)
 {
 	FStaticMeshRenderData* renderData = mesh->GetRenderData();
@@ -92,6 +98,9 @@ static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVector3f>& v
 		return false;
 
 	FStaticMeshLODResources& lodResources = renderData->LODResources[FMath::Clamp(lod, 0, renderData->LODResources.Num() - 1)];
+
+	if (!lodResources.VertexBuffers.PositionVertexBuffer.GetVertexData())
+		return false;
 
 	TArray<uint32> indices;
 	lodResources.IndexBuffer.GetCopy(indices);
@@ -107,38 +116,88 @@ static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVector3f>& v
 	return true;
 }
 
-#if WITH_EDITOR
-// Calls visit for every mesh component BakeGeometry bakes, i.e. the ones that add their render triangles, with the LOD they use
-static void ForEachBakeTarget(UWorld* UEWorld, TFunctionRef<void(AActor*, UStaticMeshComponent*, UStaticMesh*, int32)> visit)
+const FVABakedMesh* AVAWorld::FindBakedMesh(const UStaticMesh* mesh, int32 lod) const
 {
-	for (TActorIterator<AActor> ActorIt(UEWorld); ActorIt; ++ActorIt)
+	FSoftObjectPath path(mesh);
+	return BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return baked.LOD == lod && baked.Mesh.ToSoftObjectPath() == path; });
+}
+
+#if WITH_EDITOR
+using FVABakeVisitor = TFunctionRef<void(AActor*, UStaticMeshComponent*, UStaticMesh*, int32)>;
+
+// Calls visit for each of the actor's mesh components that add their render triangles, with the LOD they use
+static void ForEachBakeTargetOnActor(AActor* actor, FVABakeVisitor visit)
+{
+	// Null if this actor (or its attach-parent chain) has no UVAMaterialComponent. A level has one VAWorld, so every material component belongs to this one
+	UVAMaterialComponent* materialComponent = FindMaterialInChain(actor);
+
+	if (!materialComponent || materialComponent->PropagateMode == EVAPropagateMode::Colliders)
+		return;
+
+	TArray<UStaticMeshComponent*> meshComponents;
+	actor->GetComponents<UStaticMeshComponent>(meshComponents);
+
+	for (UStaticMeshComponent* meshComponent : meshComponents)
 	{
-		AActor* Actor = *ActorIt;
+		UStaticMesh* mesh = meshComponent->GetStaticMesh();
 
-		// Null if this actor (or its attach-parent chain) has no UVAMaterialComponent. A level has one VAWorld, so every material component belongs to this one
-		UVAMaterialComponent* MatComp = FindMaterialInChain(Actor);
-		if (!MatComp || MatComp->PropagateMode == EVAPropagateMode::Colliders) continue;
+		// Meshes with simple collision use it instead of their triangles, unless only visuals are added
+		if (!mesh || (HasSimpleCollision(mesh) && materialComponent->PropagateMode != EVAPropagateMode::Visuals))
+			continue;
 
-		TArray<UStaticMeshComponent*> MeshComps;
-		Actor->GetComponents<UStaticMeshComponent>(MeshComps);
+		visit(actor, meshComponent, mesh, materialComponent->MeshLOD);
+	}
+}
 
-		for (UStaticMeshComponent* MeshComp : MeshComps)
+// Calls visit for every mesh component BakeGeometry bakes, in every loaded actor. With loadAll, level instances that aren't loaded are loaded for the call and unloaded after, and so is every World Partition actor
+static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
+{
+	ULevelInstanceSubsystem* levelInstances = world->GetSubsystem<ULevelInstanceSubsystem>();
+
+	TFunction<void(AActor*)> visitActor = [&](AActor* actor)
+	{
+		ForEachBakeTargetOnActor(actor, visit);
+
+		// A loaded level instance's actors are already in the world's levels
+		ILevelInstanceInterface* levelInstance = Cast<ILevelInstanceInterface>(actor);
+
+		if (!loadAll || !levelInstance || !levelInstances || levelInstances->IsLoaded(levelInstance) || levelInstance->IsEditing())
+			return;
+
+		levelInstances->BlockLoadLevelInstance(levelInstance);
+		levelInstances->ForEachActorInLevelInstance(levelInstance, [&](AActor* contained) { visitActor(contained); return true; });
+		levelInstances->BlockUnloadLevelInstance(levelInstance);
+	};
+
+	// Copied, as loading a level instance adds actors to the world
+	TArray<AActor*> actors;
+
+	for (TActorIterator<AActor> it(world); it; ++it)
+		actors.Add(*it);
+
+	for (AActor* actor : actors)
+		visitActor(actor);
+
+	UWorldPartition* worldPartition = world->GetWorldPartition();
+
+	// Loaded actors are visited again, which is harmless as entries are per mesh
+	if (loadAll && worldPartition)
+	{
+		FWorldPartitionHelpers::ForEachActorWithLoading(worldPartition, [&](const FWorldPartitionActorDescInstance* actorDesc)
 		{
-			UStaticMesh* Mesh = MeshComp->GetStaticMesh();
+			if (AActor* actor = actorDesc->GetActor())
+				visitActor(actor);
 
-			// Meshes with simple collision use it instead of their triangles, unless only visuals are added
-			if (!Mesh || (HasSimpleCollision(Mesh) && MatComp->PropagateMode != EVAPropagateMode::Visuals)) continue;
-
-			visit(Actor, MeshComp, Mesh, MatComp->MeshLOD);
-		}
+			return true;
+		});
 	}
 }
 
 void AVAWorld::BakeGeometry()
 {
-	UWorld* UEWorld = GetWorld();
+	UWorld* world = GetWorld();
 
-	if (!UEWorld)
+	if (!world)
 	{
 		VA_WARN_NAMED(TEXT("No Unreal World found (open a level first)."));
 		return;
@@ -147,72 +206,76 @@ void AVAWorld::BakeGeometry()
 	Modify();
 	BakedMeshes.Reset();
 
-	int32 BakedCount = 0;
+	// Paths rather than pointers, as World Partition loading can collect garbage
+	TSet<TPair<FSoftObjectPath, int32>> visited;
+	int32 placements = 0;
 
-	ForEachBakeTarget(UEWorld, [&](AActor* Actor, UStaticMeshComponent* MeshComp, UStaticMesh* Mesh, int32 LOD)
+	ForEachBakeTarget(world, true, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
 	{
-		FVABakedMesh& Baked = BakedMeshes.AddDefaulted_GetRef();
+		placements++;
 
-		if (!GetRenderVertices(Mesh, LOD, Baked.Vertices))
+		bool alreadyVisited;
+		visited.Add({ FSoftObjectPath(mesh), lod }, &alreadyVisited);
+
+		if (alreadyVisited)
+			return;
+
+		FVABakedMesh baked;
+		baked.Mesh = mesh;
+		baked.LOD = lod;
+
+		if (!GetRenderVertices(mesh, lod, baked.Vertices))
 		{
-			VA_WARN_NAMED(TEXT("Mesh '%s' on '%s' has no render data in-editor, skipping"), *Mesh->GetName(), *Actor->GetActorNameOrLabel());
-			BakedMeshes.Pop();
+			VA_WARN_NAMED(TEXT("Mesh '%s' (first used by '%s') has no render data in-editor, skipping"), *mesh->GetPathName(), *actor->GetActorNameOrLabel());
 			return;
 		}
 
-		Baked.ActorName = Actor->GetName();
-		Baked.ComponentName = MeshComp->GetFName();
-
-		++BakedCount;
-
-		VA_LOG_NAMED(TEXT("Baked '%s'.'%s' tris=%d"), *Actor->GetActorNameOrLabel(), *MeshComp->GetName(), Baked.Vertices.Num() / 3);
+		VA_LOG_NAMED(TEXT("Baked '%s' LOD %d, %d triangles"), *mesh->GetPathName(), lod, baked.Vertices.Num() / 3);
+		BakedMeshes.Add(MoveTemp(baked));
 	});
 
 	MarkPackageDirty();
-	VA_LOG_NAMED(TEXT("Baked %d mesh component(s). Save the level to persist."), BakedCount);
+	VA_LOG_NAMED(TEXT("Baked %d mesh(es) used by %d mesh component(s). Save the level to persist."), BakedMeshes.Num(), placements);
 }
 
 bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 {
-	UWorld* UEWorld = GetWorld();
+	UWorld* world = GetWorld();
 
 	// Never baked, so there's nothing to go stale
-	if (!UEWorld || BakedMeshes.IsEmpty())
+	if (!world || BakedMeshes.IsEmpty())
 		return false;
 
-	TArray<bool> matched;
-	matched.SetNumZeroed(BakedMeshes.Num());
+	TSet<TPair<FSoftObjectPath, int32>> used;
 	FString reason;
 
-	ForEachBakeTarget(UEWorld, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
+	ForEachBakeTarget(world, false, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
 	{
-		if (!reason.IsEmpty())
-			return;
-
-		int32 index = BakedMeshes.IndexOfByPredicate([&](const FVABakedMesh& baked) { return baked.ComponentName == meshComponent->GetFName() && baked.ActorName == actor->GetName(); });
+		used.Add({ FSoftObjectPath(mesh), lod });
 		TArray<FVector3f> vertices;
 
-		// A mesh with no render data can't be compared, and is what the bake is for
-		if (!GetRenderVertices(mesh, lod, vertices))
-		{
-			if (index != INDEX_NONE)
-				matched[index] = true;
-		}
-		else if (index == INDEX_NONE)
-			reason = FString::Printf(TEXT("'%s'.'%s' isn't baked"), *actor->GetActorNameOrLabel(), *meshComponent->GetName());
-		else if (BakedMeshes[index].Vertices != vertices)
-			reason = FString::Printf(TEXT("'%s'.'%s' has changed since it was baked (%d baked triangles, %d now)"), *actor->GetActorNameOrLabel(), *meshComponent->GetName(), BakedMeshes[index].Vertices.Num() / 3, vertices.Num() / 3);
-		else
-			matched[index] = true;
+		// A mesh with no render data can't be baked or compared, and is what the bake is for
+		if (reason.IsEmpty() && !FindBakedMesh(mesh, lod) && GetRenderVertices(mesh, lod, vertices))
+			reason = FString::Printf(TEXT("'%s' LOD %d (used by '%s'.'%s') isn't baked"), *mesh->GetPathName(), lod, *actor->GetActorNameOrLabel(), *meshComponent->GetName());
 	});
 
-	// World Partition only bakes loaded actors, so a baked entry with no match may just be in an unloaded cell
-	if (reason.IsEmpty() && !UEWorld->IsPartitionedWorld())
+	// Every entry whose mesh is loaded has to match its live triangles, whether a loaded actor uses it or not
+	for (const FVABakedMesh& baked : BakedMeshes)
 	{
-		int32 unmatched = matched.Find(false);
+		UStaticMesh* mesh = baked.Mesh.Get();
+		TArray<FVector3f> vertices;
 
-		if (unmatched != INDEX_NONE)
-			reason = FString::Printf(TEXT("'%s'.'%s' is baked but no longer adds its render triangles, or no longer exists"), *BakedMeshes[unmatched].ActorName, *BakedMeshes[unmatched].ComponentName.ToString());
+		if (reason.IsEmpty() && mesh && GetRenderVertices(mesh, baked.LOD, vertices) && vertices != baked.Vertices)
+			reason = FString::Printf(TEXT("'%s' LOD %d has changed since it was baked (%d baked triangles, %d now)"), *mesh->GetPathName(), baked.LOD, baked.Vertices.Num() / 3, vertices.Num() / 3);
+	}
+
+	// World Partition only checks loaded actors, so an unused entry may just be in an unloaded cell
+	if (reason.IsEmpty() && !world->IsPartitionedWorld())
+	{
+		const FVABakedMesh* unused = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return !used.Contains({ baked.Mesh.ToSoftObjectPath(), baked.LOD }); });
+
+		if (unused)
+			reason = FString::Printf(TEXT("'%s' LOD %d is baked but no mesh component adds its render triangles any more"), *unused->Mesh.ToString(), unused->LOD);
 	}
 
 	if (OutReason)
@@ -474,7 +537,6 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 		return;
 
 	VAMaterialType materialType = (VAMaterialType)materialId;
-	AActor* actor = meshComponent->GetOwner();
 	UBodySetup* bodySetup = staticMesh->GetBodySetup();
 	bool addedSimple = false;
 
@@ -554,19 +616,17 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 	if (addedSimple || source->PropagateMode == EVAPropagateMode::Colliders)
 		return;
 
-	// Attempt to use baked geometry. Fall back to mesh data (may be unavailable in cooked builds)
+	// The live render data, or the baked copy if a cooked build has dropped it
 	auto readTriangles = [&](TArray<FVector>& vertices)
 	{
-		const FVABakedMesh* bakedMesh = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return baked.ComponentName == meshComponent->GetFName() && baked.ActorName == actor->GetName(); });
-
 		// Render vertices are float, both baked and live
 		TArray<FVector3f> liveVertices;
 		const TArray<FVector3f>* renderVertices = nullptr;
 
-		if (bakedMesh)
-			renderVertices = &bakedMesh->Vertices;
-		else if (GetRenderVertices(staticMesh, source->MeshLOD, liveVertices))
+		if (GetRenderVertices(staticMesh, source->MeshLOD, liveVertices))
 			renderVertices = &liveVertices;
+		else if (const FVABakedMesh* bakedMesh = FindBakedMesh(staticMesh, source->MeshLOD))
+			renderVertices = &bakedMesh->Vertices;
 
 		if (!renderVertices)
 		{

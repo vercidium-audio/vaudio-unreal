@@ -167,10 +167,6 @@ void UVAMaterialComponent::OnRegister()
 {
 	Super::OnRegister();
 
-#if WITH_EDITOR
-	EnsureMeshesAllowCPUAccess();
-#endif
-
 	UWorld* world = GetWorld();
 	UVAWorldSubsystem* subsystem = world ? world->GetSubsystem<UVAWorldSubsystem>() : nullptr;
 
@@ -190,32 +186,5 @@ void UVAMaterialComponent::PostEditChangeProperty(FPropertyChangedEvent& Propert
 	// Edited during play, e.g. on the PIE actor, so rebuild this actor's geometry with the new material, propagate mode or LOD
 	if (HasBegunPlay() && AudioWorld && GetOwner())
 		AudioWorld->SyncPrimitive(GetOwner());
-}
-
-void UVAMaterialComponent::PostLoad()
-{
-	Super::PostLoad();
-	EnsureMeshesAllowCPUAccess();
-}
-
-void UVAMaterialComponent::EnsureMeshesAllowCPUAccess() const
-{
-	AActor* Owner = GetOwner();
-
-	if (!Owner)
-		return;
-
-	TArray<UStaticMeshComponent*> MeshComps;
-	Owner->GetComponents<UStaticMeshComponent>(MeshComps);
-
-	for (UStaticMeshComponent* MeshComp : MeshComps)
-	{
-		UStaticMesh* Mesh = MeshComp ? MeshComp->GetStaticMesh() : nullptr;
-		if (Mesh && !Mesh->bAllowCPUAccess)
-		{
-			Mesh->Modify();
-			Mesh->bAllowCPUAccess = true;
-		}
-	}
 }
 #endif

@@ -6,6 +6,7 @@
 #include "VAListener.h"
 #include "VAMaterial.h"
 #include "VAReverbConversion.h"
+#include "VASubmixSend.h"
 #include "VAConstants.h"
 #include "VAEditorSprite.h"
 #include "VALog.h"
@@ -304,8 +305,8 @@ void AVAWorld::InitializeVAWorld()
 
 		if (Sub)
 		{
-			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, Preset);
-			UAudioMixerBlueprintLibrary::AddSubmixEffect(this, Sub, PanPreset);
+			VAAddSubmixEffect(this, Sub, Preset);
+			VAAddSubmixEffect(this, Sub, PanPreset);
 		}
 		else
 			VA_WARN_NAMED(TEXT("Has a null grouped EAX submix at index %d. Please assign a submix"), i);
