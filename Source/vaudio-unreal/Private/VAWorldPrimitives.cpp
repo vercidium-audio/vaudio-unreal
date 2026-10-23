@@ -664,83 +664,129 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 	if (source->PropagateMode != EVAPropagateMode::Visuals && !PassesCollisionFilter(landscapeComponent))
 		return;
 
+	FString landscapeName = landscapeComponent->GetOwner()->GetActorNameOrLabel();
 	const Chaos::FHeightField* heightField = IsValidRef(landscapeComponent->HeightfieldRef) ? landscapeComponent->HeightfieldRef->HeightfieldGeometry.GetReference() : nullptr;
 
 	if (!heightField || heightField->GetNumCols() < 2 || heightField->GetNumRows() < 2)
 	{
-		VA_WARN_NAMED(TEXT("Landscape '%s' will not affect raytracing as its component '%s' has no collision. Enable collision on the landscape."), *landscapeComponent->GetOwner()->GetActorNameOrLabel(), *landscapeComponent->GetName());
+		VA_WARN_NAMED(TEXT("Landscape '%s' will not affect raytracing as its component '%s' has no collision. Enable collision on the landscape."), *landscapeName, *landscapeComponent->GetName());
 		return;
 	}
 
-	// The collision heightfield exists in cooked builds, unlike the heightmap. Its triangles are in component space, with the landscape's scale left to the primitive's transform
-	auto readHeightField = [&](TArray<FVector>& vertices)
+	// The heightmap's scale can't mirror it
+	FVector scale = landscapeComponent->GetComponentTransform().GetScale3D();
+
+	if (scale.X <= 0.0 || scale.Y <= 0.0 || scale.Z <= 0.0)
 	{
-		int32 columns = heightField->GetNumCols();
-		int32 rows = heightField->GetNumRows();
-		double spacing = landscapeComponent->CollisionScale * landscapeComponent->CollisionSizeQuads / (columns - 1);
+		VA_WARN_NAMED(TEXT("Landscape '%s' will not affect raytracing as its scale %s has a negative or zero axis."), *landscapeName, *scale.ToString());
+		return;
+	}
 
-		auto top = [&](int32 x, int32 y) { return FVector(x * spacing, y * spacing, heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE); };
+	int32 quadsX = heightField->GetNumCols() - 1;
+	int32 quadsY = heightField->GetNumRows() - 1;
 
-		// LandscapeLOD keeps every stride-th column and row. The last is always kept, so the edges match the neighbouring components' whatever the component size
-		const int32 stride = 1 << FMath::Clamp(LandscapeLOD, 0, 7);
+	// The collision heightfield exists in cooked builds, unlike the heightmap. It's in component space, and the component's scale goes in the heightmap's scale, as its transform can't hold scale
+	double quadSize = landscapeComponent->CollisionScale * landscapeComponent->CollisionSizeQuads / quadsX;
 
-		auto keptIndices = [stride](int32 count)
-		{
-			TArray<int32> indices;
+	// A component's quad count is 2^k - 1, so a power-of-two stride never divides it evenly. LandscapeLOD instead splits each side into equal cells, rounded up
+	const int32 stride = 1 << FMath::Clamp(LandscapeLOD, 0, 7);
+	int32 cellsX = FMath::DivideAndRoundUp(quadsX, stride);
+	int32 cellsY = FMath::DivideAndRoundUp(quadsY, stride);
+	double cellQuadsX = (double)quadsX / cellsX;
+	double cellQuadsY = (double)quadsY / cellsY;
 
-			for (int32 i = 0; i < count - 1; i += stride)
-				indices.Add(i);
+	auto heightAt = [&](int32 x, int32 y) { return heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE; };
 
-			indices.Add(count - 1);
-			return indices;
-		};
+	// The height of the collision's surface at a point in quads. Exact at LOD 0, and along a component's edges only the edge's own points are used, so neighbouring components still meet
+	auto surfaceAt = [&](double x, double y)
+	{
+		int32 x0 = FMath::Min(FMath::FloorToInt32(x), quadsX - 1);
+		int32 y0 = FMath::Min(FMath::FloorToInt32(y), quadsY - 1);
+		double fx = x - x0;
+		double fy = y - y0;
 
-		TArray<int32> xs = keptIndices(columns);
-		TArray<int32> ys = keptIndices(rows);
+		double h00 = heightAt(x0, y0);
+		double h10 = heightAt(x0 + 1, y0);
+		double h01 = heightAt(x0, y0 + 1);
+		double h11 = heightAt(x0 + 1, y0 + 1);
 
-		// Painted with the visibility layer. A coarse quad stays open if any quad under it is, so a small opening isn't closed over
-		auto isHole = [&](int32 x0, int32 y0, int32 x1, int32 y1)
-		{
-			for (int32 y = y0; y < y1; y++)
-				for (int32 x = x0; x < x1; x++)
-					if (heightField->IsHole(x, y))
-						return true;
-
-			return false;
-		};
-
-		// The SDK's triangle test is one-sided (except for flat transmission meshes), and hits the side that Unreal's render triangles face. That's the reverse of Chaos' winding
-		auto addTriangle = [&](const FVector& a, const FVector& b, const FVector& c)
-		{
-			vertices.Add(a);
-			vertices.Add(c);
-			vertices.Add(b);
-		};
-
-		int32 quadsX = xs.Num() - 1;
-		int32 quadsY = ys.Num() - 1;
-		vertices.Reserve(quadsX * quadsY * 6);
-
-		for (int32 j = 0; j < quadsY; j++)
-		{
-			for (int32 i = 0; i < quadsX; i++)
-			{
-				int32 x0 = xs[i], x1 = xs[i + 1];
-				int32 y0 = ys[j], y1 = ys[j + 1];
-
-				if (isHole(x0, y0, x1, y1))
-					continue;
-
-				addTriangle(top(x0, y0), top(x1, y0), top(x1, y1));
-				addTriangle(top(x0, y0), top(x1, y1), top(x0, y1));
-			}
-		}
-
-		return true;
+		// Split along (x0, y0) to (x0 + 1, y0 + 1), like the heightmap's own triangles
+		return fx >= fy
+			? h00 + fx * (h10 - h00) + fy * (h11 - h10)
+			: h00 + fy * (h01 - h00) + fx * (h11 - h01);
 	};
 
-	// An open sheet always uses flat transmission, which is two-sided and muffles once per crossing
-	AddMeshPrimitive(FVAMeshKey{ landscapeComponent, FMath::Clamp(LandscapeLOD, 0, 7), INDEX_NONE }, readHeightField, landscapeComponent, source, FTransform::Identity, materialId, true);
+	// Painted with the visibility layer. A coarse cell stays open if any quad under it is, so a small opening isn't closed over
+	auto isHole = [&](int32 cellX, int32 cellY)
+	{
+		int32 x1 = FMath::Min(FMath::CeilToInt32((cellX + 1) * cellQuadsX), quadsX);
+		int32 y1 = FMath::Min(FMath::CeilToInt32((cellY + 1) * cellQuadsY), quadsY);
+
+		for (int32 y = FMath::FloorToInt32(cellY * cellQuadsY); y < y1; y++)
+			for (int32 x = FMath::FloorToInt32(cellX * cellQuadsX); x < x1; x++)
+				if (heightField->IsHole(x, y))
+					return true;
+
+		return false;
+	};
+
+	// Unreal's X runs along the heightmap's rows (its local Z) and Unreal's Y along each row (its local X), to match vaHeightmapPrimitiveSetTransformUnreal's axes
+	int32 rowLength = cellsY + 1;
+	int32 rowCount = cellsX + 1;
+	TArray<VAFloat> heights;
+	TArray<bool> holes;
+	heights.SetNumUninitialized(rowLength * rowCount);
+	holes.SetNumUninitialized(cellsX * cellsY);
+	bool anyHoles = false;
+
+	for (int32 x = 0; x < rowCount; x++)
+		for (int32 y = 0; y < rowLength; y++)
+			heights[x * rowLength + y] = (VAFloat)surfaceAt(x * cellQuadsX, y * cellQuadsY);
+
+	for (int32 x = 0; x < cellsX; x++)
+	{
+		for (int32 y = 0; y < cellsY; y++)
+		{
+			holes[x * cellsY + y] = isHole(x, y);
+			anyHoles |= holes[x * cellsY + y];
+		}
+	}
+
+	VAHeightmapPrimitive* heightmap;
+	VAResult result = vaHeightmapPrimitiveCreateWithHoles(heights.GetData(), anyHoles ? holes.GetData() : nullptr, rowLength, rowCount, &heightmap);
+
+	if (result != VA_SUCCESS)
+	{
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a heightmap primitive for '%s' on '%s'."), *landscapeComponent->GetName(), *landscapeName);
+		return;
+	}
+
+	vaHeightmapPrimitiveSetMaterial(heightmap, (VAMaterialType)materialId);
+
+	// An open surface that always uses flat transmission, which is two-sided and muffles once per crossing. Scale and transform are set by RefreshPrimitiveTransform in AddBinding
+	FVAPrimitiveBinding binding;
+	binding.Component = landscapeComponent;
+	binding.Source = source;
+	binding.Primitive = heightmap;
+	binding.Kind = EVAPrimitiveKind::Heightmap;
+	binding.LocalExtent = FVector(quadSize * cellQuadsX, quadSize * cellQuadsY, 1.0);
+	AddBinding(binding, TEXT("heightmap"));
+}
+
+int32 AVAWorld::GetHeightmapTriangleCount() const
+{
+	int32 triangles = 0;
+
+	for (const FVAPrimitiveBinding& binding : PrimitiveBindings)
+	{
+		if (binding.Kind != EVAPrimitiveKind::Heightmap)
+			continue;
+
+		const VAHeightmapPrimitive* heightmap = static_cast<const VAHeightmapPrimitive*>(binding.Primitive);
+		triangles += (vaHeightmapPrimitiveGetSizeX(heightmap) - 1) * (vaHeightmapPrimitiveGetSizeY(heightmap) - 1) * 2;
+	}
+
+	return triangles;
 }
 
 VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, const UPrimitiveComponent* meshComponent)

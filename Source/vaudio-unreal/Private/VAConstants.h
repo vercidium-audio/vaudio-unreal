@@ -92,6 +92,21 @@ static inline void vaPrismPrimitiveSetTransformUnreal(VAPrismPrimitive* prism, c
 	vaPrismPrimitiveSetTransform(prism, &matrix);
 }
 
+// A heightmap is Y-up with its grid along local X and Z. Swapping the axes around (local X to Unreal Y, Y to Z, Z to X) stands it up in Unreal's Z-up space, and is a rotation rather than a mirror, so it can go in the transform. Scale goes in the heightmap's own scale instead
+static inline void vaHeightmapPrimitiveSetTransformUnreal(VAHeightmapPrimitive* heightmap, const FTransform& transform)
+{
+	VAMatrix axes = vaMatrixCreate(
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		1, 0, 0, 0,
+		0, 0, 0, 1
+	);
+
+	VAMatrix rotTrans = MakeRotTransMatrix(transform);
+	VAMatrix matrix = vaMatrixMultiply(&axes, &rotTrans);
+	vaHeightmapPrimitiveSetTransform(heightmap, &matrix);
+}
+
 static inline void vaMeshPrimitiveSetTransformUnreal(VAMeshPrimitive* mesh, const FTransform& transform)
 {
 	VAMatrix matrix = MakeScaleRotTransMatrix(transform);

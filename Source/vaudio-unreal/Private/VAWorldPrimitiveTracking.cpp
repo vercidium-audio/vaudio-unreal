@@ -105,6 +105,10 @@ void AVAWorld::DestroyPrimitive(const FVAPrimitiveBinding& binding)
 			vaMeshPrimitiveDestroy(static_cast<VAMeshPrimitive*>(primitive));
 			ReleaseSharedMesh(binding.MeshKey);
 			break;
+
+		case EVAPrimitiveKind::Heightmap:
+			vaHeightmapPrimitiveDestroy(static_cast<VAHeightmapPrimitive*>(primitive));
+			break;
 	}
 }
 
@@ -173,6 +177,15 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 		case EVAPrimitiveKind::Mesh:
 		{
 			vaMeshPrimitiveSetTransformUnreal(static_cast<VAMeshPrimitive*>(binding.Primitive), meshTransform);
+			break;
+		}
+		case EVAPrimitiveKind::Heightmap:
+		{
+			// The heightmap's local X, Y and Z are Unreal's Y, Z and X (see vaHeightmapPrimitiveSetTransformUnreal)
+			FVector scale = binding.LocalExtent * meshScale;
+			VAHeightmapPrimitive* vaHeightmap = static_cast<VAHeightmapPrimitive*>(binding.Primitive);
+			vaHeightmapPrimitiveSetScale(vaHeightmap, vaVectorCreate((VAFloat)scale.Y, (VAFloat)scale.Z, (VAFloat)scale.X));
+			vaHeightmapPrimitiveSetTransformUnreal(vaHeightmap, componentTransform);
 			break;
 		}
 		case EVAPrimitiveKind::SphereFromMesh:

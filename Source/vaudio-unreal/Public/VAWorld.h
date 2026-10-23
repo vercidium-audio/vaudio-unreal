@@ -44,15 +44,15 @@ enum class EVAPrimitiveKind : uint8
 	CapsuleFromMesh,
 	SphereFromMesh,
 	PrismFromMesh,
+	Heightmap,
 };
 
-// Identifies triangle data that every placement of a static mesh can share. A landscape component is its own key, as its triangles belong to it alone
+// Identifies triangle data that every placement of a static mesh can share
 struct FVAMeshKey
 {
-	// The static mesh, or the landscape collision component
 	TWeakObjectPtr<const UObject> Mesh;
 
-	// The render LOD, 0 for a convex hull, or the world's LandscapeLOD for a landscape
+	// The render LOD, or 0 for a convex hull
 	int32 LOD = 0;
 
 	// A convex hull's index in the mesh's simple collision, or INDEX_NONE for the render triangles
@@ -88,7 +88,7 @@ struct FVAPrimitiveBinding
 	// A simple collision element's rotation and translation in mesh space
 	FTransform ElementTransform = FTransform::Identity;
 
-	// A simple collision element's unscaled size
+	// A simple collision element's unscaled size, or a landscape heightmap's unscaled sample spacing in X and Y (Z is 1)
 	FVector LocalExtent = FVector::ZeroVector;
 
 	FDelegateHandle Handle;
@@ -365,7 +365,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SyncPrimitive(AActor* actor);
 
-	// How much every landscape's collision is simplified before it's raytraced. LOD N keeps every 2^N-th row and column of each component's heightfield (plus its last), so 1 halves the resolution and 2 quarters it. Heights stay exact at the kept points and neighbouring components still meet without gaps. Higher LODs are much cheaper to set up when landscape streams in, and to raytrace. The default of 3 turns 1 m quads into 8 m ones
+	// How much every landscape's collision is simplified before it's raytraced. LOD N splits each side of a component into 1/2^N as many equal cells (rounded up), so 1 halves the resolution and 2 quarters it, with heights taken from the collision's surface. Neighbouring components still meet without gaps. Higher LODs use less memory. The default of 3 turns 1 m quads into roughly 8 m ones
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Geometry", meta = (ClampMin = "0", ClampMax = "7"))
 	int32 LandscapeLOD = 3;
 
@@ -390,6 +390,9 @@ public:
 
 	// The triangles in every shared mesh, each counted once however many primitives use it
 	int32 GetSharedMeshTriangleCount() const;
+
+	// The triangles in every landscape component's heightmap, including holes
+	int32 GetHeightmapTriangleCount() const;
 
 	// Called by UVAMaterialComponent. Adds the geometry of its actor, and of attached child actors without their own VAMaterialComponent
 	void AddMaterialPrimitives(UVAMaterialComponent* source);
