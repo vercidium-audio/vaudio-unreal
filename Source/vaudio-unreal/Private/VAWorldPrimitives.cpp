@@ -1,0 +1,879 @@
+#include "VAWorld.h"
+#include "VAMaterialComponent.h"
+#include "VAConstants.h"
+#include "VALog.h"
+
+#include "EngineUtils.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Components/ShapeComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/SphereComponent.h"
+#include "Components/BoxComponent.h"
+#include "StaticMeshResources.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "PhysicsEngine/AggregateGeom.h"
+#include "Engine/StaticMesh.h"
+#include "LandscapeHeightfieldCollisionComponent.h"
+#include "LandscapeDataAccess.h"
+#include "Chaos/HeightField.h"
+#include "UObject/ObjectSaveContext.h"
+#include "LevelInstance/LevelInstanceInterface.h"
+#include "LevelInstance/LevelInstanceSubsystem.h"
+
+#if WITH_EDITOR
+#include "WorldPartition/WorldPartition.h"
+#include "WorldPartition/WorldPartitionHelpers.h"
+#include "WorldPartition/WorldPartitionActorDescInstance.h"
+#endif
+
+extern "C" {
+#include "vaudio.h"
+}
+
+// The attach parent, or for an unattached actor in a level instance's level, the level instance that placed it
+static AActor* GetMaterialParent(AActor* actor)
+{
+	if (AActor* parent = actor->GetAttachParentActor())
+		return parent;
+
+	UWorld* world = actor->GetWorld();
+	ULevelInstanceSubsystem* subsystem = world ? world->GetSubsystem<ULevelInstanceSubsystem>() : nullptr;
+	return subsystem ? Cast<AActor>(subsystem->GetOwningLevelInstance(actor->GetLevel())) : nullptr;
+}
+
+// The unattached actors in a loaded and visible level instance's level that don't have their own VAMaterialComponent. Nothing if the level isn't visible yet
+static void ForEachLevelInstanceRoot(AActor* instance, TFunctionRef<void(AActor*)> operation)
+{
+	ILevelInstanceInterface* levelInstance = Cast<ILevelInstanceInterface>(instance);
+	UWorld* world = instance->GetWorld();
+	ULevelInstanceSubsystem* subsystem = world ? world->GetSubsystem<ULevelInstanceSubsystem>() : nullptr;
+	ULevel* level = levelInstance && subsystem ? subsystem->GetLevelInstanceLevel(levelInstance) : nullptr;
+
+	// Its actors are added once, from AVAWorld::OnLevelAddedToWorld, if it's loaded but not yet added to the world
+	if (!level || !level->bIsVisible)
+		return;
+
+	for (AActor* actor : level->Actors)
+	{
+		if (IsValid(actor) && !actor->GetAttachParentActor() && !actor->FindComponentByClass<UVAMaterialComponent>())
+			operation(actor);
+	}
+}
+
+// Walk the attach-parent chain (and out of level instances) to find the nearest UVAMaterialComponent.
+static UVAMaterialComponent* FindMaterialInChain(AActor* Actor)
+{
+	for (AActor* actor = Actor; actor != nullptr; actor = GetMaterialParent(actor))
+	{
+		UVAMaterialComponent* materialComponent = actor->FindComponentByClass<UVAMaterialComponent>();
+
+		if (materialComponent)
+			return materialComponent;
+	}
+	return nullptr;
+}
+
+// True if this mesh would use its simple collision rather than its render triangles
+static bool HasSimpleCollision(UStaticMesh* Mesh)
+{
+	UBodySetup* BodySetup = Mesh ? Mesh->GetBodySetup() : nullptr;
+
+	if (!BodySetup)
+		return false;
+
+	const FKAggregateGeom& Agg = BodySetup->AggGeom;
+	return !Agg.SphylElems.IsEmpty() || !Agg.SphereElems.IsEmpty() || !Agg.BoxElems.IsEmpty() || !Agg.ConvexElems.IsEmpty();
+}
+
+// One LOD's triangle-list vertices in mesh space, i.e. vertices[i] is triangle-list index i. False if the mesh has no CPU render data, e.g. in a cooked build
+static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVector3f>& vertices)
+{
+	FStaticMeshRenderData* renderData = mesh->GetRenderData();
+
+	if (!renderData || renderData->LODResources.IsEmpty())
+		return false;
+
+	FStaticMeshLODResources& lodResources = renderData->LODResources[FMath::Clamp(lod, 0, renderData->LODResources.Num() - 1)];
+
+	if (!lodResources.VertexBuffers.PositionVertexBuffer.GetVertexData())
+		return false;
+
+	TArray<uint32> indices;
+	lodResources.IndexBuffer.GetCopy(indices);
+
+	if (indices.IsEmpty())
+		return false;
+
+	vertices.Reset(indices.Num());
+
+	for (uint32 index : indices)
+		vertices.Add(lodResources.VertexBuffers.PositionVertexBuffer.VertexPosition(index));
+
+	return true;
+}
+
+const FVABakedMesh* AVAWorld::FindBakedMesh(const UStaticMesh* mesh, int32 lod) const
+{
+	FSoftObjectPath path(mesh);
+	return BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return baked.LOD == lod && baked.Mesh.ToSoftObjectPath() == path; });
+}
+
+#if WITH_EDITOR
+using FVABakeVisitor = TFunctionRef<void(AActor*, UStaticMeshComponent*, UStaticMesh*, int32)>;
+
+// Calls visit for each of the actor's mesh components that add their render triangles, with the LOD they use
+static void ForEachBakeTargetOnActor(AActor* actor, FVABakeVisitor visit)
+{
+	// Null if this actor (or its attach-parent chain) has no UVAMaterialComponent. A level has one VAWorld, so every material component belongs to this one
+	UVAMaterialComponent* materialComponent = FindMaterialInChain(actor);
+
+	if (!materialComponent || materialComponent->PropagateMode == EVAPropagateMode::Colliders)
+		return;
+
+	TArray<UStaticMeshComponent*> meshComponents;
+	actor->GetComponents<UStaticMeshComponent>(meshComponents);
+
+	for (UStaticMeshComponent* meshComponent : meshComponents)
+	{
+		UStaticMesh* mesh = meshComponent->GetStaticMesh();
+
+		// Meshes with simple collision use it instead of their triangles, unless only visuals are added
+		if (!mesh || (HasSimpleCollision(mesh) && materialComponent->PropagateMode != EVAPropagateMode::Visuals))
+			continue;
+
+		visit(actor, meshComponent, mesh, materialComponent->MeshLOD);
+	}
+}
+
+// Calls visit for every mesh component BakeGeometry bakes, in every loaded actor. With loadAll, level instances that aren't loaded are loaded for the call and unloaded after, and so is every World Partition actor
+static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
+{
+	ULevelInstanceSubsystem* levelInstances = world->GetSubsystem<ULevelInstanceSubsystem>();
+
+	TFunction<void(AActor*)> visitActor = [&](AActor* actor)
+	{
+		ForEachBakeTargetOnActor(actor, visit);
+
+		// A loaded level instance's actors are already in the world's levels
+		ILevelInstanceInterface* levelInstance = Cast<ILevelInstanceInterface>(actor);
+
+		if (!loadAll || !levelInstance || !levelInstances || levelInstances->IsLoaded(levelInstance) || levelInstance->IsEditing())
+			return;
+
+		levelInstances->BlockLoadLevelInstance(levelInstance);
+		levelInstances->ForEachActorInLevelInstance(levelInstance, [&](AActor* contained) { visitActor(contained); return true; });
+		levelInstances->BlockUnloadLevelInstance(levelInstance);
+	};
+
+	// Copied, as loading a level instance adds actors to the world
+	TArray<AActor*> actors;
+
+	for (TActorIterator<AActor> it(world); it; ++it)
+		actors.Add(*it);
+
+	for (AActor* actor : actors)
+		visitActor(actor);
+
+	UWorldPartition* worldPartition = world->GetWorldPartition();
+
+	// Loaded actors are visited again, which is harmless as entries are per mesh
+	if (loadAll && worldPartition)
+	{
+		FWorldPartitionHelpers::ForEachActorWithLoading(worldPartition, [&](const FWorldPartitionActorDescInstance* actorDesc)
+		{
+			if (AActor* actor = actorDesc->GetActor())
+				visitActor(actor);
+
+			return true;
+		});
+	}
+}
+
+void AVAWorld::BakeGeometry()
+{
+	UWorld* world = GetWorld();
+
+	if (!world)
+	{
+		VA_WARN_NAMED(TEXT("No Unreal World found (open a level first)."));
+		return;
+	}
+
+	Modify();
+	BakedMeshes.Reset();
+
+	// Paths rather than pointers, as World Partition loading can collect garbage
+	TSet<TPair<FSoftObjectPath, int32>> visited;
+	int32 placements = 0;
+
+	ForEachBakeTarget(world, true, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
+	{
+		placements++;
+
+		bool alreadyVisited;
+		visited.Add({ FSoftObjectPath(mesh), lod }, &alreadyVisited);
+
+		if (alreadyVisited)
+			return;
+
+		FVABakedMesh baked;
+		baked.Mesh = mesh;
+		baked.LOD = lod;
+
+		if (!GetRenderVertices(mesh, lod, baked.Vertices))
+		{
+			VA_WARN_NAMED(TEXT("Mesh '%s' (first used by '%s') has no render data in-editor, skipping"), *mesh->GetPathName(), *actor->GetActorNameOrLabel());
+			return;
+		}
+
+		VA_LOG_NAMED(TEXT("Baked '%s' LOD %d, %d triangles"), *mesh->GetPathName(), lod, baked.Vertices.Num() / 3);
+		BakedMeshes.Add(MoveTemp(baked));
+	});
+
+	MarkPackageDirty();
+	VA_LOG_NAMED(TEXT("Baked %d mesh(es) used by %d mesh component(s). Save the level to persist."), BakedMeshes.Num(), placements);
+}
+
+bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
+{
+	UWorld* world = GetWorld();
+
+	// Never baked, so there's nothing to go stale
+	if (!world || BakedMeshes.IsEmpty())
+		return false;
+
+	TSet<TPair<FSoftObjectPath, int32>> used;
+	FString reason;
+
+	ForEachBakeTarget(world, false, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
+	{
+		used.Add({ FSoftObjectPath(mesh), lod });
+		TArray<FVector3f> vertices;
+
+		// A mesh with no render data can't be baked or compared, and is what the bake is for
+		if (reason.IsEmpty() && !FindBakedMesh(mesh, lod) && GetRenderVertices(mesh, lod, vertices))
+			reason = FString::Printf(TEXT("'%s' LOD %d (used by '%s'.'%s') isn't baked"), *mesh->GetPathName(), lod, *actor->GetActorNameOrLabel(), *meshComponent->GetName());
+	});
+
+	// Every entry whose mesh is loaded has to match its live triangles, whether a loaded actor uses it or not
+	for (const FVABakedMesh& baked : BakedMeshes)
+	{
+		UStaticMesh* mesh = baked.Mesh.Get();
+		TArray<FVector3f> vertices;
+
+		if (reason.IsEmpty() && mesh && GetRenderVertices(mesh, baked.LOD, vertices) && vertices != baked.Vertices)
+			reason = FString::Printf(TEXT("'%s' LOD %d has changed since it was baked (%d baked triangles, %d now)"), *mesh->GetPathName(), baked.LOD, baked.Vertices.Num() / 3, vertices.Num() / 3);
+	}
+
+	// World Partition only checks loaded actors, so an unused entry may just be in an unloaded cell
+	if (reason.IsEmpty() && !world->IsPartitionedWorld())
+	{
+		const FVABakedMesh* unused = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return !used.Contains({ baked.Mesh.ToSoftObjectPath(), baked.LOD }); });
+
+		if (unused)
+			reason = FString::Printf(TEXT("'%s' LOD %d is baked but no mesh component adds its render triangles any more"), *unused->Mesh.ToString(), unused->LOD);
+	}
+
+	if (OutReason)
+		*OutReason = reason;
+
+	return !reason.IsEmpty();
+}
+
+void AVAWorld::PreSave(FObjectPreSaveContext ObjectSaveContext)
+{
+	Super::PreSave(ObjectSaveContext);
+
+	// Covers saving the level and cooking it
+	FString reason;
+
+	if (IsBakedGeometryStale(&reason))
+		VA_WARN_NAMED(TEXT("The baked geometry is out of date: %s. Run 'Bake Geometry For Shipping' on the VAWorld and save the level again."), *reason);
+}
+#endif
+
+void AVAWorld::AddMaterialPrimitives(UVAMaterialComponent* source)
+{
+	AActor* owner = source->GetOwner();
+
+	if (!owner)
+		return;
+
+	// Safe to call again, e.g. if the component is re-registered
+	RemoveMaterialPrimitives(source);
+	MaterialSources.Add(source);
+	AddActorTree(owner, source);
+}
+
+void AVAWorld::RemoveMaterialPrimitives(UVAMaterialComponent* source)
+{
+	MaterialSources.Remove(source);
+	LevelInstanceSources.RemoveAll([source](const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry) { return entry.Value.Get() == source; });
+	RemoveBindings([source](const FVAPrimitiveBinding& binding) { return binding.Source.Get() == source; });
+}
+
+void AVAWorld::RebuildPrimitives()
+{
+	if (!World)
+		return;
+
+	RemoveBindings([](const FVAPrimitiveBinding&) { return true; });
+	LevelInstanceSources.Empty();
+
+	for (auto it = MaterialSources.CreateIterator(); it; ++it)
+	{
+		UVAMaterialComponent* source = it->Get();
+
+		if (source && source->GetOwner())
+			AddActorTree(source->GetOwner(), source);
+		else
+			it.RemoveCurrent();
+	}
+}
+
+void AVAWorld::SetCollisionObjectTypes(const TArray<TEnumAsByte<ECollisionChannel>>& objectTypes)
+{
+	CollisionObjectTypes = objectTypes;
+	RebuildPrimitives();
+}
+
+void AVAWorld::SetLandscapeLOD(int32 lod)
+{
+	LandscapeLOD = FMath::Clamp(lod, 0, 7);
+	RebuildPrimitives();
+}
+
+int32 AVAWorld::GetSharedMeshTriangleCount() const
+{
+	int32 triangles = 0;
+
+	for (const TPair<FVAMeshKey, FVASharedMesh>& shared : SharedMeshes)
+		triangles += shared.Value.TriangleCount;
+
+	return triangles;
+}
+
+void AVAWorld::SyncPrimitive(AActor* actor)
+{
+	if (!actor || !World)
+		return;
+
+	// The actor, plus the attached children it would add, i.e. those without their own VAMaterialComponent (they manage their own geometry)
+	TSet<AActor*> tree;
+	TArray<AActor*> pending = { actor };
+
+	while (pending.Num() > 0)
+	{
+		AActor* current = pending.Pop();
+		tree.Add(current);
+
+		TArray<AActor*> children;
+		current->GetAttachedActors(children, true, false);
+
+		for (AActor* child : children)
+			if (!child->FindComponentByClass<UVAMaterialComponent>())
+				pending.Add(child);
+
+		ForEachLevelInstanceRoot(current, [&pending](AActor* root) { pending.Add(root); });
+	}
+
+	RemoveBindings([&tree](const FVAPrimitiveBinding& binding)
+	{
+		USceneComponent* component = binding.Component.Get();
+		return component && tree.Contains(component->GetOwner());
+	});
+
+	UVAMaterialComponent* source = FindMaterialInChain(actor);
+
+	if (source && source->GetAudioWorld() == this)
+		AddActorTree(actor, source);
+}
+
+void AVAWorld::AddActorTree(AActor* actor, UVAMaterialComponent* source)
+{
+	AddActorPrimitives(actor, source);
+
+	TArray<AActor*> children;
+	actor->GetAttachedActors(children, true, false);
+
+	for (AActor* child : children)
+	{
+		// Adds its own geometry from its own BeginPlay
+		if (child->FindComponentByClass<UVAMaterialComponent>())
+			continue;
+
+		AddActorTree(child, source);
+	}
+
+	if (Cast<ILevelInstanceInterface>(actor))
+		AddLevelInstanceContents(actor, source);
+}
+
+void AVAWorld::AddLevelInstanceContents(AActor* instance, UVAMaterialComponent* source)
+{
+	TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>> entry(instance, source);
+	LevelInstanceSources.AddUnique(entry);
+
+	ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
+}
+
+void AVAWorld::OnLevelAddedToWorld(ULevel* level, UWorld* world)
+{
+	if (world != GetWorld() || !World)
+		return;
+
+	ULevelInstanceSubsystem* subsystem = world->GetSubsystem<ULevelInstanceSubsystem>();
+
+	if (!subsystem)
+		return;
+
+	LevelInstanceSources.RemoveAll([](const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry) { return !entry.Key.IsValid() || !entry.Value.IsValid(); });
+
+	// Copied, as adding the level's actors can reach nested level instances
+	for (const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry : TArray<TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>>(LevelInstanceSources))
+	{
+		AActor* instance = entry.Key.Get();
+		UVAMaterialComponent* source = entry.Value.Get();
+
+		if (instance && source && subsystem->GetLevelInstanceLevel(Cast<ILevelInstanceInterface>(instance)) == level)
+			ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
+	}
+}
+
+void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
+{
+	// Destroyed or streamed-out geometry stops affecting raytracing, including inherited child actors that end play before their parent
+	actor->OnEndPlay.AddUniqueDynamic(this, &AVAWorld::OnGeometryActorEndPlay);
+
+	for (UActorComponent* component : actor->GetComponents())
+	{
+		int32 materialId;
+		bool useFlatTransmission;
+
+		if (UShapeComponent* shape = Cast<UShapeComponent>(component))
+		{
+			if (source->PropagateMode == EVAPropagateMode::Visuals || !PassesCollisionFilter(shape))
+				continue;
+
+			if (!source->GetMaterialFor(shape, materialId, useFlatTransmission))
+			{
+				ActorsWithInvalidMaterials.AddUnique(actor->GetActorNameOrLabel());
+				continue;
+			}
+
+			AddShapePrimitive(shape, source, materialId);
+		}
+		else if (UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component))
+		{
+			if (!source->GetMaterialFor(meshComponent, materialId, useFlatTransmission))
+			{
+				ActorsWithInvalidMaterials.AddUnique(actor->GetActorNameOrLabel());
+				continue;
+			}
+
+			// Foliage, PCG and other instanced meshes add one copy of the mesh per instance
+			if (UInstancedStaticMeshComponent* instanced = Cast<UInstancedStaticMeshComponent>(meshComponent))
+			{
+				for (int32 i = 0; i < instanced->GetInstanceCount(); i++)
+				{
+					FTransform instanceTransform;
+
+					if (instanced->GetInstanceTransform(i, instanceTransform, false))
+						AddStaticMeshPrimitives(instanced, source, instanceTransform, materialId, useFlatTransmission);
+				}
+			}
+			else
+			{
+				AddStaticMeshPrimitives(meshComponent, source, FTransform::Identity, materialId, useFlatTransmission);
+			}
+		}
+		else if (ULandscapeHeightfieldCollisionComponent* landscapeComponent = Cast<ULandscapeHeightfieldCollisionComponent>(component))
+		{
+			if (!source->GetMaterialFor(landscapeComponent, materialId, useFlatTransmission))
+			{
+				ActorsWithInvalidMaterials.AddUnique(actor->GetActorNameOrLabel());
+				continue;
+			}
+
+			AddLandscapePrimitive(landscapeComponent, source, materialId);
+		}
+	}
+}
+
+bool AVAWorld::PassesCollisionFilter(const UPrimitiveComponent* component) const
+{
+	return CollisionObjectTypes.IsEmpty() || CollisionObjectTypes.Contains(component->GetCollisionObjectType());
+}
+
+void AVAWorld::AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId)
+{
+	VAMaterialType materialType = (VAMaterialType)materialId;
+
+	FVAPrimitiveBinding binding;
+	binding.Component = shape;
+	binding.Source = source;
+
+	// Sizes and transforms are set by RefreshPrimitiveTransform in AddBinding
+	if (Cast<USphereComponent>(shape))
+	{
+		VASpherePrimitive* sphere = vaSpherePrimitiveCreate();
+		vaSpherePrimitiveSetMaterial(sphere, materialType);
+		binding.Primitive = sphere;
+		binding.Kind = EVAPrimitiveKind::Sphere;
+		AddBinding(binding, TEXT("sphere"));
+	}
+	else if (Cast<UCapsuleComponent>(shape))
+	{
+		VACapsulePrimitive* capsule = vaCapsulePrimitiveCreate();
+		vaCapsulePrimitiveSetMaterial(capsule, materialType);
+		binding.Primitive = capsule;
+		binding.Kind = EVAPrimitiveKind::Capsule;
+		AddBinding(binding, TEXT("capsule"));
+	}
+	else if (Cast<UBoxComponent>(shape))
+	{
+		VAPrismPrimitive* prism = vaPrismPrimitiveCreate();
+		vaPrismPrimitiveSetMaterial(prism, materialType);
+		binding.Primitive = prism;
+		binding.Kind = EVAPrimitiveKind::Prism;
+		AddBinding(binding, TEXT("box"));
+	}
+}
+
+void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
+{
+	UStaticMesh* staticMesh = meshComponent->GetStaticMesh();
+
+	// Ignore components with no meshes
+	if (!staticMesh)
+		return;
+
+	VAMaterialType materialType = (VAMaterialType)materialId;
+	UBodySetup* bodySetup = staticMesh->GetBodySetup();
+	bool addedSimple = false;
+
+	auto makeBinding = [&](void* primitive, EVAPrimitiveKind kind, const FTransform& elementTransform, const FVector& extent)
+	{
+		FVAPrimitiveBinding binding;
+		binding.Component = meshComponent;
+		binding.Source = source;
+		binding.Primitive = primitive;
+		binding.Kind = kind;
+		binding.MeshTransform = meshTransform;
+		binding.ElementTransform = elementTransform;
+		binding.LocalExtent = extent;
+		return binding;
+	};
+
+	// If this mesh is composed of simple collision elements, add them all. A mesh whose collision is filtered out is skipped rather than falling back to its triangles, since it's a collider
+	if (source->PropagateMode != EVAPropagateMode::Visuals && HasSimpleCollision(staticMesh))
+	{
+		if (!PassesCollisionFilter(meshComponent))
+			return;
+
+		const FKAggregateGeom& agg = bodySetup->AggGeom;
+
+		for (const FKSphereElem& sphereElem : agg.SphereElems)
+		{
+			VASpherePrimitive* sphere = vaSpherePrimitiveCreate();
+			vaSpherePrimitiveSetMaterial(sphere, materialType);
+			addedSimple |= AddBinding(makeBinding(sphere, EVAPrimitiveKind::SphereFromMesh, FTransform(sphereElem.GetTransform().GetTranslation()), FVector(sphereElem.Radius, 0.0, 0.0)), TEXT("sphere"));
+		}
+
+		for (const FKBoxElem& boxElem : agg.BoxElems)
+		{
+			VAPrismPrimitive* prism = vaPrismPrimitiveCreate();
+			vaPrismPrimitiveSetMaterial(prism, materialType);
+			addedSimple |= AddBinding(makeBinding(prism, EVAPrimitiveKind::PrismFromMesh, FTransform(boxElem.GetTransform().GetRotation(), boxElem.GetTransform().GetTranslation()), FVector(boxElem.X, boxElem.Y, boxElem.Z)), TEXT("box"));
+		}
+
+		for (const FKSphylElem& capsuleElem : agg.SphylElems)
+		{
+			VACapsulePrimitive* capsule = vaCapsulePrimitiveCreate();
+			vaCapsulePrimitiveSetMaterial(capsule, materialType);
+			addedSimple |= AddBinding(makeBinding(capsule, EVAPrimitiveKind::CapsuleFromMesh, FTransform(capsuleElem.GetTransform().GetRotation(), capsuleElem.GetTransform().GetTranslation()), FVector(capsuleElem.Radius, 0.0, capsuleElem.Length)), TEXT("capsule"));
+		}
+
+		// Convex hulls are closed, so they become watertight mesh primitives with the element transform baked into mesh space
+		for (int32 convexIndex = 0; convexIndex < agg.ConvexElems.Num(); convexIndex++)
+		{
+			auto readHull = [&](TArray<FVector>& vertices)
+			{
+				FKConvexElem convexElem = agg.ConvexElems[convexIndex];
+
+				if (convexElem.IndexData.IsEmpty())
+					convexElem.ComputeChaosConvexIndices();
+
+				if (convexElem.IndexData.IsEmpty())
+					return false;
+
+				FTransform elementTransform = convexElem.GetTransform();
+				vertices.Reserve(convexElem.IndexData.Num());
+
+				// The SDK's triangle test is one-sided. Render triangles already have the winding it expects, but Chaos' hull indices are wound the other way, so each triangle's last two vertices are swapped. Otherwise rays pass into the hull from outside
+				for (int32 i = 0; i + 2 < convexElem.IndexData.Num(); i += 3)
+				{
+					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]]));
+					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 2]]));
+					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 1]]));
+				}
+
+				return true;
+			};
+
+			addedSimple |= AddMeshPrimitive(FVAMeshKey{ staticMesh, 0, convexIndex }, readHull, meshComponent, source, meshTransform, materialId, false);
+		}
+	}
+
+	if (addedSimple || source->PropagateMode == EVAPropagateMode::Colliders)
+		return;
+
+	// The live render data, or the baked copy if a cooked build has dropped it
+	auto readTriangles = [&](TArray<FVector>& vertices)
+	{
+		// Render vertices are float, both baked and live
+		TArray<FVector3f> liveVertices;
+		const TArray<FVector3f>* renderVertices = nullptr;
+
+		if (GetRenderVertices(staticMesh, source->MeshLOD, liveVertices))
+			renderVertices = &liveVertices;
+		else if (const FVABakedMesh* bakedMesh = FindBakedMesh(staticMesh, source->MeshLOD))
+			renderVertices = &bakedMesh->Vertices;
+
+		if (!renderVertices)
+		{
+			VA_WARN_NAMED(TEXT("Mesh '%s' will not affect raytracing as it has no baked geometry and no render mesh data. Run 'Bake Geometry For Shipping' on the VAWorld and save the level."), *staticMesh->GetName());
+			return false;
+		}
+
+		vertices.Reserve(renderVertices->Num());
+
+		for (const FVector3f& vertex : *renderVertices)
+			vertices.Add(FVector(vertex));
+
+		return true;
+	};
+
+	AddMeshPrimitive(FVAMeshKey{ staticMesh, source->MeshLOD, INDEX_NONE }, readTriangles, meshComponent, source, meshTransform, materialId, useFlatTransmission);
+}
+
+void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId)
+{
+	// A landscape is both a collider and a visual, so only the collision filter can leave it out
+	if (source->PropagateMode != EVAPropagateMode::Visuals && !PassesCollisionFilter(landscapeComponent))
+		return;
+
+	FString landscapeName = landscapeComponent->GetOwner()->GetActorNameOrLabel();
+	const Chaos::FHeightField* heightField = IsValidRef(landscapeComponent->HeightfieldRef) ? landscapeComponent->HeightfieldRef->HeightfieldGeometry.GetReference() : nullptr;
+
+	if (!heightField || heightField->GetNumCols() < 2 || heightField->GetNumRows() < 2)
+	{
+		VA_WARN_NAMED(TEXT("Landscape '%s' will not affect raytracing as its component '%s' has no collision. Enable collision on the landscape."), *landscapeName, *landscapeComponent->GetName());
+		return;
+	}
+
+	// The heightmap's scale can't mirror it
+	FVector scale = landscapeComponent->GetComponentTransform().GetScale3D();
+
+	if (scale.X <= 0.0 || scale.Y <= 0.0 || scale.Z <= 0.0)
+	{
+		VA_WARN_NAMED(TEXT("Landscape '%s' will not affect raytracing as its scale %s has a negative or zero axis."), *landscapeName, *scale.ToString());
+		return;
+	}
+
+	int32 quadsX = heightField->GetNumCols() - 1;
+	int32 quadsY = heightField->GetNumRows() - 1;
+
+	// The collision heightfield exists in cooked builds, unlike the heightmap. It's in component space, and the component's scale goes in the heightmap's scale, as its transform can't hold scale
+	double quadSize = landscapeComponent->CollisionScale * landscapeComponent->CollisionSizeQuads / quadsX;
+
+	// A component's quad count is 2^k - 1, so a power-of-two stride never divides it evenly. LandscapeLOD instead splits each side into equal cells, rounded up
+	const int32 stride = 1 << FMath::Clamp(LandscapeLOD, 0, 7);
+	int32 cellsX = FMath::DivideAndRoundUp(quadsX, stride);
+	int32 cellsY = FMath::DivideAndRoundUp(quadsY, stride);
+	double cellQuadsX = (double)quadsX / cellsX;
+	double cellQuadsY = (double)quadsY / cellsY;
+
+	auto heightAt = [&](int32 x, int32 y) { return heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE; };
+
+	// The height of the collision's surface at a point in quads. Exact at LOD 0, and along a component's edges only the edge's own points are used, so neighbouring components still meet
+	auto surfaceAt = [&](double x, double y)
+	{
+		int32 x0 = FMath::Min(FMath::FloorToInt32(x), quadsX - 1);
+		int32 y0 = FMath::Min(FMath::FloorToInt32(y), quadsY - 1);
+		double fx = x - x0;
+		double fy = y - y0;
+
+		double h00 = heightAt(x0, y0);
+		double h10 = heightAt(x0 + 1, y0);
+		double h01 = heightAt(x0, y0 + 1);
+		double h11 = heightAt(x0 + 1, y0 + 1);
+
+		// Split along (x0, y0) to (x0 + 1, y0 + 1), like the heightmap's own triangles
+		return fx >= fy
+			? h00 + fx * (h10 - h00) + fy * (h11 - h10)
+			: h00 + fy * (h01 - h00) + fx * (h11 - h01);
+	};
+
+	// Painted with the visibility layer. A coarse cell stays open if any quad under it is, so a small opening isn't closed over
+	auto isHole = [&](int32 cellX, int32 cellY)
+	{
+		int32 x1 = FMath::Min(FMath::CeilToInt32((cellX + 1) * cellQuadsX), quadsX);
+		int32 y1 = FMath::Min(FMath::CeilToInt32((cellY + 1) * cellQuadsY), quadsY);
+
+		for (int32 y = FMath::FloorToInt32(cellY * cellQuadsY); y < y1; y++)
+			for (int32 x = FMath::FloorToInt32(cellX * cellQuadsX); x < x1; x++)
+				if (heightField->IsHole(x, y))
+					return true;
+
+		return false;
+	};
+
+	// Unreal's X runs along the heightmap's rows (its local Z) and Unreal's Y along each row (its local X), to match vaHeightmapPrimitiveSetTransformUnreal's axes
+	int32 rowLength = cellsY + 1;
+	int32 rowCount = cellsX + 1;
+	TArray<VAFloat> heights;
+	TArray<bool> holes;
+	heights.SetNumUninitialized(rowLength * rowCount);
+	holes.SetNumUninitialized(cellsX * cellsY);
+	bool anyHoles = false;
+
+	for (int32 x = 0; x < rowCount; x++)
+		for (int32 y = 0; y < rowLength; y++)
+			heights[x * rowLength + y] = (VAFloat)surfaceAt(x * cellQuadsX, y * cellQuadsY);
+
+	for (int32 x = 0; x < cellsX; x++)
+	{
+		for (int32 y = 0; y < cellsY; y++)
+		{
+			holes[x * cellsY + y] = isHole(x, y);
+			anyHoles |= holes[x * cellsY + y];
+		}
+	}
+
+	VAHeightmapPrimitive* heightmap;
+	VAResult result = vaHeightmapPrimitiveCreateWithHoles(heights.GetData(), anyHoles ? holes.GetData() : nullptr, rowLength, rowCount, &heightmap);
+
+	if (result != VA_SUCCESS)
+	{
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a heightmap primitive for '%s' on '%s'."), *landscapeComponent->GetName(), *landscapeName);
+		return;
+	}
+
+	vaHeightmapPrimitiveSetMaterial(heightmap, (VAMaterialType)materialId);
+
+	// An open surface that always uses flat transmission, which is two-sided and muffles once per crossing. Scale and transform are set by RefreshPrimitiveTransform in AddBinding
+	FVAPrimitiveBinding binding;
+	binding.Component = landscapeComponent;
+	binding.Source = source;
+	binding.Primitive = heightmap;
+	binding.Kind = EVAPrimitiveKind::Heightmap;
+	binding.LocalExtent = FVector(quadSize * cellQuadsX, quadSize * cellQuadsY, 1.0);
+	AddBinding(binding, TEXT("heightmap"));
+}
+
+int32 AVAWorld::GetHeightmapTriangleCount() const
+{
+	int32 triangles = 0;
+
+	for (const FVAPrimitiveBinding& binding : PrimitiveBindings)
+	{
+		if (binding.Kind != EVAPrimitiveKind::Heightmap)
+			continue;
+
+		const VAHeightmapPrimitive* heightmap = static_cast<const VAHeightmapPrimitive*>(binding.Primitive);
+		triangles += (vaHeightmapPrimitiveGetSizeX(heightmap) - 1) * (vaHeightmapPrimitiveGetSizeY(heightmap) - 1) * 2;
+	}
+
+	return triangles;
+}
+
+VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, const UPrimitiveComponent* meshComponent)
+{
+	if (FVASharedMesh* shared = SharedMeshes.Find(key))
+	{
+		shared->ReferenceCount++;
+		return shared->Mesh;
+	}
+
+	TArray<FVector> vertices;
+
+	if (!readVertices(vertices))
+		return nullptr;
+
+	TArray<VAVector> vaVertices;
+	vaVertices.Reserve(vertices.Num());
+
+	VAVector minBounds = VECTOR_MAX;
+	VAVector maxBounds = VECTOR_MIN;
+
+	for (const FVector& localPosition : vertices)
+	{
+		VAVector vaPosition = vaVectorCreate(localPosition.X, localPosition.Y, localPosition.Z);
+		vaVertices.Add(vaPosition);
+
+		minBounds = vaVectorMin(minBounds, vaPosition);
+		maxBounds = vaVectorMax(maxBounds, vaPosition);
+	}
+
+	VAMesh* mesh;
+	VAResult result = vaMeshCreate(vaVertices.GetData(), vaVertices.Num(), minBounds, maxBounds, &mesh);
+
+	if (result != VA_SUCCESS)
+	{
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a mesh for '%s' on '%s'."), *meshComponent->GetName(), *meshComponent->GetOwner()->GetActorNameOrLabel());
+		return nullptr;
+	}
+
+	SharedMeshes.Add(key, FVASharedMesh{ mesh, 1, vaVertices.Num() / 3 });
+	return mesh;
+}
+
+void AVAWorld::ReleaseSharedMesh(const FVAMeshKey& key)
+{
+	FVASharedMesh* shared = SharedMeshes.Find(key);
+
+	if (!shared || --shared->ReferenceCount > 0)
+		return;
+
+	// The SDK frees it once its raytracing threads have finished with it
+	VAResult result = vaMeshDestroy(shared->Mesh);
+
+	if (result != VA_SUCCESS)
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to destroy a mesh."));
+
+	SharedMeshes.Remove(key);
+}
+
+bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
+{
+	VAMesh* sharedMesh = AcquireSharedMesh(key, readVertices, meshComponent);
+
+	if (!sharedMesh)
+		return false;
+
+	// The vertices are in mesh space, so component scale and an instance's transform only go into the primitive's transform
+	VAMatrix vaTransform = MakeScaleRotTransMatrix(meshTransform * meshComponent->GetComponentTransform());
+	VAMeshPrimitive* mesh;
+
+	VAResult result = vaMeshPrimitiveCreateFromMesh((VAMaterialType)materialId, sharedMesh, &vaTransform, &mesh);
+
+	if (result != VA_SUCCESS)
+	{
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a mesh primitive for '%s' on '%s'."), *meshComponent->GetName(), *meshComponent->GetOwner()->GetActorNameOrLabel());
+		ReleaseSharedMesh(key);
+		return false;
+	}
+
+	vaMeshPrimitiveSetUseFlatTransmission(mesh, useFlatTransmission);
+
+	FVAPrimitiveBinding binding;
+	binding.Component = meshComponent;
+	binding.Source = source;
+	binding.Primitive = mesh;
+	binding.Kind = EVAPrimitiveKind::Mesh;
+	binding.MeshKey = key;
+	binding.MeshTransform = meshTransform;
+	return AddBinding(binding, TEXT("mesh"));
+}
