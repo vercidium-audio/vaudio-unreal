@@ -8,6 +8,7 @@ AVARaytracedSource::AVARaytracedSource()
 {
 	// Default value
 	bAffectsGroupedEAX = true;
+	bClampPosition = false;
 }
 
 void AVARaytracedSource::DeinitializeTypeSpecific()
