@@ -6,7 +6,7 @@ extern "C" {
 
 AVARaytracedSource::AVARaytracedSource()
 {
-	// Godot's VARaytracedSource default
+	// Default value
 	bAffectsGroupedEAX = true;
 }
 

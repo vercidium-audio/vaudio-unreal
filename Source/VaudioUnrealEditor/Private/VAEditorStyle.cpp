@@ -10,17 +10,17 @@
 #include "VASourceRelative.h"
 #include "VAWorld.h"
 
-static TSharedPtr<FSlateStyleSet> Style;
+static TSharedPtr<FSlateStyleSet> StyleSet;
 
 void VAEditorStyle::Register()
 {
 	TSharedPtr<IPlugin> plugin = IPluginManager::Get().FindPlugin(TEXT("vaudio-unreal"));
 
-	if (Style.IsValid() || !plugin)
+	if (StyleSet.IsValid() || !plugin)
 		return;
 
-	Style = MakeShared<FSlateStyleSet>(TEXT("VaudioUnrealStyle"));
-	Style->SetContentRoot(FPaths::Combine(plugin->GetBaseDir(), TEXT("Resources")));
+	StyleSet = MakeShared<FSlateStyleSet>(TEXT("VaudioUnrealStyle"));
+	StyleSet->SetContentRoot(FPaths::Combine(plugin->GetBaseDir(), TEXT("Resources")));
 
 	const UClass* classes[] = {
 		AVAWorld::StaticClass(),
@@ -32,18 +32,18 @@ void VAEditorStyle::Register()
 
 	for (const UClass* type : classes)
 	{
-		Style->Set(*(TEXT("ClassIcon.") + type->GetName()), new FSlateVectorImageBrush(Style->RootToContentDir(TEXT("Icons/VALogo"), TEXT(".svg")), FVector2D(16.0, 16.0)));
-		Style->Set(*(TEXT("ClassThumbnail.") + type->GetName()), new FSlateVectorImageBrush(Style->RootToContentDir(TEXT("Icons/VALogo"), TEXT(".svg")), FVector2D(64.0, 64.0)));
+		StyleSet->Set(*(TEXT("ClassIcon.") + type->GetName()), new FSlateVectorImageBrush(StyleSet->RootToContentDir(TEXT("Icons/VALogo"), TEXT(".svg")), FVector2D(16.0, 16.0)));
+		StyleSet->Set(*(TEXT("ClassThumbnail.") + type->GetName()), new FSlateVectorImageBrush(StyleSet->RootToContentDir(TEXT("Icons/VALogo"), TEXT(".svg")), FVector2D(64.0, 64.0)));
 	}
 
-	FSlateStyleRegistry::RegisterSlateStyle(*Style);
+	FSlateStyleRegistry::RegisterSlateStyle(*StyleSet);
 }
 
 void VAEditorStyle::Unregister()
 {
-	if (!Style.IsValid())
+	if (!StyleSet.IsValid())
 		return;
 
-	FSlateStyleRegistry::UnRegisterSlateStyle(*Style);
-	Style.Reset();
+	FSlateStyleRegistry::UnRegisterSlateStyle(*StyleSet);
+	StyleSet.Reset();
 }

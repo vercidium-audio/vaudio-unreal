@@ -16,7 +16,7 @@ extern "C" {
 
 AVAListener::AVAListener()
 {
-	// Godot's VAListener defaults. Both are hidden in the Details panel
+	// Listener defaults. Both are hidden in the Details panel
 	bHasRelativeReverb = true;
 	bAffectsGroupedEAX = false;
 }
