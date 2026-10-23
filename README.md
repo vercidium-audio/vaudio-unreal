@@ -54,9 +54,11 @@ YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Linux/libvaudiona
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Mac/libvaudionative.dylib
 ```
 
-Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. The plugin only works with the double precision SDK: Unreal positions are doubles, and it keeps them that way, so raytracing stays accurate any distance from the origin. The single precision SDK (`3d/native`) fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`.
+Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. The plugin only works with the double precision SDK: Unreal positions are doubles, and it keeps them that way, so raytracing stays accurate any distance from the origin. The single precision SDK (`3d/native`) fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`, or `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`.
 
-When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platform>` and loads them from there. If the SDK is missing, the build fails with a message saying where to put it.
+The Mac SDK is Apple Silicon (arm64) only, so Mac builds must target Apple Silicon rather than Universal. Unreal builds for the host Mac by default, but distribution builds use the project's supported architectures, so set **Project Settings → Platforms → Mac → Supported Architecture(s) for non-Editor builds** to **Apple Silicon**. Building for x64 fails with a message saying so.
+
+When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platform>` and loads them from there. If the SDK is missing, the build fails with a message saying where to put it. A Blueprint-only project never builds, so the prebuilt plugin from the release zip loads the SDK straight from `Source/ThirdParty/vaudio/lib/<platform>` instead. Packaging a game always builds, so it stages the SDK as usual.
 
 ### 3. Enable the plugin
 

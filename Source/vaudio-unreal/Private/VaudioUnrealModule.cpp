@@ -38,9 +38,15 @@ void FVaudioUnrealModule::LoadSdk()
 	FString libraryPath = FPaths::ConvertRelativePathToFull(FPaths::Combine(plugin->GetBaseDir(), TEXT("Binaries"), TEXT("ThirdParty"), TEXT("vaudio"), VA_LIBRARY_PLATFORM, VA_LIBRARY_NAME));
 
 #if PLATFORM_WINDOWS
+	// Only a build stages the library into Binaries, so a Blueprint-only project using the prebuilt plugin loads it from where the user copied it
 	if (!FPaths::FileExists(libraryPath))
 	{
-		VA_ERROR(TEXT("The Vercidium Audio SDK library is missing from '%s'. Rebuild the project so it's staged from the plugin's Source/ThirdParty/vaudio folder."), *libraryPath);
+		libraryPath = FPaths::ConvertRelativePathToFull(FPaths::Combine(plugin->GetBaseDir(), TEXT("Source"), TEXT("ThirdParty"), TEXT("vaudio"), TEXT("lib"), VA_LIBRARY_PLATFORM, VA_LIBRARY_NAME));
+	}
+
+	if (!FPaths::FileExists(libraryPath))
+	{
+		VA_ERROR(TEXT("The Vercidium Audio SDK library is missing from '%s'. Copy the SDK into the plugin's Source/ThirdParty/vaudio folder (see the README)."), *libraryPath);
 		return;
 	}
 

@@ -36,6 +36,12 @@ public class VaudioUnreal : ModuleRules
 		{
 			platform = "Mac";
 			library = "libvaudionative.dylib";
+
+			// Distribution builds default to Universal, which can't link the arm64-only SDK
+			if (Target.Architectures.Contains(UnrealArch.X64))
+			{
+				throw new BuildException("The Vercidium Audio SDK is Apple Silicon (arm64) only, but " + Target.Name + " is being built for x64. Set Project Settings > Platforms > Mac > Supported Architecture(s) for non-Editor builds (and for Editor builds) to Apple Silicon, or add TargetArchitecture=MacTargetArchitectureAppleSilicon under [/Script/MacTargetPlatform.MacTargetSettings] in Config/DefaultEngine.ini");
+			}
 		}
 		else
 		{
@@ -65,6 +71,12 @@ public class VaudioUnreal : ModuleRules
 
 			// The module links the library by name, so the loader must find it before StartupModule runs. UBT turns this into an $ORIGIN-relative rpath
 			PublicRuntimeLibraryPaths.Add(Path.Combine(PluginDirectory, "Binaries", "ThirdParty", "vaudio", platform));
+
+			// On Linux, UBT makes that rpath relative through the building machine's engine folder, which a packaged game doesn't have, so put the library beside the executable instead ($ORIGIN is always in its rpath)
+			if (Target.Platform == UnrealTargetPlatform.Linux && Target.LinkType == TargetLinkType.Monolithic)
+			{
+				binariesPath = "$(TargetOutputDir)";
+			}
 		}
 
 		RuntimeDependencies.Add(Path.Combine(binariesPath, library), libraryPath);
