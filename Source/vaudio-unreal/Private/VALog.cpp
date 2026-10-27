@@ -40,6 +40,7 @@ const TCHAR* VAResultToString(VAResult result)
 		case VA_WRONG_DIMENSION:           return TEXT("VA_WRONG_DIMENSION");
 		case VA_MISSING_MATERIAL_CALLBACK: return TEXT("VA_MISSING_MATERIAL_CALLBACK");
 		case VA_WRONG_THREAD:              return TEXT("VA_WRONG_THREAD");
+		case VA_DENIED_PENDING_REMOVAL:    return TEXT("VA_DENIED_PENDING_REMOVAL");
 		default:                           return TEXT("UNKNOWN");
 	}
 }
