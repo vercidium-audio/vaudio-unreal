@@ -309,9 +309,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering")
 	bool bClusteringEnabled = false;
 
-	// The maximum distance (in world units) between this emitter and the centre of a cluster, for it to share that cluster's rays. If two emitters have different distances, the smaller one is used. The default is 10 m at the default MetersPerUnit
+	// The maximum distance (in world units) between this emitter and the centre of a cluster, for it to share that cluster's rays. If two emitters have different distances, the smaller one is used. The default is 500 (5 m)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering", meta = (ClampMin = "0.01", EditCondition = "bClusteringEnabled"))
-	float ClusteringDistance = 1000.0f;
+	float ClusteringDistance = 500.0f;
 
 	// --- Advanced ---
 

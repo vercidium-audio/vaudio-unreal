@@ -91,9 +91,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering")
 	bool bTargetClusteringEnabled = false;
 
-	// The maximum distance (in world units) between two emitters for them to be in the same target cluster. The default is 10 m at the default MetersPerUnit
+	// The maximum distance (in world units) between two emitters for them to be in the same target cluster. The default is 500 (5 m)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering", meta = (ClampMin = "0.01", EditCondition = "bTargetClusteringEnabled"))
-	float TargetClusteringDistance = 1000.0f;
+	float TargetClusteringDistance = 500.0f;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
