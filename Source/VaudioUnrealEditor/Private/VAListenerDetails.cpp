@@ -9,9 +9,11 @@ TSharedRef<IDetailCustomization> FVAListenerDetails::MakeInstance()
 
 void FVAListenerDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 {
-	// Grouped EAX and occlusion/permeation energy caps only apply to emitters the listener raytraces, and bRaytraceOnce removes an emitter once the listener has raytraced it
+	// Grouped EAX and occlusion/permeation energy caps only apply to emitters the listener raytraces, bRaytraceOnce removes an emitter once the listener has raytraced it, and the listener never shares a cluster with its own targets
 	const FName hidden[] =
 	{
+		GET_MEMBER_NAME_CHECKED(AVAEmitter, bClusteringEnabled),
+		GET_MEMBER_NAME_CHECKED(AVAEmitter, ClusteringDistance),
 		GET_MEMBER_NAME_CHECKED(AVAEmitter, bHasRelativeReverb),
 		GET_MEMBER_NAME_CHECKED(AVAEmitter, bAffectsGroupedEAX),
 		GET_MEMBER_NAME_CHECKED(AVAEmitter, bKeepReverbTailAlive),

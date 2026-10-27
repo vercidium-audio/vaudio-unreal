@@ -503,6 +503,9 @@ void AVAEmitter::UpdateVAEmitter()
 	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
 	vaEmitterSetMinimumAmbientPermeationEnergy(Emitter, MinimumAmbientPermeationEnergy);
 
+	vaEmitterSetClusteringEnabled(Emitter, bClusteringEnabled);
+	vaEmitterSetClusteringDistance(Emitter, FMath::Max(0.01f, ClusteringDistance));
+
 	vaEmitterSetType(Emitter, Type);
 	vaEmitterSetTrailRefreshCount(Emitter, TrailRefreshCount);
 	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);

@@ -85,6 +85,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.01"))
 	float MinimumPermeationEnergy = 0.01f;
 
+	// --- Clustering ---
+
+	// Whether this listener groups nearby emitters into clusters, and casts occlusion and permeation rays towards each cluster's emitters in round robin. Emitters in a cluster get the same muffling
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering")
+	bool bTargetClusteringEnabled = false;
+
+	// The maximum distance (in world units) between two emitters for them to be in the same target cluster. The default is 10 m at the default MetersPerUnit
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering", meta = (ClampMin = "0.01", EditCondition = "bTargetClusteringEnabled"))
+	float TargetClusteringDistance = 1000.0f;
+
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif

@@ -204,6 +204,8 @@ void AVAListener::UpdateVAEmitter()
 	vaEmitterSetMinimumPermeationEnergy(Emitter, MinimumPermeationEnergy);
 	vaEmitterSetRelativeReverbInnerThreshold(Emitter, RelativeReverbInnerThreshold);
 	vaEmitterSetRelativeReverbOuterThreshold(Emitter, RelativeReverbOuterThreshold);
+	vaEmitterSetTargetClusteringEnabled(Emitter, bTargetClusteringEnabled);
+	vaEmitterSetTargetClusteringDistance(Emitter, FMath::Max(0.01f, TargetClusteringDistance));
 }
 
 void AVAListener::ApplyListenerReverb()

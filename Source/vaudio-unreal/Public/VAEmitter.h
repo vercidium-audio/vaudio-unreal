@@ -303,6 +303,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Ambience", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.001"))
 	float MinimumAmbientPermeationEnergy = 0.01f;
 
+	// --- Clustering ---
+
+	// Whether this emitter can share its rays with other nearby emitters that also have clustering enabled. Emitters in a cluster share the same reverb, EAX and ambience results
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering")
+	bool bClusteringEnabled = false;
+
+	// The maximum distance (in world units) between this emitter and the centre of a cluster, for it to share that cluster's rays. If two emitters have different distances, the smaller one is used. The default is 10 m at the default MetersPerUnit
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering", meta = (ClampMin = "0.01", EditCondition = "bClusteringEnabled"))
+	float ClusteringDistance = 1000.0f;
+
 	// --- Advanced ---
 
 	// User-defined integer tag for categorising emitters
