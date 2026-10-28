@@ -132,10 +132,25 @@ void AVAWorld::FollowBounds()
 		PlaceBounds();
 }
 
+void AVAWorld::WarnIfBoundsTooSmall()
+{
+	if (BoundsFollow != EVABoundsFollow::Listener || BoundsUpdateDistance <= 0.0)
+		return;
+
+	// The listener can move just under BoundsUpdateDistance along one axis before the bounds recentre, so each half of the box must be wider than that
+	double smallest = BoundsSize.GetMin();
+
+	if (smallest <= BoundsUpdateDistance * 2.0)
+	{
+		VA_WARN_NAMED(TEXT("BoundsSize's smallest side (%.0f) is not more than twice BoundsUpdateDistance (%.0f), so the listener can walk out of the bounds before they follow it. Make BoundsSize well over %.0f on every axis, or lower BoundsUpdateDistance."), smallest, BoundsUpdateDistance, BoundsUpdateDistance * 2.0);
+	}
+}
+
 void AVAWorld::SetBoundsSize(const FVector& size)
 {
 	BoundsSize = size;
 	RefreshWorldBounds();
+	WarnIfBoundsTooSmall();
 
 	if (!World)
 		return;
@@ -150,6 +165,7 @@ void AVAWorld::SetBoundsSize(const FVector& size)
 void AVAWorld::SetBoundsFollow(EVABoundsFollow follow)
 {
 	BoundsFollow = follow;
+	WarnIfBoundsTooSmall();
 
 	if (World)
 		PlaceBounds();
@@ -167,6 +183,7 @@ void AVAWorld::UpdateVAWorld()
 	// World bounds
 	vaWorldSetSizeUnreal(World, BoundsSize);
 	PlaceBounds();
+	WarnIfBoundsTooSmall();
 
 	// World config
 	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
@@ -216,13 +233,18 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 	// Unlike the vaWorldSet* calls below, the box should reflect BoundsSize even before BeginPlay (or after EndPlay), since World is null until then
 	RefreshWorldBounds();
 
-	// Ignore edits before pressing Play
+	FName memberName = PropertyChangedEvent.GetMemberPropertyName();
+
+	// Ignore edits before pressing Play, apart from warning about the bounds straight away
 	if (!World)
+	{
+		if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsSize) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsFollow) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsUpdateDistance))
+			WarnIfBoundsTooSmall();
+
 		return;
+	}
 
 	UpdateVAWorld();
-
-	FName memberName = PropertyChangedEvent.GetMemberPropertyName();
 
 	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, LandscapeLOD))
 		RebuildPrimitives();

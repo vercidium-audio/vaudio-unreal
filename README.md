@@ -174,7 +174,7 @@ void AMyCharacter::MulticastReceiveVoice_Implementation(const TArray<uint8>& Dat
 }
 ```
 
-The stream must use the input source's `Format` (`Mono16` here) and the rate the device actually captures at, which is why the rate is sent along with the data. Raw 16-bit PCM is about 88 KB/s at 44.1 kHz, so compress it (e.g. Opus) before sending in production. Data pushed before the source is first raytraced is dropped, so the first moments of speech after it spawns may be lost.
+The stream must use the input source's `Format` (`Mono16` here) and the rate the device actually captures at, which is why the rate is sent along with the data. Raw 16-bit PCM is about 96 KB/s at 48 kHz, so compress it (e.g. Opus) before sending in production. Data pushed before the source is first raytraced is dropped, so the first moments of speech after it spawns may be lost.
 
 ### Open worlds
 
@@ -192,7 +192,7 @@ Only the box at the `VAWorld`'s location (its minimum corner) with size `BoundsS
 - `None` (default): a fixed box. Good for levels that fit inside one box. It still follows the `VAWorld` actor if you move it.
 - `Listener`: the box is centred on the current `VAListener`. Use this with World Partition, and set `BoundsSize` to cover the area that's loaded around the player, e.g. twice the runtime grid's loading range. The plugin can't read the loading range itself. The actor's location only places the box in the editor, and until a listener begins play.
 
-Moving the bounds makes the SDK re-check every raytraced trail, so they move in steps instead of every frame: the box only follows once the listener (or the `VAWorld` actor) is `BoundsUpdateDistance` away, 100 m by default. `SetBoundsFollow` and `SetBoundsSize` change these during play.
+Moving the bounds makes the SDK re-check every raytraced trail, so they move in steps instead of every frame: the box only follows once the listener (or the `VAWorld` actor) is `BoundsUpdateDistance` away, 100 m by default. With `BoundsFollow = Listener`, keep `BoundsSize` well over twice `BoundsUpdateDistance` on every axis, or the listener walks out of the box before it recentres (the `VAWorld` warns when it isn't). `SetBoundsFollow` and `SetBoundsSize` change these during play.
 
 Sources that are loaded but outside the box aren't raytraced. `bEmittersOutsideTheWorldAreMuffled` on the `VAWorld` decides whether they're fully muffled (default) or not muffled at all.
 

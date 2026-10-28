@@ -92,7 +92,7 @@ bool AVAInputStreamSource::OpenCapture(const FString& InDeviceName, EVAStreamFor
 	TUniquePtr<Audio::FAudioCapture> capture = MakeUnique<Audio::FAudioCapture>();
 
 	Audio::FAudioCaptureDeviceParams params;
-	params.SampleRate = InSampleRate;
+	params.SampleRate = InSampleRate > 0 ? InSampleRate : Audio::InvalidDeviceSampleRate;
 	params.PCMAudioEncoding = Audio::EPCMAudioEncoding::FLOATING_POINT_32;
 
 	if (!InDeviceName.IsEmpty() && InDeviceName != DefaultDeviceLabel)
@@ -117,7 +117,17 @@ bool AVAInputStreamSource::OpenCapture(const FString& InDeviceName, EVAStreamFor
 		ReceiveCapturedAudio((const float*)InAudio, NumFrames, NumChannels);
 	};
 
-	if (!capture->OpenAudioCaptureStream(params, MoveTemp(onCapture), FMath::Max(1, InBufferSizeFrames)))
+	int32 bufferSizeFrames = FMath::Max(1, InBufferSizeFrames);
+	bool opened = capture->OpenAudioCaptureStream(params, onCapture, bufferSizeFrames);
+
+	// WASAPI in shared mode rejects any rate but the device's own
+	if (!opened && params.SampleRate != Audio::InvalidDeviceSampleRate)
+	{
+		params.SampleRate = Audio::InvalidDeviceSampleRate;
+		opened = capture->OpenAudioCaptureStream(params, MoveTemp(onCapture), bufferSizeFrames);
+	}
+
+	if (!opened)
 	{
 		VA_WARN_NAMED(TEXT("Failed to open capture device '%s'"), InDeviceName.IsEmpty() ? DefaultDeviceLabel : *InDeviceName);
 		return false;
@@ -128,7 +138,7 @@ bool AVAInputStreamSource::OpenCapture(const FString& InDeviceName, EVAStreamFor
 	ForwardedByteCount = 0;
 	BelowThresholdByteCount = 0;
 
-	if (CaptureSampleRate != InSampleRate)
+	if (InSampleRate > 0 && CaptureSampleRate != InSampleRate)
 		VA_LOG_NAMED(TEXT("Capture device doesn't support %d Hz, capturing at %d Hz instead"), InSampleRate, CaptureSampleRate);
 
 	return true;

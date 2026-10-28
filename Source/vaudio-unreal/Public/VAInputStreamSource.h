@@ -28,9 +28,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture")
 	EVAStreamFormat Format = EVAStreamFormat::Mono16;
 
-	// Requested capture sample rate. Some devices only capture at their own rate, in which case the stream uses that instead (see GetCaptureSampleRate)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture", meta = (ClampMin = "8000", UIMax = "96000"))
-	int32 SampleRate = 44100;
+	// Requested capture sample rate, 0 for the device's own rate. Most devices only capture at their own rate (WASAPI in shared mode, Mac), in which case the stream uses that instead (see GetCaptureSampleRate)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture", meta = (ClampMin = "0", UIMax = "96000"))
+	int32 SampleRate = 0;
 
 	// Capture device to open. Empty or "System Default" uses the system's default device
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture", meta = (GetOptions = "GetCaptureDeviceNames"))
@@ -51,9 +51,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio|Capture")
 	FVAOnAudioCaptured OnAudioCaptured;
 
-	// Opens a capture device, closing any open one first. Captured audio is pushed to this source's stream (if open) and broadcast via OnAudioCaptured. Returns false if the device couldn't be opened
+	// Opens a capture device, closing any open one first. Captured audio is pushed to this source's stream (if open) and broadcast via OnAudioCaptured. InSampleRate 0 uses the device's own rate, and a rate the device rejects falls back to it. Returns false if the device couldn't be opened
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Capture")
-	bool OpenCapture(const FString& InDeviceName, EVAStreamFormat InFormat = EVAStreamFormat::Mono16, int32 InSampleRate = 44100, int32 InBufferSizeFrames = 1024);
+	bool OpenCapture(const FString& InDeviceName, EVAStreamFormat InFormat = EVAStreamFormat::Mono16, int32 InSampleRate = 0, int32 InBufferSizeFrames = 1024);
 
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Capture")
 	void StartCapture();

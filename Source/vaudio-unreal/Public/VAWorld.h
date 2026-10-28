@@ -152,7 +152,7 @@ public:
 
 	// Size of the raytraced box. The actor's location is the box's minimum corner, like Godot's VAWorld, and its rotation and scale are ignored
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0001"))
-	FVector BoundsSize = FVector(6000.f, 6000.f, 6000.f);
+	FVector BoundsSize = FVector(30000.f, 30000.f, 30000.f);
 
 	// What the bounds follow during play. With Listener, set BoundsSize to cover the area that's loaded around the player, e.g. twice the World Partition loading range, and the actor's location only places the box in the editor and until a listener begins play
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
@@ -481,6 +481,9 @@ private:
 
 	// PlaceBounds once the target is BoundsUpdateDistance from the bounds
 	void FollowBounds();
+
+	// With BoundsFollow Listener, warns when the listener can walk out of the bounds before they recentre
+	void WarnIfBoundsTooSmall();
 
 	// Transient: populated in BeginPlay from NewObject() and must never be saved into the level —
 	// saving these as real exports corrupts the package (they don't round-trip through a reload).
