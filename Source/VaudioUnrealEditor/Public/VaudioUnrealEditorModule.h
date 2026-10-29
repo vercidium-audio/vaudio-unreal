@@ -6,6 +6,10 @@
 class FVaudioUnrealEditorModule : public IModuleInterface
 {
 public:
-	virtual void StartupModule() override {}
-	virtual void ShutdownModule() override {}
+	virtual void StartupModule() override;
+	virtual void ShutdownModule() override;
+
+private:
+	// GUnrealEd doesn't exist yet when the module loads at engine startup
+	void RegisterVisualizers();
 };

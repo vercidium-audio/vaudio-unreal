@@ -2,3 +2,5 @@
 Binaries/
 Intermediate/
 
+# The Vercidium Audio SDK, downloaded separately - never commit it
+Source/ThirdParty/
