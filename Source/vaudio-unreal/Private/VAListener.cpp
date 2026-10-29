@@ -221,9 +221,6 @@ void AVAListener::ApplyListenerReverb()
 
 	FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
 	ListenerReverbPreset->SetSettings(settings);
-
-	VAShowMessage(VAMessageKey(this, EVAMessageSlot::ListenerEAX), 0.0f, FColor::Cyan,
-		FString::Printf(TEXT("[VA] Listener EAX: decayTime=%.2f gainLF=%.2f gainHF=%.2f"), EAX->decayTime, EAX->gainLF, EAX->gainHF));
 }
 
 #if WITH_EDITOR

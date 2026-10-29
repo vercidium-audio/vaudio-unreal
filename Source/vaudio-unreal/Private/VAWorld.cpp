@@ -518,21 +518,32 @@ void AVAWorld::SyncDebugCamera()
 	else
 #endif
 	{
-		AVAListener* mainListener = GetMainListener();
-		VAEmitter* listenerVA = mainListener ? mainListener->GetVAEmitter() : nullptr;
-
-		if (!listenerVA)
-			return;
-
-		VAVector listenerPosition = vaEmitterGetPosition(listenerVA);
-		position = FVector(listenerPosition.x, listenerPosition.y, listenerPosition.z);
-		rotation = GetListenerControlRotation(mainListener);
-
 		APlayerController* playerController = GetWorld()->GetFirstPlayerController();
+		APlayerCameraManager* cameraManager = playerController ? playerController->PlayerCameraManager : nullptr;
+
+		// Follow the camera even when the listener doesn't auto-follow it. The camera location is (0, 0, 0) until its first UpdateCamera()
+		if (cameraManager && cameraManager->GetCameraCacheTime() > 0.0f)
+		{
+			position = cameraManager->GetCameraLocation();
+			rotation = cameraManager->GetCameraRotation();
+		}
+		else
+		{
+			AVAListener* mainListener = GetMainListener();
+			VAEmitter* listenerVA = mainListener ? mainListener->GetVAEmitter() : nullptr;
+
+			if (!listenerVA)
+				return;
+
+			VAVector listenerPosition = vaEmitterGetPosition(listenerVA);
+			position = FVector(listenerPosition.x, listenerPosition.y, listenerPosition.z);
+			rotation = GetListenerControlRotation(mainListener);
+		}
+
 		UGameViewportClient* gameViewport = GetWorld()->GetGameViewport();
 
-		if (playerController && playerController->PlayerCameraManager && gameViewport && gameViewport->Viewport)
-			fieldOfView = VerticalFOVRadians(playerController->PlayerCameraManager->GetFOVAngle(), gameViewport->Viewport->GetSizeXY());
+		if (cameraManager && gameViewport && gameViewport->Viewport)
+			fieldOfView = VerticalFOVRadians(cameraManager->GetFOVAngle(), gameViewport->Viewport->GetSizeXY());
 	}
 
 	vaWorldSetCameraPosition(World, FVectorToVAVector(position));
@@ -614,17 +625,7 @@ void AVAWorld::ShowDebugMessages()
 		bool bInBounds = vaEmitterGetWithinWorldBounds(vaEmitter);
 		VAVector P = vaEmitterGetPosition(vaEmitter);
 
-		const TCHAR* boundsStatus = bInBounds ? TEXT("[in bounds]") : TEXT("[out of bounds]");
-
-
-		if (listener)
-		{
-			FColor color = bInBounds ? FColor::Green : FColor::Orange;
-
-			VAShowMessage(messageID, 0.0f, color,
-				FString::Printf(TEXT("[VA] Listener Emitter %d '%s': (%.1f, %.1f, %.1f) %s"), i, *listener->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
-		}
-		else
+		if (!listener)
 		{
 			AVASource* source = Cast<AVASource>(continuousEmitter);
 
@@ -646,28 +647,6 @@ void AVAWorld::ShowDebugMessages()
 					uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::SourceStatus);
 					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' is not playing"), i, *continuousEmitter->GetActorNameOrLabel()));
 				}
-			}
-
-			FString typeString = source ? TEXT("Source") : TEXT("Continuous");
-
-			if (continuousEmitter->bAffectsGroupedEAX)
-			{
-				int32 groupedEAXIndex = vaEmitterGetGroupedEAXIndex(vaEmitter);
-				USoundSubmix* Submix = GetGroupedEAXSubmix(groupedEAXIndex);
-
-				FColor color = bInBounds && Submix != NULL ? FColor::Green : FColor::Orange;
-
-				FString submixStatus = Submix ? Submix->GetName() : TEXT("null");
-
-				VAShowMessage(messageID, 0.0f, color,
-					FString::Printf(TEXT("[VA] %s Emitter %d '%s': (%.1f, %.1f, %.1f), %s [groupedEAXIndex=%d] [submix=%s]"), *typeString, i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus, groupedEAXIndex, *submixStatus));
-			}
-			else
-			{
-				FColor color = bInBounds ? FColor::Green : FColor::Orange;
-
-				VAShowMessage(messageID, 0.0f, color,
-					FString::Printf(TEXT("[VA] %s Emitter %d '%s': (%.1f, %.1f, %.1f), %s [No EAX]"), *typeString, i, *continuousEmitter->GetActorNameOrLabel(), P.x, P.y, P.z, boundsStatus));
 			}
 		}
 	}
@@ -704,8 +683,6 @@ void AVAWorld::ShowDebugMessages()
 					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has raytraced the '%s' emitter, but has an invalid low pass filter"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
 					continue;
 				}
-
-				VAShowMessage(messageID, 0.0f, FColor::Green, FString::Printf(TEXT("[VA] '%s' filter: gainLF=%.2f  gainHF=%.2f"), *Target->GetActorNameOrLabel(), lowPassFilter->gainLF, lowPassFilter->gainHF));
 			}
 		}
 	}
@@ -728,12 +705,6 @@ void AVAWorld::ShowDebugMessages()
 
 				continue;
 			}
-
-			UVASubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr;
-			float pan = PanPreset ? PanPreset->GetSettings().Pan : 0.0f;
-
-			VAShowMessage(messageID, 0.0f, FColor::Green,
-				FString::Printf(TEXT("[VA] GroupedEAX[%d]: decayTime=%.2f gainLF=%.2f gainHF=%.2f pan=%.2f"), i, EAX->decayTime, EAX->gainLF, EAX->gainHF, pan));
 		}
 	}
 
@@ -742,35 +713,9 @@ void AVAWorld::ShowDebugMessages()
 		VAShowMessage(VAMessageKey(this, EVAMessageSlot::NoGroupedEAX), 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] World '%s' has no Grouped EAX Submixes. Ensure at least one is added"), *GetActorNameOrLabel()));
 	}
 
-
-	if (AVAListener* CurrentMainListener = GetMainListener())
-	{
-		FVector ListenerPos = CurrentMainListener->GetActorLocation();
-
-		int targetCount = RegisteredEmitters.Num();
-		FColor color = targetCount == 0 ? FColor::Orange : FColor::Green;
-
-		const TCHAR* plural = targetCount == 1 ? TEXT("target") : TEXT("targets");
-
-		VAShowMessage(VAMessageKey(this, EVAMessageSlot::ListenerStatus), 0.0f, color, FString::Printf(TEXT("[VA] Listener '%s' has %d %s"), *CurrentMainListener->GetActorNameOrLabel(), targetCount, plural));
-
-		VAEmitter* emitter = CurrentMainListener->GetVAEmitter();
-
-		if (emitter && (vaEmitterGetAmbientOcclusionEnabled(emitter) || vaEmitterGetAmbientPermeationEnabled(emitter)))
-		{
-			// Wait for raytracing to complete at least once
-			if (VALowPassFilter* ambientFilter = vaEmitterGetAmbientFilter(emitter))
-			{
-				VAShowMessage(VAMessageKey(this, EVAMessageSlot::AmbientFilter), 0.0f, FColor::Green, FString::Printf(TEXT("[VA] Ambient LPF: gainLF=%.2f  gainHF=%.2f"), ambientFilter->gainLF, ambientFilter->gainHF));
-			}
-		}
-	}
-	else
+	if (!GetMainListener())
 		VAShowMessage(VAMessageKey(this, EVAMessageSlot::ListenerStatus), 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] There is no main listener. Ensure a VAListener actor is placed and assigned to this world")));
 	
-	VAShowMessage(VAMessageKey(this, EVAMessageSlot::PrimitiveStatus), 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Primitives: %d"), PrimitiveBindings.Num()));
-	VAShowMessage(VAMessageKey(this, EVAMessageSlot::RaytracingTime), 0.0f, FColor::Cyan, FString::Printf(TEXT("[VA] Emitters: %d, Raytracing: %.2f ms"), vaWorldGetEmitterCount(World), vaWorldGetRaytracingTime(World)));
-
 	if (ActorsWithInvalidMaterials.Num() > 0)
 	{
 		VAShowMessage(VAMessageKey(this, EVAMessageSlot::InvalidMaterials), 0.0f, FColor::Orange,
