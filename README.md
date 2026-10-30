@@ -28,7 +28,7 @@ This repository requires Vercidium Audio v1.11.0 to run. Windows, Linux and macO
 
 ### 1. Add the plugin
 
-Download the zip for your engine version from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases) (`vaudio-unreal-5.7.zip` or `vaudio-unreal-5.8.zip`) and extract it into your project's `Plugins` folder. It contains the plugin source plus prebuilt binaries for Win64, Linux and Mac (arm64) for 5.7, and Win64 only for 5.8 - on Linux and Mac with 5.8, Unreal rebuilds the plugin from its source. You can also clone this repository instead, which builds the plugin from source. Either way, the `.uplugin` file must exist at:
+Download the zip for your engine version from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases) (`vaudio-unreal-5.7.zip` or `vaudio-unreal-5.8.zip`) and extract it into your project's `Plugins` folder. It contains the plugin source plus prebuilt binaries for Win64, Linux and Mac (arm64). You can also clone this repository instead, which builds the plugin from source. Either way, the `.uplugin` file must exist at:
 
 ```
 YourProject/Plugins/vaudio-unreal/vaudio-unreal.uplugin

@@ -420,6 +420,7 @@ static FRotator GetListenerControlRotation(AVAListener* Listener)
 
 void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	UE_LOG(LogTemp, Display, TEXT("TEMP EndPlay %s: start"), *GetName());
 	Super::EndPlay(EndPlayReason);
 
 	RunningWorlds.RemoveSingleSwap(this);
@@ -445,7 +446,9 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (World)
 	{
 		// Blocks until the raytracing threads finish, after which no primitive is in use
+		UE_LOG(LogTemp, Display, TEXT("TEMP EndPlay %s: vaWorldWait"), *GetName());
 		vaWorldWait(World);
+		UE_LOG(LogTemp, Display, TEXT("TEMP EndPlay %s: vaWorldWait done"), *GetName());
 		DestroyPrimitives();
 		MaterialSources.Empty();
 		LevelInstanceSources.Empty();
@@ -453,7 +456,9 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		AppliedMaterials.Empty();
 
 		// Invokes OnRemoved for the emitters whose removal was waiting on raytracing results
+		UE_LOG(LogTemp, Display, TEXT("TEMP EndPlay %s: vaWorldDestroy"), *GetName());
 		VAResult result = vaWorldDestroy(World);
+		UE_LOG(LogTemp, Display, TEXT("TEMP EndPlay %s: vaWorldDestroy done"), *GetName());
 
 		if (result != VA_SUCCESS)
 			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to destroy the world."));
