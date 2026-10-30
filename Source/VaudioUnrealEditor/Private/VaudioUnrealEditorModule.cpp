@@ -1,9 +1,9 @@
 #include "VaudioUnrealEditorModule.h"
 #include "Editor/UnrealEdEngine.h"
-#include "Misc/CoreDelegates.h"
 #include "PropertyEditorModule.h"
 #include "UnrealEdGlobals.h"
 #include "VAAmbientSoundConversion.h"
+#include "VAEngineCompat.h"
 #include "VAEditorStyle.h"
 #include "VAListener.h"
 #include "VAListenerDetails.h"
@@ -26,7 +26,7 @@ void FVaudioUnrealEditorModule::StartupModule()
 	if (GUnrealEd)
 		RegisterVisualizers();
 	else
-		FCoreDelegates::OnPostEngineInit.AddRaw(this, &FVaudioUnrealEditorModule::RegisterVisualizers);
+		VAOnPostEngineInit().AddRaw(this, &FVaudioUnrealEditorModule::RegisterVisualizers);
 }
 
 void FVaudioUnrealEditorModule::RegisterVisualizers()
@@ -37,7 +37,7 @@ void FVaudioUnrealEditorModule::RegisterVisualizers()
 
 void FVaudioUnrealEditorModule::ShutdownModule()
 {
-	FCoreDelegates::OnPostEngineInit.RemoveAll(this);
+	VAOnPostEngineInit().RemoveAll(this);
 
 	if (GUnrealEd)
 		GUnrealEd->UnregisterComponentVisualizer(UVAWorldBoundsComponent::StaticClass()->GetFName());
