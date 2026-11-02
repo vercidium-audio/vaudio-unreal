@@ -422,7 +422,13 @@ void UVAVisualisation::GenerateFadeNodes()
 		return expression;
 	};
 
+	// 4.27's engine doesn't export this class, so its StaticClass can't link. Find it by name instead
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	UClass* spawnTimeClass = FindObjectChecked<UClass>(ANY_PACKAGE, TEXT("MaterialExpressionPerInstanceCustomData"));
+	UMaterialExpressionPerInstanceCustomData* spawnTimeExpression = static_cast<UMaterialExpressionPerInstanceCustomData*>(createExpression(spawnTimeClass, -600, 0));
+#else
 	UMaterialExpressionPerInstanceCustomData* spawnTimeExpression = Cast<UMaterialExpressionPerInstanceCustomData>(createExpression(UMaterialExpressionPerInstanceCustomData::StaticClass(), -600, 0));
+#endif
 	spawnTimeExpression->DataIndex = 0;
 
 	UMaterialExpressionScalarParameter* currentTimeExpression = Cast<UMaterialExpressionScalarParameter>(createExpression(UMaterialExpressionScalarParameter::StaticClass(), -600, 100));
@@ -458,7 +464,9 @@ void UVAVisualisation::GenerateFadeNodes()
 	fadeExpression->Inputs[3].InputName = TEXT("FadeOutMs");
 	fadeExpression->Inputs[4].InputName = TEXT("DurationMs");
 	fadeExpression->Inputs[5].InputName = TEXT("MaxOpacity");
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	fadeExpression->RebuildOutputs(); // populates Outputs - CreateMaterialExpression doesn't call PostEditChangeProperty, so this never runs implicitly
+#endif // on 4.27 it isn't exported, but the UMaterialExpression constructor already adds the one unnamed output it would build
 
 	UMaterialEditingLibrary::ConnectMaterialExpressions(spawnTimeExpression, TEXT(""), fadeExpression, TEXT("SpawnTime"));
 	UMaterialEditingLibrary::ConnectMaterialExpressions(currentTimeExpression, TEXT(""), fadeExpression, TEXT("CurrentTime"));
