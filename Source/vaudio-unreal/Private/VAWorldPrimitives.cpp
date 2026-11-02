@@ -17,10 +17,12 @@
 #include "Engine/StaticMesh.h"
 #include "LandscapeHeightfieldCollisionComponent.h"
 #include "LandscapeDataAccess.h"
-#include "Chaos/HeightField.h"
 
 #if UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS
 #include "DynamicMeshBuilder.h"
+#include "PhysXIncludes.h"
+#else
+#include "Chaos/HeightField.h"
 #endif
 
 // 4.27 has no World Partition, Level Instances or FObjectPreSaveContext, so their code compiles out
@@ -713,13 +715,47 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 }
 
 // The samples and hole flags of a landscape component's collision heightfield, in component space. The only part of AddLandscapePrimitive that depends on the physics engine
+#if UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS
+struct FVALandscapeHeightfield
+{
+	TArray<physx::PxHeightFieldSample> Samples;
+	int32 PhysXRows = 0;
+	int32 PhysXColumns = 0;
+
+	explicit FVALandscapeHeightfield(const ULandscapeHeightfieldCollisionComponent* component)
+	{
+		const physx::PxHeightField* heightField = IsValidRef(component->HeightfieldRef) ? component->HeightfieldRef->RBHeightfield : nullptr;
+
+		if (!heightField)
+			return;
+
+		PhysXRows = heightField->getNbRows();
+		PhysXColumns = heightField->getNbColumns();
+		Samples.SetNumUninitialized(PhysXRows * PhysXColumns);
+		heightField->saveCells(Samples.GetData(), Samples.Num() * Samples.GetTypeSize());
+	}
+
+	// PhysX's rows run backwards along the component's X and its columns along Y, as the cooked data is flipped for PhysX's handedness (ConvertHeightfieldDataForPhysx). A mirrored landscape isn't flipped, but AddLandscapePrimitive rejects those
+	bool IsValid() const { return PhysXRows >= 2 && PhysXColumns >= 2; }
+	int32 GetNumCols() const { return PhysXRows; }
+	int32 GetNumRows() const { return PhysXColumns; }
+	double GetHeight(int32 x, int32 y) const { return (double)Samples[(PhysXRows - 1 - x) * PhysXColumns + y].height * LANDSCAPE_ZSCALE; }
+
+	// Whether the quad at (x, y) was painted with the visibility layer. The flip makes a quad's PhysX cell the one that starts on its far X edge
+	bool IsHole(int32 x, int32 y) const { return Samples[(PhysXRows - 2 - x) * PhysXColumns + y].materialIndex0 == physx::PxHeightFieldMaterial::eHOLE; }
+};
+#else
 struct FVALandscapeHeightfield
 {
 	const Chaos::FHeightField* HeightField = nullptr;
 
 	explicit FVALandscapeHeightfield(const ULandscapeHeightfieldCollisionComponent* component)
 	{
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+		HeightField = IsValidRef(component->HeightfieldRef) ? component->HeightfieldRef->Heightfield.Get() : nullptr;
+#else
 		HeightField = IsValidRef(component->HeightfieldRef) ? component->HeightfieldRef->HeightfieldGeometry.GetReference() : nullptr;
+#endif
 	}
 
 	bool IsValid() const { return HeightField && HeightField->GetNumCols() >= 2 && HeightField->GetNumRows() >= 2; }
@@ -730,6 +766,7 @@ struct FVALandscapeHeightfield
 	// Whether the quad at (x, y) was painted with the visibility layer
 	bool IsHole(int32 x, int32 y) const { return HeightField->IsHole(x, y); }
 };
+#endif
 
 void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId)
 {
