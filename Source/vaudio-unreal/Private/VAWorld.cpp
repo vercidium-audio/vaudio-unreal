@@ -3,6 +3,8 @@
 #include "VASubmixEffectDirectionalPan.h"
 #include "VAEmitter.h"
 #include "VASource.h"
+#include "VASourceRelative.h"
+#include "VASourceLeech.h"
 #include "VAListener.h"
 #include "VAMaterial.h"
 #include "VAReverbConversion.h"
@@ -13,6 +15,10 @@
 #include "VaudioUnrealModule.h"
 
 #include "EngineUtils.h"
+#include "AudioDevice.h"
+#include "Components/AudioComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundAttenuation.h"
 #include "Components/BillboardComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "AudioMixerBlueprintLibrary.h"
@@ -294,6 +300,278 @@ AVAWorld* AVAWorld::Find(const UObject* WorldContextObject)
 	return subsystem ? subsystem->GetVAWorld() : nullptr;
 }
 
+static AVASource* VASpawnOneShot(UWorld* world, USoundBase* sound, const FVector& location, const FVAOneShotSettings& settings, bool raytraceOnce)
+{
+	FActorSpawnParameters spawnParameters;
+	spawnParameters.bDeferConstruction = true;
+	spawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// Never saved, e.g. when spawned while simulating in the editor
+	spawnParameters.ObjectFlags |= RF_Transient;
+
+	const FTransform transform(location);
+	AVASource* source = world->SpawnActor<AVASource>(AVASource::StaticClass(), transform, spawnParameters);
+
+	if (!source)
+		return nullptr;
+
+	source->SourceSound = sound;
+	source->bAutoPlay = true;
+	source->bDestroyWhenFinished = true;
+	source->bRaytraceOnce = raytraceOnce;
+
+	// Applied in BeginPlay, and cancelled by the first Play()
+	source->InitialLifeSpan = settings.MaxPlayDelay;
+
+	source->VolumeMultiplier = settings.VolumeMultiplier;
+	source->PitchMultiplier = settings.PitchMultiplier;
+	source->AttenuationSettings = settings.AttenuationSettings;
+
+	source->ReverbRayCount = settings.ReverbRayCount;
+	source->ReverbBounceCount = settings.ReverbBounceCount;
+	source->ReverbEnergyCap = settings.ReverbEnergyCap;
+	source->MinimumReverbEnergy = settings.MinimumReverbEnergy;
+	source->MaxVolume = settings.MaxVolume;
+	source->MaxEchogramTime = settings.MaxEchogramTime;
+	source->EchogramGranularity = settings.EchogramGranularity;
+	source->bAffectsGroupedEAX = settings.bAffectsGroupedEAX;
+	source->bKeepReverbTailAlive = settings.bKeepReverbTailAlive;
+	source->bUseListenerReverb = settings.bUseListenerReverb;
+
+	source->OcclusionEnergyCap = settings.OcclusionEnergyCap;
+	source->PermeationEnergyCap = settings.PermeationEnergyCap;
+
+	source->bClusteringEnabled = settings.bClusteringEnabled;
+	source->ClusteringDistance = settings.ClusteringDistance;
+
+	source->Type = settings.Type;
+
+	source->FinishSpawning(transform);
+	return source;
+}
+
+AVASource* AVAWorld::PlaySoundAtLocation(const UObject* WorldContextObject, USoundBase* Sound, FVector Location, const FVAOneShotSettings& Settings)
+{
+	UWorld* world = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+
+	if (!Sound || !world)
+	{
+		VA_WARN(TEXT("PlaySoundAtLocation needs a sound and a world context object that's in a world"));
+		return nullptr;
+	}
+
+	return VASpawnOneShot(world, Sound, Location, Settings, Settings.bRaytraceOnce);
+}
+
+AVASource* AVAWorld::SpawnSoundAttached(USoundBase* Sound, USceneComponent* AttachComponent, FName AttachPointName, FVector Location, EAttachLocation::Type LocationType, bool bStopWhenAttachedToDestroyed, const FVAOneShotSettings& Settings)
+{
+	UWorld* world = AttachComponent ? AttachComponent->GetWorld() : nullptr;
+
+	if (!Sound || !world)
+	{
+		VA_WARN(TEXT("SpawnSoundAttached needs a sound and a component to attach it to"));
+		return nullptr;
+	}
+
+	const FTransform socket = AttachComponent->GetSocketTransform(AttachPointName);
+	FVector worldLocation;
+
+	switch (LocationType)
+	{
+		case EAttachLocation::KeepWorldPosition:
+			worldLocation = Location;
+			break;
+
+		case EAttachLocation::KeepRelativeOffset:
+			worldLocation = socket.TransformPosition(Location);
+			break;
+
+		default:
+			worldLocation = socket.GetLocation();
+			break;
+	}
+
+	// An attached sound moves, so it keeps raytracing
+	AVASource* source = VASpawnOneShot(world, Sound, worldLocation, Settings, false);
+
+	if (!source)
+		return nullptr;
+
+	source->AttachToComponent(AttachComponent, FAttachmentTransformRules::KeepWorldTransform, AttachPointName);
+
+	if (bStopWhenAttachedToDestroyed)
+		source->DestroyWithComponent(AttachComponent);
+
+	return source;
+}
+
+UAudioComponent* AVAWorld::PlaySoundRelative(const UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier, float PitchMultiplier)
+{
+	AVAWorld* audioWorld = Find(WorldContextObject);
+
+	if (!Sound || !audioWorld)
+	{
+		VA_WARN(TEXT("PlaySoundRelative needs a sound, and a VAWorld that has begun play in the world context object's level"));
+		return nullptr;
+	}
+
+	return audioWorld->StartRelativeOneShot(Sound, VolumeMultiplier, PitchMultiplier);
+}
+
+UAudioComponent* AVAWorld::PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter, float VolumeMultiplier, float PitchMultiplier, USoundAttenuation* AttenuationSettings, float MaxPlayDelay)
+{
+	if (!Sound || !IsValid(Emitter))
+	{
+		VA_WARN(TEXT("PlaySoundLeech needs a sound and an emitter to leech"));
+		return nullptr;
+	}
+
+	if (Emitter->IsA<AVAListener>())
+	{
+		VA_WARN(TEXT("PlaySoundLeech can't leech the listener '%s', which has no muffling result. Use PlaySoundRelative instead"), *Emitter->GetActorNameOrLabel());
+		return nullptr;
+	}
+
+	// The emitter may not have joined its VAWorld yet
+	AVAWorld* audioWorld = Emitter->GetAudioWorld() ? Emitter->GetAudioWorld() : Find(Emitter);
+
+	if (!audioWorld)
+	{
+		VA_WARN(TEXT("PlaySoundLeech needs a VAWorld that has begun play in the emitter '%s''s level"), *Emitter->GetActorNameOrLabel());
+		return nullptr;
+	}
+
+	return audioWorld->StartLeechOneShot(Sound, Emitter, VolumeMultiplier, PitchMultiplier, AttenuationSettings, MaxPlayDelay);
+}
+
+UAudioComponent* AVAWorld::StartRelativeOneShot(USoundBase* sound, float volumeMultiplier, float pitchMultiplier)
+{
+	// Having no audio device (e.g. -nosound) isn't worth a warning
+	if (!GetWorld()->GetAudioDeviceRaw())
+		return nullptr;
+
+	// CreateSound2D() builds the component without starting playback
+	UAudioComponent* component = UGameplayStatics::CreateSound2D(GetWorld(), sound, 1.0f, 1.0f, 0.0f, nullptr, false, true);
+
+	if (!component)
+		return nullptr;
+
+	FVAOneShot& oneShot = OneShots.AddDefaulted_GetRef();
+	oneShot.bRelative = true;
+	oneShot.Playback.SetVolumeMultiplier(volumeMultiplier);
+	oneShot.Playback.SetPitchMultiplier(pitchMultiplier);
+
+	AVASourceRelative::ApplyListenerReverbSend(oneShot.Playback, this, this, OneShotWarnedListener);
+	oneShot.Playback.Play(component);
+
+	return component;
+}
+
+UAudioComponent* AVAWorld::StartLeechOneShot(USoundBase* sound, AVAEmitter* emitter, float volumeMultiplier, float pitchMultiplier, USoundAttenuation* attenuation, float maxPlayDelay)
+{
+	UWorld* world = GetWorld();
+
+	// Raytracing doesn't need the sound, so having no audio device (e.g. -nosound) isn't worth a warning
+	if (!world->GetAudioDeviceRaw())
+		return nullptr;
+
+	// Owned by the emitter like UGameplayStatics::SpawnSoundAttached, and keeps playing if the emitter is destroyed
+	FAudioDevice::FCreateComponentParams params(world, emitter);
+	params.SetLocation(emitter->GetActorLocation());
+
+	UAudioComponent* component = FAudioDevice::CreateComponent(sound, params);
+
+	if (!component)
+		return nullptr;
+
+	component->AttachToComponent(emitter->GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	component->bAllowSpatialization = true;
+	component->bStopWhenOwnerDestroyed = false;
+
+	if (attenuation)
+		component->AttenuationSettings = attenuation;
+
+	FVAOneShot& oneShot = OneShots.AddDefaulted_GetRef();
+	oneShot.Emitter = emitter;
+	oneShot.Playback.SetVolumeMultiplier(volumeMultiplier);
+	oneShot.Playback.SetPitchMultiplier(pitchMultiplier);
+
+	// Waits for the emitter's muffling and reverb, so the sound never starts unmuffled or without reverb
+	if (emitter->IsReadyToPlay())
+	{
+		AVASourceLeech::ApplyEmitterResults(oneShot.Playback, emitter);
+		oneShot.Playback.Play(component);
+	}
+	else
+	{
+		oneShot.PendingComponent = component;
+		oneShot.PlayDeadline = maxPlayDelay > 0.0f ? world->GetTimeSeconds() + maxPlayDelay : 0.0;
+	}
+
+	return component;
+}
+
+void AVAWorld::UpdateOneShots()
+{
+	const double now = GetWorld()->GetTimeSeconds();
+
+	for (int32 i = OneShots.Num() - 1; i >= 0; i--)
+	{
+		FVAOneShot& oneShot = OneShots[i];
+		AVAEmitter* emitter = oneShot.Emitter.Get();
+
+		// A leech keeps its emitter's last results once the emitter is destroyed
+		if (oneShot.bRelative)
+			AVASourceRelative::ApplyListenerReverbSend(oneShot.Playback, this, this, OneShotWarnedListener);
+		else if (emitter)
+			AVASourceLeech::ApplyEmitterResults(oneShot.Playback, emitter);
+
+		if (UAudioComponent* pending = oneShot.PendingComponent)
+		{
+			// Destroyed by the user to cancel it, or with its emitter
+			if (!IsValid(pending))
+			{
+				OneShots.RemoveAtSwap(i);
+				continue;
+			}
+
+			if (emitter && emitter->IsReadyToPlay())
+			{
+				oneShot.PendingComponent = nullptr;
+				oneShot.Playback.Play(pending);
+			}
+			else if (!emitter || (oneShot.PlayDeadline > 0.0 && now > oneShot.PlayDeadline))
+			{
+				pending->DestroyComponent();
+				OneShots.RemoveAtSwap(i);
+				continue;
+			}
+			else
+			{
+				continue;
+			}
+		}
+
+		oneShot.Playback.RemoveFinished();
+
+		if (!oneShot.Playback.IsPlaying())
+			OneShots.RemoveAtSwap(i);
+	}
+}
+
+void AVAWorld::StopOneShots()
+{
+	for (FVAOneShot& oneShot : OneShots)
+	{
+		oneShot.Playback.Stop();
+
+		if (IsValid(oneShot.PendingComponent))
+			oneShot.PendingComponent->DestroyComponent();
+	}
+
+	OneShots.Empty();
+}
+
 void AVAWorld::InitializeVAWorld()
 {
 	// Already initialised, all is good
@@ -424,6 +702,8 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	RunningWorlds.RemoveSingleSwap(this);
 	FWorldDelegates::LevelAddedToWorld.Remove(LevelAddedToWorldHandle);
+
+	StopOneShots();
 
 	for (int32 i = 0; i < GroupedEAXPresets.Num(); i++)
 	{
@@ -576,6 +856,8 @@ void AVAWorld::Tick(float DeltaTime)
 		for (const TWeakObjectPtr<AVAEmitter>& emitter : eventEmitters)
 			if (AVAEmitter* alive = emitter.Get())
 				alive->FlushPendingEvents();
+
+		UpdateOneShots();
 
 		if (bReverbOnly != bWasReverbOnly)
 		{

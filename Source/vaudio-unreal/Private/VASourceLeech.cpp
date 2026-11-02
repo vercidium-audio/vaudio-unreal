@@ -132,16 +132,21 @@ void AVASourceLeech::UpdatePlayback(AVAEmitter* emitter)
 	Playback.SetVolumeMultiplier(VolumeMultiplier);
 	Playback.SetPitchMultiplier(PitchMultiplier);
 
+	ApplyEmitterResults(Playback, emitter);
+}
+
+void AVASourceLeech::ApplyEmitterResults(FVASourcePlayback& playback, const AVAEmitter* emitter)
+{
 	// Null until the listener has raytraced the emitter, and after a bRaytraceOnce emitter leaves the world. The last result is kept
 	if (VALowPassFilter* lowPassFilter = emitter->GetMufflingResult())
-		Playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
+		playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 
 	USoundSubmix* submix = nullptr;
 	float sendLevel = 0.0f;
 
 	// Set after the filter, as the send level is compensated by gainLF
 	if (emitter->ResolveReverbSend(submix, sendLevel))
-		Playback.SetReverbSend(submix, sendLevel);
+		playback.SetReverbSend(submix, sendLevel);
 }
 
 bool AVASourceLeech::Play()

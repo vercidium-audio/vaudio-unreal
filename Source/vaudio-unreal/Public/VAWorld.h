@@ -6,6 +6,8 @@
 #include "Sound/SoundSubmix.h"
 #include "Components/SceneComponent.h"
 #include "Components/BoxComponent.h"
+#include "Engine/EngineTypes.h"
+#include "VASourcePlayback.h"
 #include "VAWorld.generated.h"
 
 struct VAWorld;
@@ -13,6 +15,10 @@ struct VAEmitter;
 struct VAMesh;
 class AVAEmitter;
 class AVAListener;
+class AVASource;
+class UAudioComponent;
+class USoundBase;
+class USoundAttenuation;
 class UVAMaterialBase;
 class UVACustomMaterial;
 class UVAMaterialComponent;
@@ -120,6 +126,108 @@ enum class EVABoundsFollow : uint8
 
 	// The bounds are centred on the current listener during play
 	Listener,
+};
+
+// Settings for a sound played by AVAWorld::PlaySoundAtLocation or SpawnSoundAttached. Each field sets the AVASource property of the same name
+USTRUCT(BlueprintType)
+struct VAUDIOUNREAL_API FVAOneShotSettings
+{
+	GENERATED_BODY()
+
+	// --- Source ---
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0", UIMax = "1.0"))
+	float VolumeMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
+	float PitchMultiplier = 1.0f;
+
+	// Used instead of the sound's own Sound Attenuation when set
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	TObjectPtr<USoundAttenuation> AttenuationSettings = nullptr;
+
+	// The sound waits until it has been raytraced, so it never starts unmuffled. If it still hasn't started after this many seconds, e.g. there's no listener, the source is destroyed without playing. 0 waits forever
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0"))
+	float MaxPlayDelay = 1.0f;
+
+	// Stops casting rays after the first result. Only used by PlaySoundAtLocation, as an attached sound moves and keeps raytracing
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	bool bRaytraceOnce = true;
+
+	// --- Reverb ---
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0"))
+	int32 ReverbRayCount = 64;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0"))
+	int32 ReverbBounceCount = 64;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.001", ClampMax = "1.0"))
+	float ReverbEnergyCap = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0", Delta = "0.001"))
+	float MinimumReverbEnergy = 0.01f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MaxVolume = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "1"))
+	int32 MaxEchogramTime = 5000;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (ClampMin = "1"))
+	int32 EchogramGranularity = 100;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb")
+	bool bAffectsGroupedEAX = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb")
+	bool bKeepReverbTailAlive = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb")
+	bool bUseListenerReverb = false;
+
+	// --- Muffling ---
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", UIMax = "1.0", Delta = "0.001"))
+	float OcclusionEnergyCap = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Muffling", meta = (ClampMin = "0.0", UIMax = "1.0", Delta = "0.001"))
+	float PermeationEnergyCap = 0.15f;
+
+	// --- Clustering ---
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering")
+	bool bClusteringEnabled = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Clustering", meta = (ClampMin = "0.01"))
+	float ClusteringDistance = 500.0f;
+
+	// --- Advanced ---
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced")
+	int32 Type = 0;
+};
+
+// A sound started by AVAWorld::PlaySoundRelative or PlaySoundLeech, which the world updates every tick instead of spawning an actor for it
+USTRUCT()
+struct FVAOneShot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	FVASourcePlayback Playback;
+
+	// A leech's component while its emitter isn't ready to play. Null once it plays
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> PendingComponent = nullptr;
+
+	// The leeched emitter, or null for a relative sound
+	TWeakObjectPtr<AVAEmitter> Emitter;
+
+	bool bRelative = false;
+
+	// World time after which a pending sound is dropped, or 0 to wait forever
+	double PlayDeadline = 0.0;
 };
 
 UCLASS(DisplayName = "VAWorld", HideCategories = (Shape, Collision, Rendering, Physics, HLOD, Navigation, VirtualTexture, Tags, Cooking, LOD, AssetUserData, Mobile, RayTracing))
@@ -404,6 +512,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject"))
 	static AVAWorld* Find(const UObject* WorldContextObject);
 
+	// --- One-shot sounds ---
+
+	// Like UGameplayStatics::PlaySoundAtLocation: spawns a VASource that plays the sound once it has been raytraced, then destroys itself when it finishes. Returns null if the sound or world is missing
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject", AutoCreateRefTerm = "Settings"))
+	static AVASource* PlaySoundAtLocation(const UObject* WorldContextObject, USoundBase* Sound, FVector Location, const FVAOneShotSettings& Settings);
+
+	// Like UGameplayStatics::SpawnSoundAttached: a VASource attached to the component (and socket) that keeps raytracing as it moves, and destroys itself when the sound finishes. Location is an offset from the socket with KeepRelativeOffset, a world position with KeepWorldPosition, and ignored with the snap options. Returns null if the sound or component is missing
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (AutoCreateRefTerm = "Settings"))
+	static AVASource* SpawnSoundAttached(USoundBase* Sound, USceneComponent* AttachComponent, FName AttachPointName, FVector Location, EAttachLocation::Type LocationType, bool bStopWhenAttachedToDestroyed, const FVAOneShotSettings& Settings);
+
+	// Like UGameplayStatics::PlaySound2D, for the player's own sounds such as footsteps, like a VASourceRelative: plays straight away, unmuffled and with the current listener's reverb. No actor is spawned, the VAWorld updates the sound until it finishes. Returns its audio component, or null if the sound or VAWorld is missing or there's no audio device
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject"))
+	static UAudioComponent* PlaySoundRelative(const UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f);
+
+	// Like a VASourceLeech: plays the sound at the emitter with its muffling and reverb, instead of casting rays of its own, e.g. an enemy's footsteps and gunshots all reusing the VAEmitter on that enemy. No actor is spawned, the VAWorld updates the sound until it finishes. Plays straight away if the emitter has been raytraced, otherwise as soon as it is, or is dropped without playing after MaxPlayDelay seconds (0 waits forever) or if the emitter is destroyed first. Destroy the component to cancel a sound that hasn't started. AttenuationSettings is used instead of the sound's own when set. If the emitter is destroyed mid-sound, the sound finishes where it was. Returns its audio component, or null if the sound or emitter is missing, the emitter is a listener, or there's no audio device
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	static UAudioComponent* PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f, USoundAttenuation* AttenuationSettings = nullptr, float MaxPlayDelay = 1.0f);
+
+	// Sounds started by PlaySoundRelative and PlaySoundLeech that are waiting or playing
+	int32 GetOneShotCount() const { return OneShots.Num(); }
+
 	// --- Internal API used by emitters ---
 
 	void InitializeVAWorld();
@@ -523,6 +652,19 @@ private:
 
 	int32 RaytraceCount = 0;
 	static void OnReverbUpdatedTrampoline(VAWorld* world);
+
+	UPROPERTY(Transient)
+	TArray<FVAOneShot> OneShots;
+
+	// The listener the relative one-shots last warned had no ListenerReverbSubmix
+	TWeakObjectPtr<AVAListener> OneShotWarnedListener;
+
+	UAudioComponent* StartRelativeOneShot(USoundBase* sound, float volumeMultiplier, float pitchMultiplier);
+	UAudioComponent* StartLeechOneShot(USoundBase* sound, AVAEmitter* emitter, float volumeMultiplier, float pitchMultiplier, USoundAttenuation* attenuation, float maxPlayDelay);
+
+	// Pushes each one-shot's reverb send and filter, starts pending leeches whose emitter is ready, and drops finished ones
+	void UpdateOneShots();
+	void StopOneShots();
 
 	void WirePendingTargets();
 	void DestroyRemovedEmitters();

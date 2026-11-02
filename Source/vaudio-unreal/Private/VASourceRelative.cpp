@@ -99,20 +99,24 @@ void AVASourceRelative::UpdatePlayback()
 	Playback.SetPitchMultiplier(PitchMultiplier);
 
 	// Found every tick, as the VAWorld may begin play after this actor
-	AVAWorld* audioWorld = AVAWorld::Find(this);
+	ApplyListenerReverbSend(Playback, AVAWorld::Find(this), this, WarnedListener);
+}
+
+void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener)
+{
 	AVAListener* listener = audioWorld ? audioWorld->GetMainListener() : nullptr;
 
 	// Keep the current send while there's no current listener, e.g. while the listener is switching
 	if (!listener)
 		return;
 
-	if (!listener->ListenerReverbSubmix && WarnedListener != listener)
+	if (!listener->ListenerReverbSubmix && warnedListener.Get() != listener)
 	{
-		WarnedListener = listener;
-		VA_WARN_NAMED(TEXT("Will have no reverb as the listener '%s' has no ListenerReverbSubmix"), *listener->GetActorNameOrLabel());
+		warnedListener = listener;
+		VAReport(ELogVerbosity::Warning, reporter, VA_CALL_SITE_KEY(reporter), FString::Printf(TEXT("Will have no reverb as the listener '%s' has no ListenerReverbSubmix"), *listener->GetActorNameOrLabel()));
 	}
 
 	// Not muffled, so the send level isn't compensated
 	USoundSubmix* submix = listener->ListenerReverbSubmix;
-	Playback.SetReverbSend(submix, submix ? 1.0f : 0.0f);
+	playback.SetReverbSend(submix, submix ? 1.0f : 0.0f);
 }

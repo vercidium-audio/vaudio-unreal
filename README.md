@@ -108,6 +108,43 @@ Reverb is sent before distance attenuation, and the send level is divided by the
 
 To convert an existing level, select its **Ambient Sound** actors, right-click and choose **Vercidium Audio → Convert to VASource**. Each one is replaced by a `VASource` with the same sound, transform, label, folder, tags and attachments, and its Auto Activate, Volume Multiplier and Pitch Multiplier become `bAutoPlay`, `VolumeMultiplier` and `PitchMultiplier`. A `VASource` uses the Sound Attenuation on its sound, so attenuation set on the ambient sound's audio component isn't kept, and neither are its low and high pass filters. The Output Log lists anything that wasn't kept. The conversion can be undone, and the new sources still need reverb rays.
 
+### One-shot sounds
+
+`AVAWorld::PlaySoundAtLocation` and `AVAWorld::SpawnSoundAttached` replace the `UGameplayStatics` functions of the same name, and are also available in Blueprints under **Vercidium Audio**. Each spawns a `VASource` that plays the sound once it has been raytraced, then destroys itself when the sound finishes. The `FVAOneShotSettings` struct sets the source's volume and pitch multipliers, an optional `AttenuationSettings` override, and its reverb, muffling and clustering properties. It defaults to 64 reverb rays with 64 bounces.
+
+```cpp
+FVAOneShotSettings settings;
+settings.VolumeMultiplier = Volume;
+settings.PitchMultiplier = Pitch;
+settings.AttenuationSettings = AttenuationSettings;
+
+AVAWorld::PlaySoundAtLocation(this, Sound, SoundLocation, settings);
+AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, bStopWhenAttachedToDestroyed, settings);
+```
+
+- A sound at a location raytraces once (`bRaytraceOnce`). An attached sound keeps raytracing as it moves.
+- The sound starts after the first raytracing result, not straight away, so it's never heard unmuffled. If it hasn't started after `MaxPlayDelay` seconds (e.g. there's no listener), the source is destroyed without playing.
+- Both return the `VASource`, so a looping sound can be stopped with `Stop()`, which also destroys it.
+- For frequent sounds on another character, like an enemy's footsteps or gunshots, use `PlaySoundLeech` below instead, as it shares that character's rays and plays with no delay.
+
+For sounds made by something that's already raytraced, `AVAWorld::PlaySoundLeech` plays a sound like a `VASourceLeech`: attached to a `VAEmitter`, with that emitter's muffling and reverb instead of rays of its own, e.g. put one `VAEmitter` on each enemy, and play all of its footsteps and gunshots through it:
+
+```cpp
+AVAWorld::PlaySoundLeech(GunshotSound, EnemyEmitter, Volume, Pitch, AttenuationSettings);
+```
+
+It plays immediately, as the emitter should already be raytraced. A sound started before then waits, and is dropped without playing after `MaxPlayDelay` seconds (default 1), or if the emitter is destroyed first. It follows the emitter, and if the emitter is destroyed mid-sound it finishes playing where it was. A listener can't be leeched, so use `PlaySoundRelative` for the player's own sounds.
+
+For the player's own sounds, `AVAWorld::PlaySoundRelative` replaces `UGameplayStatics::PlaySound2D`. Like a `VASourceRelative` it isn't raytraced, so it plays straight away, unmuffled and with the current listener's reverb:
+
+```cpp
+AVAWorld::PlaySoundRelative(this, FootstepSound, Volume, Pitch);
+```
+
+`PlaySoundRelative` and `PlaySoundLeech` don't spawn an actor, so they cost about the same as the `UGameplayStatics` functions. The `VAWorld` keeps each sound's filter and reverb send up to date until it finishes. Both return the `UAudioComponent`, or null with no audio device. Call `Stop()` on it to stop a looping sound, or destroy it to cancel a leech that hasn't started yet.
+
+`bDestroyWhenFinished` and `AttenuationSettings` can also be set on a placed `VASource`.
+
 ### Geometry and materials
 
 A **VAMaterialComponent** (`UVAMaterialComponent`) makes its actor part of the raytraced scene, along with any attached child actors that don't have their own. Shape components and simple collision are used where they exist, and render triangles otherwise.
