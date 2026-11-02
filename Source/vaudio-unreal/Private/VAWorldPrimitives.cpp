@@ -18,10 +18,10 @@
 #include "LandscapeHeightfieldCollisionComponent.h"
 #include "LandscapeDataAccess.h"
 #include "Chaos/HeightField.h"
-#include "UObject/ObjectSaveContext.h"
 
-// 4.27 has no World Partition or Level Instances, so their code compiles out
+// 4.27 has no World Partition, Level Instances or FObjectPreSaveContext, so their code compiles out
 #if !UE_VERSION_OLDER_THAN(5, 0, 0)
+#include "UObject/ObjectSaveContext.h"
 #include "LevelInstance/LevelInstanceInterface.h"
 #include "LevelInstance/LevelInstanceSubsystem.h"
 
@@ -302,9 +302,15 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 	return !reason.IsEmpty();
 }
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+void AVAWorld::PreSave(const ITargetPlatform* TargetPlatform)
+{
+	Super::PreSave(TargetPlatform);
+#else
 void AVAWorld::PreSave(FObjectPreSaveContext ObjectSaveContext)
 {
 	Super::PreSave(ObjectSaveContext);
+#endif
 
 	// Covers saving the level and cooking it
 	FString reason;

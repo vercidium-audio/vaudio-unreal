@@ -251,7 +251,12 @@ protected:
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	// 4.27 UHT rejects version #ifs in class scope, so this needs a marker block even though it isn't reflected
+#if 0 // VA_UE4
+	virtual void PreSave(const class ITargetPlatform* TargetPlatform) override;
+#else // VA_UE4
 	virtual void PreSave(FObjectPreSaveContext ObjectSaveContext) override;
+#endif // VA_UE4
 
 	// The bounds are always an axis-aligned box, so the rotate and scale gizmos do nothing
 	virtual void EditorApplyRotation(const FRotator& DeltaRotation, bool bAltDown, bool bShiftDown, bool bCtrlDown) override {}
