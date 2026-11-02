@@ -8,7 +8,15 @@ public class VaudioUnreal : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "AudioMixer", "MeshDescription", "StaticMeshDescription", "AudioCaptureCore" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "Projects", "Landscape", "Chaos" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Projects", "Landscape" });
+
+#if UE_5_0_OR_LATER
+		PrivateDependencyModuleNames.Add("Chaos");
+#else
+		// 4.27 is PhysX unless the engine is rebuilt with Chaos, and the landscape heightfield is read from whichever one it uses
+		SetupModulePhysicsSupport(Target);
+		CppStandard = CppStandardVersion.Cpp17;
+#endif
 
 		if (Target.bBuildEditor)
 		{
@@ -37,11 +45,16 @@ public class VaudioUnreal : ModuleRules
 			platform = "Mac";
 			library = "libvaudionative.dylib";
 
+#if UE_5_0_OR_LATER
 			// Distribution builds default to Universal, which can't link the arm64-only SDK
 			if (Target.Architectures.Contains(UnrealArch.X64))
 			{
 				throw new BuildException("The Vercidium Audio SDK is Apple Silicon (arm64) only, but " + Target.Name + " is being built for x64. Set Project Settings > Platforms > Mac > Supported Architecture(s) for non-Editor builds (and for Editor builds) to Apple Silicon, or add TargetArchitecture=MacTargetArchitectureAppleSilicon under [/Script/MacTargetPlatform.MacTargetSettings] in Config/DefaultEngine.ini");
 			}
+#else
+			// The 4.27 editor and games are x86_64 only, and the SDK is Apple Silicon (arm64) only
+			throw new BuildException("vaudio-unreal doesn't support Mac on Unreal Engine 4.27 yet, only Win64");
+#endif
 		}
 		else
 		{
