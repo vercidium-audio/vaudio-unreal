@@ -19,6 +19,9 @@
 #include "LandscapeDataAccess.h"
 #include "Chaos/HeightField.h"
 #include "UObject/ObjectSaveContext.h"
+
+// 4.27 has no World Partition or Level Instances, so their code compiles out
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 #include "LevelInstance/LevelInstanceInterface.h"
 #include "LevelInstance/LevelInstanceSubsystem.h"
 
@@ -26,6 +29,7 @@
 #include "WorldPartition/WorldPartition.h"
 #include "WorldPartition/WorldPartitionHelpers.h"
 #include "WorldPartition/WorldPartitionActorDescInstance.h"
+#endif
 #endif
 
 extern "C" {
@@ -38,14 +42,19 @@ static AActor* GetMaterialParent(AActor* actor)
 	if (AActor* parent = actor->GetAttachParentActor())
 		return parent;
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	return nullptr;
+#else
 	UWorld* world = actor->GetWorld();
 	ULevelInstanceSubsystem* subsystem = world ? world->GetSubsystem<ULevelInstanceSubsystem>() : nullptr;
 	return subsystem ? Cast<AActor>(subsystem->GetOwningLevelInstance(actor->GetLevel())) : nullptr;
+#endif
 }
 
 // The unattached actors in a loaded and visible level instance's level that don't have their own VAMaterialComponent. Nothing if the level isn't visible yet
 static void ForEachLevelInstanceRoot(AActor* instance, TFunctionRef<void(AActor*)> operation)
 {
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	ILevelInstanceInterface* levelInstance = Cast<ILevelInstanceInterface>(instance);
 	UWorld* world = instance->GetWorld();
 	ULevelInstanceSubsystem* subsystem = world ? world->GetSubsystem<ULevelInstanceSubsystem>() : nullptr;
@@ -60,6 +69,7 @@ static void ForEachLevelInstanceRoot(AActor* instance, TFunctionRef<void(AActor*
 		if (IsValid(actor) && !actor->GetAttachParentActor() && !actor->FindComponentByClass<UVAMaterialComponent>())
 			operation(actor);
 	}
+#endif
 }
 
 // Walk the attach-parent chain (and out of level instances) to find the nearest UVAMaterialComponent.
@@ -150,12 +160,15 @@ static void ForEachBakeTargetOnActor(AActor* actor, FVABakeVisitor visit)
 // Calls visit for every mesh component BakeGeometry bakes, in every loaded actor. With loadAll, level instances that aren't loaded are loaded for the call and unloaded after, and so is every World Partition actor
 static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
 {
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	ULevelInstanceSubsystem* levelInstances = world->GetSubsystem<ULevelInstanceSubsystem>();
+#endif
 
 	TFunction<void(AActor*)> visitActor = [&](AActor* actor)
 	{
 		ForEachBakeTargetOnActor(actor, visit);
 
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 		// A loaded level instance's actors are already in the world's levels
 		ILevelInstanceInterface* levelInstance = Cast<ILevelInstanceInterface>(actor);
 
@@ -165,6 +178,7 @@ static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
 		levelInstances->BlockLoadLevelInstance(levelInstance);
 		levelInstances->ForEachActorInLevelInstance(levelInstance, [&](AActor* contained) { visitActor(contained); return true; });
 		levelInstances->BlockUnloadLevelInstance(levelInstance);
+#endif
 	};
 
 	// Copied, as loading a level instance adds actors to the world
@@ -176,6 +190,7 @@ static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
 	for (AActor* actor : actors)
 		visitActor(actor);
 
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	UWorldPartition* worldPartition = world->GetWorldPartition();
 
 	// Loaded actors are visited again, which is harmless as entries are per mesh
@@ -189,6 +204,7 @@ static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
 			return true;
 		});
 	}
+#endif
 }
 
 void AVAWorld::BakeGeometry()
@@ -268,7 +284,11 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 	}
 
 	// World Partition only checks loaded actors, so an unused entry may just be in an unloaded cell
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	if (reason.IsEmpty())
+#else
 	if (reason.IsEmpty() && !world->IsPartitionedWorld())
+#endif
 	{
 		const FVABakedMesh* unused = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return !used.Contains({ baked.Mesh.ToSoftObjectPath(), baked.LOD }); });
 
@@ -407,20 +427,25 @@ void AVAWorld::AddActorTree(AActor* actor, UVAMaterialComponent* source)
 		AddActorTree(child, source);
 	}
 
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	if (Cast<ILevelInstanceInterface>(actor))
 		AddLevelInstanceContents(actor, source);
+#endif
 }
 
 void AVAWorld::AddLevelInstanceContents(AActor* instance, UVAMaterialComponent* source)
 {
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>> entry(instance, source);
 	LevelInstanceSources.AddUnique(entry);
 
 	ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
+#endif
 }
 
 void AVAWorld::OnLevelAddedToWorld(ULevel* level, UWorld* world)
 {
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	if (world != GetWorld() || !World)
 		return;
 
@@ -440,6 +465,7 @@ void AVAWorld::OnLevelAddedToWorld(ULevel* level, UWorld* world)
 		if (instance && source && subsystem->GetLevelInstanceLevel(Cast<ILevelInstanceInterface>(instance)) == level)
 			ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
 	}
+#endif
 }
 
 void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
