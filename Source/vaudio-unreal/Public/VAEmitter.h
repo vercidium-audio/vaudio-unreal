@@ -324,8 +324,13 @@ public:
 	int32 TrailRefreshCount = 16;
 
 	// The allowed distance between new and old bounce positions when refreshing trails. See TrailRefreshCount for more information.
+#if 0 // VA_UE4
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced", meta = (ClampMin = "0.0"))
+	float RefreshDistanceThreshold = 1.0f;
+#else // VA_UE4
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced", meta = (ClampMin = "0.0"))
 	double RefreshDistanceThreshold = 1.0;
+#endif // VA_UE4
 
 	// Seed used to randomise scattering vectors. Each new emitter gets a random seed
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Advanced")

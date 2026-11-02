@@ -272,8 +272,13 @@ public:
 	EVABoundsFollow BoundsFollow = EVABoundsFollow::None;
 
 	// How far the actor (or the current listener, with BoundsFollow Listener) must move during play, in world units, before the bounds follow it. Every move of the bounds re-checks all raytraced trails, so moving bounds should update in steps. The default is 100 m at the default MetersPerUnit. 0 follows every move
+#if 0 // VA_UE4
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0"))
+	float BoundsUpdateDistance = 10000.0f;
+#else // VA_UE4
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0"))
 	double BoundsUpdateDistance = 10000.0;
+#endif // VA_UE4
 
 	// The bounds' minimum corner: the position last pushed to the SDK during play, otherwise the actor's location
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
@@ -307,8 +312,13 @@ public:
 	float SpeedOfSound = 343.0f;
 
 	// Epsilon value used for ray offsets, world bounds clamping and line-of-sight tests.
+#if 0 // VA_UE4
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
+	float Epsilon = 0.01f;
+#else // VA_UE4
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
 	double Epsilon = 0.01;
+#endif // VA_UE4
 
 	// --- Air Absorption ---
 
@@ -407,6 +417,23 @@ public:
 
 	// --- Stats ---
 
+#if 0 // VA_UE4
+	// Average milliseconds vaWorldUpdate spends on the game thread
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	float GetMainThreadTime() const;
+
+	// Average milliseconds spent in the preparation thread
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	float GetPreparationTime() const;
+
+	// Average milliseconds spent in the raytracing threads
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	float GetRaytracingTime() const;
+
+	// Average milliseconds spent in the analysis thread
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
+	float GetAnalysisTime() const;
+#else // VA_UE4
 	// Average milliseconds vaWorldUpdate spends on the game thread
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
 	double GetMainThreadTime() const;
@@ -422,6 +449,7 @@ public:
 	// Average milliseconds spent in the analysis thread
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")
 	double GetAnalysisTime() const;
+#endif // VA_UE4
 
 	// Number of grouped EAX reverbs the SDK produced in the last raytracing pass
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Stats")

@@ -1242,24 +1242,24 @@ bool AVAWorld::ExportToFile(const FString& Path)
 	return true;
 }
 
-double AVAWorld::GetMainThreadTime() const
+VABlueprintReal AVAWorld::GetMainThreadTime() const
 {
-	return vaWorldGetMainThreadTime(World);
+	return (VABlueprintReal)vaWorldGetMainThreadTime(World);
 }
 
-double AVAWorld::GetPreparationTime() const
+VABlueprintReal AVAWorld::GetPreparationTime() const
 {
-	return vaWorldGetPreparationTime(World);
+	return (VABlueprintReal)vaWorldGetPreparationTime(World);
 }
 
-double AVAWorld::GetRaytracingTime() const
+VABlueprintReal AVAWorld::GetRaytracingTime() const
 {
-	return vaWorldGetRaytracingTime(World);
+	return (VABlueprintReal)vaWorldGetRaytracingTime(World);
 }
 
-double AVAWorld::GetAnalysisTime() const
+VABlueprintReal AVAWorld::GetAnalysisTime() const
 {
-	return vaWorldGetAnalysisTime(World);
+	return (VABlueprintReal)vaWorldGetAnalysisTime(World);
 }
 
 int32 AVAWorld::GetGroupedEAXCount() const

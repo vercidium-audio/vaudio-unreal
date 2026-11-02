@@ -13,6 +13,13 @@ using FVAVector3f = FVector3f;
 using FVAVector2f = FVector2f;
 #endif
 
+// 4.27 UHT rejects double in Blueprint-exposed members, so those are float there (declared with marker blocks)
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+using VABlueprintReal = float;
+#else
+using VABlueprintReal = double;
+#endif
+
 // 5.8 deprecated the FCoreDelegates::OnPostEngineInit field in favour of GetOnPostEngineInit(), which 5.7 doesn't have
 inline FSimpleMulticastDelegate& VAOnPostEngineInit()
 {
