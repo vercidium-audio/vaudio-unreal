@@ -19,6 +19,10 @@
 #include "LandscapeDataAccess.h"
 #include "Chaos/HeightField.h"
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS
+#include "DynamicMeshBuilder.h"
+#endif
+
 // 4.27 has no World Partition, Level Instances or FObjectPreSaveContext, so their code compiles out
 #if !UE_VERSION_OLDER_THAN(5, 0, 0)
 #include "UObject/ObjectSaveContext.h"
@@ -635,6 +639,22 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 			{
 				FKConvexElem convexElem = agg.ConvexElems[convexIndex];
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS
+				// 4.27's PhysX build has no hull indices, so the cooked PhysX hull is triangulated instead. It's already in body space (element transform applied, mirroring undone) and has render winding
+				TArray<FDynamicMeshVertex> hullVertices;
+				TArray<uint32> hullIndices;
+				convexElem.AddCachedSolidConvexGeom(hullVertices, hullIndices, FColor::White);
+
+				if (hullIndices.Num() == 0)
+					return false;
+
+				vertices.Reserve(hullIndices.Num());
+
+				for (uint32 index : hullIndices)
+					vertices.Add(hullVertices[index].Position);
+
+				return true;
+#else
 				if (convexElem.IndexData.Num() == 0)
 					convexElem.ComputeChaosConvexIndices();
 
@@ -653,6 +673,7 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 				}
 
 				return true;
+#endif
 			};
 
 			addedSimple |= AddMeshPrimitive(FVAMeshKey{ staticMesh, 0, convexIndex }, readHull, meshComponent, source, meshTransform, materialId, false);
