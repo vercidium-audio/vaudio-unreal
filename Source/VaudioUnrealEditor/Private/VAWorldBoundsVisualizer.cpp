@@ -149,6 +149,7 @@ bool FVAWorldBoundsVisualizer::HandleInputDelta(FEditorViewportClient* ViewportC
 	return true;
 }
 
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 void FVAWorldBoundsVisualizer::TrackingStopped(FEditorViewportClient* InViewportClient, bool bInDidMove)
 {
 	if (!bInDidMove)
@@ -157,3 +158,4 @@ void FVAWorldBoundsVisualizer::TrackingStopped(FEditorViewportClient* InViewport
 	if (AVAWorld* world = GetEditedWorld())
 		world->PostEditMove(true);
 }
+#endif
