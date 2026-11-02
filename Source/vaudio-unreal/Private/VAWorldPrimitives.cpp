@@ -83,7 +83,7 @@ static bool HasSimpleCollision(UStaticMesh* Mesh)
 		return false;
 
 	const FKAggregateGeom& Agg = BodySetup->AggGeom;
-	return !Agg.SphylElems.IsEmpty() || !Agg.SphereElems.IsEmpty() || !Agg.BoxElems.IsEmpty() || !Agg.ConvexElems.IsEmpty();
+	return Agg.SphylElems.Num() > 0 || Agg.SphereElems.Num() > 0 || Agg.BoxElems.Num() > 0 || Agg.ConvexElems.Num() > 0;
 }
 
 // One LOD's triangle-list vertices in mesh space, i.e. vertices[i] is triangle-list index i. False if the mesh has no CPU render data, e.g. in a cooked build
@@ -91,7 +91,7 @@ static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVector3f>& v
 {
 	FStaticMeshRenderData* renderData = mesh->GetRenderData();
 
-	if (!renderData || renderData->LODResources.IsEmpty())
+	if (!renderData || renderData->LODResources.Num() == 0)
 		return false;
 
 	FStaticMeshLODResources& lodResources = renderData->LODResources[FMath::Clamp(lod, 0, renderData->LODResources.Num() - 1)];
@@ -102,7 +102,7 @@ static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVector3f>& v
 	TArray<uint32> indices;
 	lodResources.IndexBuffer.GetCopy(indices);
 
-	if (indices.IsEmpty())
+	if (indices.Num() == 0)
 		return false;
 
 	vertices.Reset(indices.Num());
@@ -240,7 +240,7 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 	UWorld* world = GetWorld();
 
 	// Never baked, so there's nothing to go stale
-	if (!world || BakedMeshes.IsEmpty())
+	if (!world || BakedMeshes.Num() == 0)
 		return false;
 
 	TSet<TPair<FSoftObjectPath, int32>> used;
@@ -503,7 +503,7 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 
 bool AVAWorld::PassesCollisionFilter(const UPrimitiveComponent* component) const
 {
-	return CollisionObjectTypes.IsEmpty() || CollisionObjectTypes.Contains(component->GetCollisionObjectType());
+	return CollisionObjectTypes.Num() == 0 || CollisionObjectTypes.Contains(component->GetCollisionObjectType());
 }
 
 void AVAWorld::AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId)
@@ -602,10 +602,10 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 			{
 				FKConvexElem convexElem = agg.ConvexElems[convexIndex];
 
-				if (convexElem.IndexData.IsEmpty())
+				if (convexElem.IndexData.Num() == 0)
 					convexElem.ComputeChaosConvexIndices();
 
-				if (convexElem.IndexData.IsEmpty())
+				if (convexElem.IndexData.Num() == 0)
 					return false;
 
 				FTransform elementTransform = convexElem.GetTransform();
