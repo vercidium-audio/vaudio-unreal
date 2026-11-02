@@ -114,8 +114,13 @@ struct FVABakedMesh
 	int32 LOD = 0;
 
 	// Mesh-space triangle-list vertices, i.e. Vertices[i] is triangle-list index i
+#if 0 // VA_UE4
+	UPROPERTY()
+	TArray<FVector> Vertices;
+#else // VA_UE4
 	UPROPERTY()
 	TArray<FVector3f> Vertices;
+#endif // VA_UE4
 };
 
 UENUM(BlueprintType)
