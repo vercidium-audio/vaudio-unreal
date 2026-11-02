@@ -1,4 +1,5 @@
 #include "VAWorld.h"
+#include "VAEngineCompat.h"
 #include "VAConstants.h"
 #include "VALog.h"
 
@@ -13,7 +14,7 @@ extern "C" {
 bool AVAWorld::AddBinding(FVAPrimitiveBinding binding, const TCHAR* typeName)
 {
 	USceneComponent* component = binding.Component.Get();
-	FString actorName = component->GetOwner()->GetActorNameOrLabel();
+	FString actorName = VAActorName(component->GetOwner());
 
 	RefreshPrimitiveTransform(binding);
 

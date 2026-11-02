@@ -1,4 +1,5 @@
 #include "VAListener.h"
+#include "VAEngineCompat.h"
 #include "VAWorld.h"
 #include "VASource.h"
 #include "VAReverbConversion.h"
@@ -143,15 +144,15 @@ void AVAListener::AddTarget(AVAEmitter* target)
 			break;
 
 		case VA_NOT_ADDED_TO_WORLD:
-			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as it has not been added to the same world as this listener."), *target->GetActorNameOrLabel());
+			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as it has not been added to the same world as this listener."), *VAActorName(target));
 			break;
 
 		case VA_FEATURE_DISABLED:
-			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as this listener casts neither occlusion nor permeation rays."), *target->GetActorNameOrLabel());
+			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as this listener casts neither occlusion nor permeation rays."), *VAActorName(target));
 			break;
 
 		default:
-			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to add target '%s'."), *target->GetActorNameOrLabel());
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to add target '%s'."), *VAActorName(target));
 			break;
 	}
 }

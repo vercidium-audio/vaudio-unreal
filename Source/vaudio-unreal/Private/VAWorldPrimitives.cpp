@@ -1,4 +1,5 @@
 #include "VAWorld.h"
+#include "VAEngineCompat.h"
 #include "VAMaterialComponent.h"
 #include "VAConstants.h"
 #include "VALog.h"
@@ -223,7 +224,7 @@ void AVAWorld::BakeGeometry()
 
 		if (!GetRenderVertices(mesh, lod, baked.Vertices))
 		{
-			VA_WARN_NAMED(TEXT("Mesh '%s' (first used by '%s') has no render data in-editor, skipping"), *mesh->GetPathName(), *actor->GetActorNameOrLabel());
+			VA_WARN_NAMED(TEXT("Mesh '%s' (first used by '%s') has no render data in-editor, skipping"), *mesh->GetPathName(), *VAActorName(actor));
 			return;
 		}
 
@@ -253,7 +254,7 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 
 		// A mesh with no render data can't be baked or compared, and is what the bake is for
 		if (reason.IsEmpty() && !FindBakedMesh(mesh, lod) && GetRenderVertices(mesh, lod, vertices))
-			reason = FString::Printf(TEXT("'%s' LOD %d (used by '%s'.'%s') isn't baked"), *mesh->GetPathName(), lod, *actor->GetActorNameOrLabel(), *meshComponent->GetName());
+			reason = FString::Printf(TEXT("'%s' LOD %d (used by '%s'.'%s') isn't baked"), *mesh->GetPathName(), lod, *VAActorName(actor), *meshComponent->GetName());
 	});
 
 	// Every entry whose mesh is loaded has to match its live triangles, whether a loaded actor uses it or not
@@ -458,7 +459,7 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 
 			if (!source->GetMaterialFor(shape, materialId, useFlatTransmission))
 			{
-				ActorsWithInvalidMaterials.AddUnique(actor->GetActorNameOrLabel());
+				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
 				continue;
 			}
 
@@ -468,7 +469,7 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 		{
 			if (!source->GetMaterialFor(meshComponent, materialId, useFlatTransmission))
 			{
-				ActorsWithInvalidMaterials.AddUnique(actor->GetActorNameOrLabel());
+				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
 				continue;
 			}
 
@@ -492,7 +493,7 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 		{
 			if (!source->GetMaterialFor(landscapeComponent, materialId, useFlatTransmission))
 			{
-				ActorsWithInvalidMaterials.AddUnique(actor->GetActorNameOrLabel());
+				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
 				continue;
 			}
 
@@ -664,7 +665,7 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 	if (source->PropagateMode != EVAPropagateMode::Visuals && !PassesCollisionFilter(landscapeComponent))
 		return;
 
-	FString landscapeName = landscapeComponent->GetOwner()->GetActorNameOrLabel();
+	FString landscapeName = VAActorName(landscapeComponent->GetOwner());
 	const Chaos::FHeightField* heightField = IsValidRef(landscapeComponent->HeightfieldRef) ? landscapeComponent->HeightfieldRef->HeightfieldGeometry.GetReference() : nullptr;
 
 	if (!heightField || heightField->GetNumCols() < 2 || heightField->GetNumRows() < 2)
@@ -822,7 +823,7 @@ VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TAr
 
 	if (result != VA_SUCCESS)
 	{
-		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a mesh for '%s' on '%s'."), *meshComponent->GetName(), *meshComponent->GetOwner()->GetActorNameOrLabel());
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a mesh for '%s' on '%s'."), *meshComponent->GetName(), *VAActorName(meshComponent->GetOwner()));
 		return nullptr;
 	}
 
@@ -861,7 +862,7 @@ bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<
 
 	if (result != VA_SUCCESS)
 	{
-		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a mesh primitive for '%s' on '%s'."), *meshComponent->GetName(), *meshComponent->GetOwner()->GetActorNameOrLabel());
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to create a mesh primitive for '%s' on '%s'."), *meshComponent->GetName(), *VAActorName(meshComponent->GetOwner()));
 		ReleaseSharedMesh(key);
 		return false;
 	}

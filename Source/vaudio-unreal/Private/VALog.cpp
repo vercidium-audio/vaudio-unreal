@@ -1,4 +1,5 @@
 #include "VALog.h"
+#include "VAEngineCompat.h"
 
 #include "Engine/Engine.h"
 #include "GameFramework/Actor.h"
@@ -51,12 +52,12 @@ FString VAObjectName(const UObject* object)
 		return TEXT("<null>");
 
 	if (const AActor* actor = Cast<AActor>(object))
-		return actor->GetActorNameOrLabel();
+		return VAActorName(actor);
 
 	if (const UActorComponent* component = Cast<UActorComponent>(object))
 	{
 		if (const AActor* owner = component->GetOwner())
-			return FString::Printf(TEXT("%s.%s"), *owner->GetActorNameOrLabel(), *component->GetName());
+			return FString::Printf(TEXT("%s.%s"), *VAActorName(owner), *component->GetName());
 	}
 
 	return object->GetName();

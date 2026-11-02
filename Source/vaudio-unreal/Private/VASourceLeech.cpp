@@ -1,4 +1,5 @@
 #include "VASourceLeech.h"
+#include "VAEngineCompat.h"
 #include "VAEmitter.h"
 #include "VAListener.h"
 #include "AudioDevice.h"
@@ -113,7 +114,7 @@ void AVASourceLeech::Tick(float DeltaTime)
 	// A listener never raytraces itself, so it has no muffling for a leech to read
 	if (emitter->IsA<AVAListener>())
 	{
-		VA_WARN_NAMED(TEXT("Leeches the listener '%s', which has no muffling result, so it will not play. Use a VASourceRelative instead"), *emitter->GetActorNameOrLabel());
+		VA_WARN_NAMED(TEXT("Leeches the listener '%s', which has no muffling result, so it will not play. Use a VASourceRelative instead"), *VAActorName(emitter));
 		SetActorTickEnabled(false);
 		return;
 	}

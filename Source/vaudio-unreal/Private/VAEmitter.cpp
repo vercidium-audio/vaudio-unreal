@@ -1,4 +1,5 @@
 #include "VAEmitter.h"
+#include "VAEngineCompat.h"
 #include "VAWorld.h"
 #include "VAWorldSubsystem.h"
 #include "VAListener.h"
@@ -305,7 +306,7 @@ void AVAEmitter::AdoptEmitter(VAEmitter* handle)
 
 	// Lets the callback trampolines resolve this actor from the VAEmitter* alone
 	vaEmitterSetUserData(Emitter, this);
-	vaEmitterSetName(Emitter, TCHAR_TO_UTF8(*GetActorNameOrLabel()));
+	vaEmitterSetName(Emitter, TCHAR_TO_UTF8(*VAActorName(this)));
 	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
 }
 

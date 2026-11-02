@@ -1,4 +1,5 @@
 #include "VASourceRelative.h"
+#include "VAEngineCompat.h"
 #include "VAListener.h"
 #include "VAWorld.h"
 
@@ -113,7 +114,7 @@ void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, con
 	if (!listener->ListenerReverbSubmix && warnedListener.Get() != listener)
 	{
 		warnedListener = listener;
-		VAReport(ELogVerbosity::Warning, reporter, VA_CALL_SITE_KEY(reporter), FString::Printf(TEXT("Will have no reverb as the listener '%s' has no ListenerReverbSubmix"), *listener->GetActorNameOrLabel()));
+		VAReport(ELogVerbosity::Warning, reporter, VA_CALL_SITE_KEY(reporter), FString::Printf(TEXT("Will have no reverb as the listener '%s' has no ListenerReverbSubmix"), *VAActorName(listener)));
 	}
 
 	// Not muffled, so the send level isn't compensated

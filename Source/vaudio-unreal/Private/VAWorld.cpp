@@ -1,4 +1,5 @@
 #include "VAWorld.h"
+#include "VAEngineCompat.h"
 #include "VAWorldSubsystem.h"
 #include "VASubmixEffectDirectionalPan.h"
 #include "VAEmitter.h"
@@ -179,7 +180,7 @@ void AVAWorld::SetBoundsFollow(EVABoundsFollow follow)
 
 void AVAWorld::UpdateVAWorld()
 {
-	vaWorldSetName(World, TCHAR_TO_UTF8(*(WorldName.IsEmpty() ? GetActorNameOrLabel() : WorldName)));
+	vaWorldSetName(World, TCHAR_TO_UTF8(*(WorldName.IsEmpty() ? VAActorName(this) : WorldName)));
 
 	// Rendering
 	vaWorldSetRenderingEnabled(World, bRenderingEnabled);
@@ -277,7 +278,7 @@ void AVAWorld::BeginPlay()
 
 	if (AVAWorld* existing = subsystem->GetVAWorld())
 	{
-		VA_ERROR_NAMED(TEXT("Is ignored, as '%s' is already the VAWorld in this level. A level can only have one VAWorld."), *existing->GetActorNameOrLabel());
+		VA_ERROR_NAMED(TEXT("Is ignored, as '%s' is already the VAWorld in this level. A level can only have one VAWorld."), *VAActorName(existing));
 		SetActorTickEnabled(false);
 		return;
 	}
@@ -428,7 +429,7 @@ UAudioComponent* AVAWorld::PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter
 
 	if (Emitter->IsA<AVAListener>())
 	{
-		VA_WARN(TEXT("PlaySoundLeech can't leech the listener '%s', which has no muffling result. Use PlaySoundRelative instead"), *Emitter->GetActorNameOrLabel());
+		VA_WARN(TEXT("PlaySoundLeech can't leech the listener '%s', which has no muffling result. Use PlaySoundRelative instead"), *VAActorName(Emitter));
 		return nullptr;
 	}
 
@@ -437,7 +438,7 @@ UAudioComponent* AVAWorld::PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter
 
 	if (!audioWorld)
 	{
-		VA_WARN(TEXT("PlaySoundLeech needs a VAWorld that has begun play in the emitter '%s''s level"), *Emitter->GetActorNameOrLabel());
+		VA_WARN(TEXT("PlaySoundLeech needs a VAWorld that has begun play in the emitter '%s''s level"), *VAActorName(Emitter));
 		return nullptr;
 	}
 
@@ -899,7 +900,7 @@ void AVAWorld::ShowDebugMessages()
 		if (!vaEmitter)
 		{
 			VAShowMessage(messageID, 0.0f, FColor::Orange,
-				FString::Printf(TEXT("[VA] Emitter %d '%s': initialising"), i, *baseEmitter->GetActorNameOrLabel()));
+				FString::Printf(TEXT("[VA] Emitter %d '%s': initialising"), i, *VAActorName(baseEmitter)));
 
 			continue;
 		}
@@ -917,17 +918,17 @@ void AVAWorld::ShowDebugMessages()
 				if (!source->SourceSound)
 				{
 					uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::SourceStatus);
-					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no sound file assigned"), i, *continuousEmitter->GetActorNameOrLabel()));
+					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no sound file assigned"), i, *VAActorName(continuousEmitter)));
 				}
 				else if (!source->SourceSound->AttenuationSettings)
 				{
 					uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::AttenuationStatus);
-					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *continuousEmitter->GetActorNameOrLabel()));
+					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *VAActorName(continuousEmitter)));
 				}
 				else if (!source->IsPlaying())
 				{
 					uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::SourceStatus);
-					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' is not playing"), i, *continuousEmitter->GetActorNameOrLabel()));
+					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' is not playing"), i, *VAActorName(continuousEmitter)));
 				}
 			}
 		}
@@ -948,13 +949,13 @@ void AVAWorld::ShowDebugMessages()
 
 				if (!Target->GetVAEmitter())
 				{
-					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' target '%s' has no emitter. Ensure the target emitter is assigned to the same World"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
+					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' target '%s' has no emitter. Ensure the target emitter is assigned to the same World"), *VAActorName(MessageListener), *VAActorName(Target)));
 					continue;
 				}
 
 				if (vaEmitterHasRaytracedTarget(ListenerVA, Target->GetVAEmitter()) != VA_TRUE)
 				{
-					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has not raytraced the '%s' emitter yet"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
+					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has not raytraced the '%s' emitter yet"), *VAActorName(MessageListener), *VAActorName(Target)));
 					continue;
 				}
 
@@ -962,7 +963,7 @@ void AVAWorld::ShowDebugMessages()
 
 				if (vaEmitterGetTargetFilter(ListenerVA, Target->GetVAEmitter(), &lowPassFilter) != VA_SUCCESS)
 				{
-					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has raytraced the '%s' emitter, but has an invalid low pass filter"), *MessageListener->GetActorNameOrLabel(), *Target->GetActorNameOrLabel()));
+					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has raytraced the '%s' emitter, but has an invalid low pass filter"), *VAActorName(MessageListener), *VAActorName(Target)));
 					continue;
 				}
 			}
@@ -992,7 +993,7 @@ void AVAWorld::ShowDebugMessages()
 
 	if (GroupedEAXSubmixes.Num() == 0)
 	{
-		VAShowMessage(VAMessageKey(this, EVAMessageSlot::NoGroupedEAX), 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] World '%s' has no Grouped EAX Submixes. Ensure at least one is added"), *GetActorNameOrLabel()));
+		VAShowMessage(VAMessageKey(this, EVAMessageSlot::NoGroupedEAX), 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] World '%s' has no Grouped EAX Submixes. Ensure at least one is added"), *VAActorName(this)));
 	}
 
 	if (!GetMainListener())
@@ -1032,15 +1033,15 @@ bool AVAWorld::AddEmitterToWorld(AVAEmitter* emitter)
 			return true;
 
 		case VA_ALREADY_EXISTS:
-			VA_ERROR_NAMED(TEXT("Failed to register emitter '%s' as it is already added to this world."), *emitter->GetActorNameOrLabel());
+			VA_ERROR_NAMED(TEXT("Failed to register emitter '%s' as it is already added to this world."), *VAActorName(emitter));
 			return false;
 
 		case VA_WORLD_CONFLICT:
-			VA_ERROR_NAMED(TEXT("Failed to register emitter '%s' as it is already added to a different world."), *emitter->GetActorNameOrLabel());
+			VA_ERROR_NAMED(TEXT("Failed to register emitter '%s' as it is already added to a different world."), *VAActorName(emitter));
 			return false;
 
 		default:
-			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to register emitter '%s'."), *emitter->GetActorNameOrLabel());
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to register emitter '%s'."), *VAActorName(emitter));
 			return false;
 	}
 }
@@ -1080,7 +1081,7 @@ bool AVAWorld::RegisterListener(AVAListener* listener)
 	// A listener that begins play with bCurrent enabled takes over, e.g. a spawned player pawn's listener
 	if (listener->IsCurrent())
 	{
-		VA_WARN_NAMED(TEXT("VAListener '%s' has bCurrent enabled, so it replaced '%s' as the current listener. Disable bCurrent on listeners that shouldn't take over when they begin play, and call MakeCurrent() on the one that should be used."), *listener->GetActorNameOrLabel(), *MainListener->GetActorNameOrLabel());
+		VA_WARN_NAMED(TEXT("VAListener '%s' has bCurrent enabled, so it replaced '%s' as the current listener. Disable bCurrent on listeners that shouldn't take over when they begin play, and call MakeCurrent() on the one that should be used."), *VAActorName(listener), *VAActorName(MainListener));
 		SetCurrentListener(listener);
 	}
 
@@ -1151,7 +1152,7 @@ void AVAWorld::ReleaseCurrentListener(AVAListener* listener)
 		}
 	}
 
-	VA_WARN_NAMED(TEXT("VAListener '%s' is the only listener in this world, so it stays current."), *listener->GetActorNameOrLabel());
+	VA_WARN_NAMED(TEXT("VAListener '%s' is the only listener in this world, so it stays current."), *VAActorName(listener));
 	listener->bCurrent = true;
 }
 
