@@ -4,6 +4,15 @@
 #include "Misc/CoreDelegates.h"
 #include "Misc/EngineVersionComparison.h"
 
+// Mesh vertex data is float on every engine, but 4.27 has no FVector3f/FVector2f because its FVector/FVector2D are already float
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+using FVAVector3f = FVector;
+using FVAVector2f = FVector2D;
+#else
+using FVAVector3f = FVector3f;
+using FVAVector2f = FVector2f;
+#endif
+
 // 5.8 deprecated the FCoreDelegates::OnPostEngineInit field in favour of GetOnPostEngineInit(), which 5.7 doesn't have
 inline FSimpleMulticastDelegate& VAOnPostEngineInit()
 {

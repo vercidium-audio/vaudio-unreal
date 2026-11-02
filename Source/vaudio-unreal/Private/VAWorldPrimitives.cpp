@@ -88,7 +88,7 @@ static bool HasSimpleCollision(UStaticMesh* Mesh)
 }
 
 // One LOD's triangle-list vertices in mesh space, i.e. vertices[i] is triangle-list index i. False if the mesh has no CPU render data, e.g. in a cooked build
-static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVector3f>& vertices)
+static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVAVector3f>& vertices)
 {
 	FStaticMeshRenderData* renderData = mesh->GetRenderData();
 
@@ -250,7 +250,7 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 	ForEachBakeTarget(world, false, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
 	{
 		used.Add({ FSoftObjectPath(mesh), lod });
-		TArray<FVector3f> vertices;
+		TArray<FVAVector3f> vertices;
 
 		// A mesh with no render data can't be baked or compared, and is what the bake is for
 		if (reason.IsEmpty() && !FindBakedMesh(mesh, lod) && GetRenderVertices(mesh, lod, vertices))
@@ -261,7 +261,7 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 	for (const FVABakedMesh& baked : BakedMeshes)
 	{
 		UStaticMesh* mesh = baked.Mesh.Get();
-		TArray<FVector3f> vertices;
+		TArray<FVAVector3f> vertices;
 
 		if (reason.IsEmpty() && mesh && GetRenderVertices(mesh, baked.LOD, vertices) && vertices != baked.Vertices)
 			reason = FString::Printf(TEXT("'%s' LOD %d has changed since it was baked (%d baked triangles, %d now)"), *mesh->GetPathName(), baked.LOD, baked.Vertices.Num() / 3, vertices.Num() / 3);
@@ -634,8 +634,8 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 	auto readTriangles = [&](TArray<FVector>& vertices)
 	{
 		// Render vertices are float, both baked and live
-		TArray<FVector3f> liveVertices;
-		const TArray<FVector3f>* renderVertices = nullptr;
+		TArray<FVAVector3f> liveVertices;
+		const TArray<FVAVector3f>* renderVertices = nullptr;
 
 		if (GetRenderVertices(staticMesh, source->MeshLOD, liveVertices))
 			renderVertices = &liveVertices;
@@ -650,7 +650,7 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 
 		vertices.Reserve(renderVertices->Num());
 
-		for (const FVector3f& vertex : *renderVertices)
+		for (const FVAVector3f& vertex : *renderVertices)
 			vertices.Add(FVector(vertex));
 
 		return true;
@@ -659,6 +659,25 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 	AddMeshPrimitive(FVAMeshKey{ staticMesh, source->MeshLOD, INDEX_NONE }, readTriangles, meshComponent, source, meshTransform, materialId, useFlatTransmission);
 }
 
+// The samples and hole flags of a landscape component's collision heightfield, in component space. The only part of AddLandscapePrimitive that depends on the physics engine
+struct FVALandscapeHeightfield
+{
+	const Chaos::FHeightField* HeightField = nullptr;
+
+	explicit FVALandscapeHeightfield(const ULandscapeHeightfieldCollisionComponent* component)
+	{
+		HeightField = IsValidRef(component->HeightfieldRef) ? component->HeightfieldRef->HeightfieldGeometry.GetReference() : nullptr;
+	}
+
+	bool IsValid() const { return HeightField && HeightField->GetNumCols() >= 2 && HeightField->GetNumRows() >= 2; }
+	int32 GetNumCols() const { return HeightField->GetNumCols(); }
+	int32 GetNumRows() const { return HeightField->GetNumRows(); }
+	double GetHeight(int32 x, int32 y) const { return HeightField->GetHeight(x, y) * LANDSCAPE_ZSCALE; }
+
+	// Whether the quad at (x, y) was painted with the visibility layer
+	bool IsHole(int32 x, int32 y) const { return HeightField->IsHole(x, y); }
+};
+
 void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId)
 {
 	// A landscape is both a collider and a visual, so only the collision filter can leave it out
@@ -666,9 +685,9 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 		return;
 
 	FString landscapeName = VAActorName(landscapeComponent->GetOwner());
-	const Chaos::FHeightField* heightField = IsValidRef(landscapeComponent->HeightfieldRef) ? landscapeComponent->HeightfieldRef->HeightfieldGeometry.GetReference() : nullptr;
+	FVALandscapeHeightfield heightField(landscapeComponent);
 
-	if (!heightField || heightField->GetNumCols() < 2 || heightField->GetNumRows() < 2)
+	if (!heightField.IsValid())
 	{
 		VA_WARN_NAMED(TEXT("Landscape '%s' will not affect raytracing as its component '%s' has no collision. Enable collision on the landscape."), *landscapeName, *landscapeComponent->GetName());
 		return;
@@ -683,8 +702,8 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 		return;
 	}
 
-	int32 quadsX = heightField->GetNumCols() - 1;
-	int32 quadsY = heightField->GetNumRows() - 1;
+	int32 quadsX = heightField.GetNumCols() - 1;
+	int32 quadsY = heightField.GetNumRows() - 1;
 
 	// The collision heightfield exists in cooked builds, unlike the heightmap. It's in component space, and the component's scale goes in the heightmap's scale, as its transform can't hold scale
 	double quadSize = landscapeComponent->CollisionScale * landscapeComponent->CollisionSizeQuads / quadsX;
@@ -696,8 +715,6 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 	double cellQuadsX = (double)quadsX / cellsX;
 	double cellQuadsY = (double)quadsY / cellsY;
 
-	auto heightAt = [&](int32 x, int32 y) { return heightField->GetHeight(x, y) * LANDSCAPE_ZSCALE; };
-
 	// The height of the collision's surface at a point in quads. Exact at LOD 0, and along a component's edges only the edge's own points are used, so neighbouring components still meet
 	auto surfaceAt = [&](double x, double y)
 	{
@@ -706,10 +723,10 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 		double fx = x - x0;
 		double fy = y - y0;
 
-		double h00 = heightAt(x0, y0);
-		double h10 = heightAt(x0 + 1, y0);
-		double h01 = heightAt(x0, y0 + 1);
-		double h11 = heightAt(x0 + 1, y0 + 1);
+		double h00 = heightField.GetHeight(x0, y0);
+		double h10 = heightField.GetHeight(x0 + 1, y0);
+		double h01 = heightField.GetHeight(x0, y0 + 1);
+		double h11 = heightField.GetHeight(x0 + 1, y0 + 1);
 
 		// Split along (x0, y0) to (x0 + 1, y0 + 1), like the heightmap's own triangles
 		return fx >= fy
@@ -725,7 +742,7 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 
 		for (int32 y = FMath::FloorToInt32(cellY * cellQuadsY); y < y1; y++)
 			for (int32 x = FMath::FloorToInt32(cellX * cellQuadsX); x < x1; x++)
-				if (heightField->IsHole(x, y))
+				if (heightField.IsHole(x, y))
 					return true;
 
 		return false;
