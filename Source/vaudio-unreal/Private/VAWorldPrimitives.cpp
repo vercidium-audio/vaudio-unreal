@@ -229,7 +229,7 @@ void AVAWorld::BakeGeometry()
 		placements++;
 
 		bool alreadyVisited;
-		visited.Add({ FSoftObjectPath(mesh), lod }, &alreadyVisited);
+		visited.Add(MakeTuple(FSoftObjectPath(mesh), lod), &alreadyVisited);
 
 		if (alreadyVisited)
 			return;
@@ -265,7 +265,7 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 
 	ForEachBakeTarget(world, false, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
 	{
-		used.Add({ FSoftObjectPath(mesh), lod });
+		used.Add(MakeTuple(FSoftObjectPath(mesh), lod));
 		TArray<FVAVector3f> vertices;
 
 		// A mesh with no render data can't be baked or compared, and is what the bake is for
@@ -290,7 +290,7 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 	if (reason.IsEmpty() && !world->IsPartitionedWorld())
 #endif
 	{
-		const FVABakedMesh* unused = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return !used.Contains({ baked.Mesh.ToSoftObjectPath(), baked.LOD }); });
+		const FVABakedMesh* unused = BakedMeshes.FindByPredicate([&](const FVABakedMesh& baked) { return !used.Contains(MakeTuple(baked.Mesh.ToSoftObjectPath(), baked.LOD)); });
 
 		if (unused)
 			reason = FString::Printf(TEXT("'%s' LOD %d is baked but no mesh component adds its render triangles any more"), *unused->Mesh.ToString(), unused->LOD);
@@ -396,7 +396,7 @@ void AVAWorld::SyncPrimitive(AActor* actor)
 		tree.Add(current);
 
 		TArray<AActor*> children;
-		current->GetAttachedActors(children, true, false);
+		current->GetAttachedActors(children);
 
 		for (AActor* child : children)
 			if (!child->FindComponentByClass<UVAMaterialComponent>())
@@ -422,7 +422,7 @@ void AVAWorld::AddActorTree(AActor* actor, UVAMaterialComponent* source)
 	AddActorPrimitives(actor, source);
 
 	TArray<AActor*> children;
-	actor->GetAttachedActors(children, true, false);
+	actor->GetAttachedActors(children);
 
 	for (AActor* child : children)
 	{
@@ -750,8 +750,8 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 	// The height of the collision's surface at a point in quads. Exact at LOD 0, and along a component's edges only the edge's own points are used, so neighbouring components still meet
 	auto surfaceAt = [&](double x, double y)
 	{
-		int32 x0 = FMath::Min(FMath::FloorToInt32(x), quadsX - 1);
-		int32 y0 = FMath::Min(FMath::FloorToInt32(y), quadsY - 1);
+		int32 x0 = FMath::Min(VAFloorToInt32(x), quadsX - 1);
+		int32 y0 = FMath::Min(VAFloorToInt32(y), quadsY - 1);
 		double fx = x - x0;
 		double fy = y - y0;
 
@@ -769,11 +769,11 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 	// Painted with the visibility layer. A coarse cell stays open if any quad under it is, so a small opening isn't closed over
 	auto isHole = [&](int32 cellX, int32 cellY)
 	{
-		int32 x1 = FMath::Min(FMath::CeilToInt32((cellX + 1) * cellQuadsX), quadsX);
-		int32 y1 = FMath::Min(FMath::CeilToInt32((cellY + 1) * cellQuadsY), quadsY);
+		int32 x1 = FMath::Min(VACeilToInt32((cellX + 1) * cellQuadsX), quadsX);
+		int32 y1 = FMath::Min(VACeilToInt32((cellY + 1) * cellQuadsY), quadsY);
 
-		for (int32 y = FMath::FloorToInt32(cellY * cellQuadsY); y < y1; y++)
-			for (int32 x = FMath::FloorToInt32(cellX * cellQuadsX); x < x1; x++)
+		for (int32 y = VAFloorToInt32(cellY * cellQuadsY); y < y1; y++)
+			for (int32 x = VAFloorToInt32(cellX * cellQuadsX); x < x1; x++)
 				if (heightField.IsHole(x, y))
 					return true;
 

@@ -230,7 +230,7 @@ void AVAListener::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	// Other properties are pushed by AVAEmitter while this listener is current
-	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(AVAListener, bCurrent))
+	if (VAMemberPropertyName(PropertyChangedEvent) == GET_MEMBER_NAME_CHECKED(AVAListener, bCurrent))
 		SetCurrent(bCurrent);
 }
 #endif

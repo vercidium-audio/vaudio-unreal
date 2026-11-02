@@ -253,7 +253,9 @@ UStaticMesh* UVAVisualisation::BuildDiamondMesh()
 	staticMesh->SetStaticMaterials({ FStaticMaterial() });
 
 	UStaticMesh::FBuildMeshDescriptionsParams buildParams;
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	buildParams.bFastBuild = true;
+#endif
 
 	TArray<const FMeshDescription*> meshDescriptionPtrs{ &meshDescription };
 	staticMesh->BuildFromMeshDescriptions(meshDescriptionPtrs, buildParams);
@@ -288,7 +290,7 @@ void UVAVisualisation::CreateInstancedMesh()
 	FTransform identity = FTransform::Identity;
 
 	for (int32 i = 0; i < requiredCount; i++)
-		InstancedMesh->AddInstance(identity, /*bWorldSpace=*/false);
+		InstancedMesh->AddInstance(identity);
 
 	NextInstance = 0;
 }
@@ -340,7 +342,7 @@ void UVAVisualisation::OnVisualisationData(VAVisualisationData* data, int32 coun
 		FTransform identity = FTransform::Identity;
 
 		for (int32 i = capacity; i < needed; i++)
-			InstancedMesh->AddInstance(identity, /*bWorldSpace=*/false);
+			InstancedMesh->AddInstance(identity);
 
 		capacity = needed;
 		NextInstance = 0;

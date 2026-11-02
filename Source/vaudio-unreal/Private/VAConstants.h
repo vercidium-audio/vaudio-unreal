@@ -1,5 +1,7 @@
 #pragma once
 
+#include "VAEngineCompat.h"
+
 extern "C" {
 #include "vaudio.h"
 }
@@ -30,9 +32,14 @@ static inline FColor VAColorToFColor(const VAColor& color)
 	return FColor(color.r, color.g, color.b, color.a);
 }
 
+// 4.27's FVector is float, so this is the one place SDK doubles narrow on 4.27. 5.x never narrows
 static inline FVector VAVectorToFVector(const VAVector& vector)
 {
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	return FVector((float)vector.x, (float)vector.y, (float)vector.z);
+#else
 	return FVector(vector.x, vector.y, vector.z);
+#endif
 }
 
 static inline void vaSpherePrimitiveSetCenterUnreal(VASpherePrimitive* sphere, const FVector& center)

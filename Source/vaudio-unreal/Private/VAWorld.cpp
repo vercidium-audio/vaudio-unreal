@@ -240,7 +240,7 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 	// Unlike the vaWorldSet* calls below, the box should reflect BoundsSize even before BeginPlay (or after EndPlay), since World is null until then
 	RefreshWorldBounds();
 
-	FName memberName = PropertyChangedEvent.GetMemberPropertyName();
+	FName memberName = VAMemberPropertyName(PropertyChangedEvent);
 
 	// Ignore edits before pressing Play, apart from warning about the bounds straight away
 	if (!World)
@@ -676,7 +676,7 @@ void AVAWorld::OnReverbUpdated()
 				// Listener space is X+ right. Magnitude is strength (OpenAL Soft EAX style), so it isn't normalised
 				VAVector panVector = {};
 				vaWorldCalculateListenerRelativePan(World, *Direction, FMath::DegreesToRadians(ListenerRotation.Pitch), FMath::DegreesToRadians(ListenerRotation.Yaw), &panVector);
-				float pan = FMath::Clamp(panVector.x, -1.0f, 1.0f);
+				float pan = FMath::Clamp(panVector.x, -1.0, 1.0);
 
 				if (UVASubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr)
 					PanPreset->SetPan(pan);
@@ -817,7 +817,7 @@ void AVAWorld::SyncDebugCamera()
 				return;
 
 			VAVector listenerPosition = vaEmitterGetPosition(listenerVA);
-			position = FVector(listenerPosition.x, listenerPosition.y, listenerPosition.z);
+			position = VAVectorToFVector(listenerPosition);
 			rotation = GetListenerControlRotation(mainListener);
 		}
 

@@ -49,7 +49,12 @@ static void VAOnRemovedTrampoline(VAEmitter* emitter)
 
 static int32 VARandomScatteringSeed()
 {
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	// 4.27 has no Rand32, and its Rand() is only 15 bits on MSVC
+	return (int32)(FGuid::NewGuid().A & 0x7fffffff);
+#else
 	return (int32)(FMath::Rand32() & 0x7fffffff);
+#endif
 }
 
 AVAEmitter::AVAEmitter()
