@@ -118,7 +118,7 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(Transient)
-	TObjectPtr<AVAWorld> AudioWorld = nullptr;
+	AVAWorld* AudioWorld = nullptr;
 
 	// Set while this component waits for the level's VAWorld to begin play
 	FDelegateHandle WorldRegisteredHandle;

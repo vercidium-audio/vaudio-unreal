@@ -1315,7 +1315,7 @@ bool AVAWorld::SyncMaterials()
 			VA_ERROR_NAMED(TEXT("Custom material '%s' was removed from Materials during play. Custom materials can't be removed at runtime - primitives using it keep its last values until the level is reloaded"), *material->GetMaterialName());
 	}
 
-	TArray<TObjectPtr<UVAMaterialBase>> applied;
+	TArray<UVAMaterialBase*> applied;
 
 	for (UVAMaterialBase* material : Materials)
 	{

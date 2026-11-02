@@ -366,7 +366,7 @@ public:
 
 	// Set by the UVAVisualisation on this actor while it receives visualisation data
 	UPROPERTY(Transient)
-	TObjectPtr<UVAVisualisation> VisualisationComponent = nullptr;
+	UVAVisualisation* VisualisationComponent = nullptr;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -411,7 +411,7 @@ protected:
 
 	// Resolved by TryInitializeEmitter
 	UPROPERTY(Transient)
-	TObjectPtr<AVAWorld> AudioWorld = nullptr;
+	AVAWorld* AudioWorld = nullptr;
 
 	// Updated every tick while bAffectsGroupedEAX is set
 	int32 CurrentGroupedEAXIndex = -1;

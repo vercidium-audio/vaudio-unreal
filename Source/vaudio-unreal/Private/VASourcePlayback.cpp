@@ -43,7 +43,7 @@ bool FVASourcePlayback::IsPlaying() const
 void FVASourcePlayback::RemoveFinished()
 {
 	// bAutoDestroy destroys a component once its sound finishes
-	Components.RemoveAll([](const TObjectPtr<UAudioComponent>& component) { return !IsValid(component) || !component->IsPlaying(); });
+	Components.RemoveAll([](UAudioComponent* component) { return !IsValid(component) || !component->IsPlaying(); });
 }
 
 void FVASourcePlayback::SetFilter(float GainLF, float GainHF)

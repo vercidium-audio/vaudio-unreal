@@ -144,7 +144,7 @@ struct VAUDIOUNREAL_API FVAOneShotSettings
 
 	// Used instead of the sound's own Sound Attenuation when set
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
-	TObjectPtr<USoundAttenuation> AttenuationSettings = nullptr;
+	USoundAttenuation* AttenuationSettings = nullptr;
 
 	// The sound waits until it has been raytraced, so it never starts unmuffled. If it still hasn't started after this many seconds, e.g. there's no listener, the source is destroyed without playing. 0 waits forever
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0"))
@@ -219,7 +219,7 @@ struct FVAOneShot
 
 	// A leech's component while its emitter isn't ready to play. Null once it plays
 	UPROPERTY(Transient)
-	TObjectPtr<UAudioComponent> PendingComponent = nullptr;
+	UAudioComponent* PendingComponent = nullptr;
 
 	// The leeched emitter, or null for a relative sound
 	TWeakObjectPtr<AVAEmitter> Emitter;
@@ -680,7 +680,7 @@ private:
 
 	// The materials applied by the last SyncMaterials, to find removed ones
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UVAMaterialBase>> AppliedMaterials;
+	TArray<UVAMaterialBase*> AppliedMaterials;
 
 	// Applies Materials to the SDK world, and undoes materials removed since the last call. Returns whether anything was added or removed
 	bool SyncMaterials();

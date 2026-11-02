@@ -46,10 +46,10 @@ struct VAUDIOUNREAL_API FVASourcePlayback
 
 private:
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UAudioComponent>> Components;
+	TArray<UAudioComponent*> Components;
 
 	UPROPERTY(Transient)
-	TObjectPtr<USoundSubmix> ReverbSubmix = nullptr;
+	USoundSubmix* ReverbSubmix = nullptr;
 
 	FVASourceFilter Filter;
 

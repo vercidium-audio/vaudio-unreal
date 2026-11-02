@@ -25,7 +25,7 @@ public:
 
 	// Used instead of SourceSound's own Sound Attenuation when set. Applies to sounds started after it changes
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
-	TObjectPtr<USoundAttenuation> AttenuationSettings = nullptr;
+	USoundAttenuation* AttenuationSettings = nullptr;
 
 	// When true, plays SourceSound once this source is ready to play (see IsReadyToPlay). Otherwise it only plays when Play() is called
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")

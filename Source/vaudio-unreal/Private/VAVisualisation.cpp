@@ -14,6 +14,7 @@ extern "C" {
 }
 
 #include "VAConstants.h"
+#include "VAEngineCompat.h"
 #include "VALog.h"
 
 #if WITH_EDITOR
@@ -395,9 +396,13 @@ void UVAVisualisation::GenerateFadeNodes()
 
 	// Remove only nodes this function created on a previous press, leaving anything else the user
 	// added by hand alone.
-	TArray<TObjectPtr<UMaterialExpression>> existingExpressions(material->GetExpressions());
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	TArray<UMaterialExpression*> existingExpressions(material->Expressions);
+#else
+	TArray<UMaterialExpression*> existingExpressions(material->GetExpressions());
+#endif
 
-	for (const TObjectPtr<UMaterialExpression>& expression : existingExpressions)
+	for (UMaterialExpression* expression : existingExpressions)
 		if (expression && expression->Desc == VAGeneratedNodeTag)
 			UMaterialEditingLibrary::DeleteMaterialExpression(material, expression);
 
