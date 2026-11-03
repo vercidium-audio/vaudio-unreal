@@ -136,7 +136,7 @@ void AVAEmitter::OnWorldChanged()
 	if (AudioWorld)
 		OnWorldUnregistered();
 
-	// An emitter that failed validation, or a bRaytraceOnce emitter that already left, isn't waiting and doesn't join the new map's VAWorld either
+	// An emitter that failed validation, or one in its final removal, isn't waiting and doesn't join the new map's VAWorld either
 	const bool waiting = WorldRegisteredHandle.IsValid();
 
 	UnbindWorld();
@@ -166,7 +166,7 @@ void AVAEmitter::OnWorldUnregistered()
 	if (!AudioWorld)
 		return;
 
-	// Misconfigured, a bRaytraceOnce emitter that already left, or one in its final removal. None join the next VAWorld
+	// Misconfigured, or in its final removal. Neither joins the next VAWorld
 	if (!registered)
 	{
 		ReleaseEmitter();
@@ -180,7 +180,6 @@ void AVAEmitter::OnWorldUnregistered()
 	LeaveWorld();
 
 	AudioWorld = nullptr;
-	pendingRaytraceOnceRelease = false;
 	pendingRaytracingComplete = false;
 	pendingRaytracedByListener = false;
 
@@ -462,10 +461,6 @@ void AVAEmitter::QueueRaytracedByListener(float gainLF, float gainHF)
 	pendingGainLF = gainLF;
 	pendingGainHF = gainHF;
 	AudioWorld->QueueEmitterEvents(this);
-
-	// Leaves at the end of the first Tick where it's ready to play, so subclasses can play and apply the results first
-	if (bRaytraceOnce)
-		pendingRaytraceOnceRelease = true;
 }
 
 void AVAEmitter::FlushPendingEvents()
@@ -487,41 +482,52 @@ void AVAEmitter::FlushPendingEvents()
 void AVAEmitter::Tick(float DeltaTime)
 {
 	// Initialisation failed after the tick function was registered, or the SDK refuses changes as this emitter is leaving
-	if ((!Emitter && !raytraceOnceReleased) || finalRemoval)
+	if (!Emitter || finalRemoval)
 		return;
 
 	Super::Tick(DeltaTime);
 
-	if (Emitter)
-		vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
+	vaEmitterSetPositionUnreal(Emitter, GetActorLocation());
 
 	TickTypeSpecific(DeltaTime);
 
-	if (pendingRaytraceOnceRelease && IsReadyToPlay())
+	// Waits for IsReadyToPlay, as an emitter suspended before its first results has no reverb to keep
+	if ((bRaytraceOnce || suspendRequested) && IsReadyToPlay())
+		vaEmitterSetSuspended(Emitter, true);
+}
+
+void AVAEmitter::SetSuspended(bool bSuspended)
+{
+	// The SDK refuses changes to the handle once it's being removed
+	if (finalRemoval)
+		return;
+
+	if (IsA<AVAListener>())
 	{
-		pendingRaytraceOnceRelease = false;
-
-		if (VALowPassFilter* muffling = GetMufflingResult())
-		{
-			hasLastMufflingResult = true;
-			lastMufflingGainLF = muffling->gainLF;
-			lastMufflingGainHF = muffling->gainHF;
-		}
-
-		if (registered)
-		{
-			DetachFromWorld();
-			registered = false;
-		}
-
-		ReleaseEmitter();
-		raytraceOnceReleased = true;
+		VA_WARN_NAMED(TEXT("SetSuspended has no effect on a listener, as its rays produce the muffling of every other emitter"));
+		return;
 	}
+
+	suspendRequested = bSuspended;
+
+	if (bSuspended)
+		return;
+
+	// Otherwise the next Tick would suspend it again
+	bRaytraceOnce = false;
+
+	if (Emitter)
+		vaEmitterSetSuspended(Emitter, false);
+}
+
+bool AVAEmitter::IsSuspended() const
+{
+	return Emitter && vaEmitterGetSuspended(Emitter);
 }
 
 void AVAEmitter::TickTypeSpecific(float DeltaTime)
 {
-	if (bAffectsGroupedEAX && Emitter)
+	if (bAffectsGroupedEAX)
 		CurrentGroupedEAXIndex = vaEmitterGetGroupedEAXIndex(Emitter);
 }
 
@@ -576,10 +582,6 @@ bool AVAEmitter::IsReadyToPlay() const
 {
 	if (finalRemoval)
 		return false;
-
-	// A bRaytraceOnce emitter only leaves the world once it's ready, and sources keep playing with its last result
-	if (raytraceOnceReleased)
-		return hasLastMufflingResult;
 
 	if (!GetMufflingResult())
 		return false;
@@ -682,15 +684,6 @@ VALowPassFilter* AVAEmitter::GetMufflingResult() const
 
 void AVAEmitter::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
 {
-	// A bRaytraceOnce emitter that left the world keeps the result it had
-	if (raytraceOnceReleased)
-	{
-		bSuccess = hasLastMufflingResult;
-		GainLF = hasLastMufflingResult ? lastMufflingGainLF : 0.0f;
-		GainHF = hasLastMufflingResult ? lastMufflingGainHF : 0.0f;
-		return;
-	}
-
 	VALowPassFilter* MufflingFilter = GetMufflingResult();
 
 	// Raytracing has not completed at least once yet

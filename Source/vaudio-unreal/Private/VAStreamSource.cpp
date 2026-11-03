@@ -159,11 +159,3 @@ void AVAStreamSource::DeinitializeTypeSpecific()
 	Super::DeinitializeTypeSpecific();
 }
 
-void AVAStreamSource::TickTypeSpecific(float DeltaTime)
-{
-	Super::TickTypeSpecific(DeltaTime);
-
-	// Latched here too, since a bRaytraceOnce emitter leaves the world at the end of this tick
-	if (bStreamOpen && !bStreamReady && IsReadyToPlay())
-		bStreamReady = true;
-}

@@ -144,7 +144,7 @@ void AVASourceLeech::UpdatePlayback(AVAEmitter* emitter)
 
 void AVASourceLeech::ApplyEmitterResults(FVASourcePlayback& playback, const AVAEmitter* emitter)
 {
-	// Null until the listener has raytraced the emitter, and after a bRaytraceOnce emitter leaves the world. The last result is kept
+	// Null until the listener has raytraced the emitter. The last result is kept
 	if (VALowPassFilter* lowPassFilter = emitter->GetMufflingResult())
 		playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 

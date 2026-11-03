@@ -32,7 +32,7 @@ void AVARaytracedSource::UpdatePlayback()
 	Playback.SetVolumeMultiplier(VolumeMultiplier);
 	Playback.SetPitchMultiplier(PitchMultiplier);
 
-	// Null until the main listener has raytraced this source, and after a bRaytraceOnce source leaves the world. The last result is kept
+	// Null until the main listener has raytraced this source. The last result is kept
 	if (VALowPassFilter* lowPassFilter = GetMufflingResult())
 		Playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 

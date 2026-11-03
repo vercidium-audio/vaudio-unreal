@@ -66,7 +66,7 @@ void AVASource::Tick(float DeltaTime)
 
 	Super::Tick(DeltaTime);
 
-	// After the emitter's tick, which may still release a bRaytraceOnce handle. Finished sounds were dropped in TickTypeSpecific
+	// Finished sounds were dropped in TickTypeSpecific
 	if (!IsFinalRemovalStarted())
 	{
 		if (!bAutoDestroy || !bPlayAttempted || IsPlaying())
@@ -75,7 +75,7 @@ void AVASource::Tick(float DeltaTime)
 		BeginFinalRemoval();
 	}
 
-	// OnRemoved clears the handle during vaWorldUpdate, where this actor can't be destroyed, so it's checked here. A bRaytraceOnce handle is already the VAWorld's, and finishes its tail without this actor
+	// OnRemoved clears the handle during vaWorldUpdate, where this actor can't be destroyed, so it's checked here
 	if (!Emitter)
 		Destroy();
 }

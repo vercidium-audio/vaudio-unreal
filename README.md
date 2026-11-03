@@ -102,7 +102,8 @@ These three sources have `bAutoDestroy`, on by default, so a source can be spawn
 
 Useful emitter properties, shared by the listener and the raytraced sources:
 - `bAffectsGroupedEAX`: this emitter's reverb is blended into the world's grouped reverbs (on by default for sources). When off, `bUseListenerReverb` chooses between the listener's reverb and none.
-- `bRaytraceOnce`: stop casting rays after the first result, for one-shot sounds that don't move.
+- `bRaytraceOnce`: stop casting rays once the first results are in, for short sounds that don't move. The emitter keeps its reverb and ambience, and its muffling keeps updating as the listener moves.
+- `SetSuspended`: stop casting rays on demand, and start again later with all of its rays re-cast, e.g. for a sound that's paused or too far away to matter. Its reverb and ambience don't update while suspended, even if it moves. `IsSuspended` returns the current state.
 - `bKeepReverbTailAlive`: keep contributing to the reverb after the actor is destroyed, until its tail has faded.
 - `GetMufflingFilterResult`, `GetReverbResult` and `GetAmbientFilterResult` expose the raytraced results to Blueprint.
 
@@ -124,7 +125,7 @@ AVAWorld::PlaySoundAtLocation(this, Sound, SoundLocation, settings);
 AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, bStopWhenAttachedToDestroyed, settings);
 ```
 
-- A sound at a location raytraces once (`bRaytraceOnce`). An attached sound keeps raytracing as it moves.
+- A sound at a location raytraces once (`bRaytraceOnce`), and its reverb tail starts when the sound finishes. An attached sound keeps raytracing as it moves.
 - The sound starts after the first raytracing result, not straight away, so it's never heard unmuffled. If it hasn't started after `MaxPlayDelay` seconds (e.g. there's no listener), the source is destroyed without playing.
 - Both return the `VASource`, so a looping sound can be stopped with `Stop()`, which also destroys it.
 - For frequent sounds on another character, like an enemy's footsteps or gunshots, use `PlaySoundLeech` below instead, as it shares that character's rays and plays with no delay.

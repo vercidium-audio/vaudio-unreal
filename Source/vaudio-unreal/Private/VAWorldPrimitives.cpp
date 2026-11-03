@@ -666,12 +666,28 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 				FTransform elementTransform = convexElem.GetTransform();
 				vertices.Reserve(convexElem.IndexData.Num());
 
-				// The SDK's triangle test is one-sided. Render triangles already have the winding it expects, but Chaos' hull indices are wound the other way, so each triangle's last two vertices are swapped. Otherwise rays pass into the hull from outside
+				// Always inside the hull, as it's convex
+				FVector hullCentre = FVector::ZeroVector;
+
+				for (const FVector& vertex : convexElem.VertexData)
+					hullCentre += elementTransform.TransformPosition(vertex);
+
+				hullCentre /= convexElem.VertexData.Num();
+
+				// The SDK's triangle test is one-sided, otherwise rays pass into the hull from outside. IndexData is saved with the asset and its winding depends on what generated it, so each triangle is faced away from the centre
 				for (int32 i = 0; i + 2 < convexElem.IndexData.Num(); i += 3)
 				{
-					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]]));
-					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 2]]));
-					vertices.Add(elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 1]]));
+					FVector a = elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i]]);
+					FVector b = elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 1]]);
+					FVector c = elementTransform.TransformPosition(convexElem.VertexData[convexElem.IndexData[i + 2]]);
+
+					// The SDK's front face normal for (a, b, c) is Cross(c - a, b - a)
+					if (FVector::DotProduct(FVector::CrossProduct(c - a, b - a), a - hullCentre) < 0.0)
+						Swap(b, c);
+
+					vertices.Add(a);
+					vertices.Add(b);
+					vertices.Add(c);
 				}
 
 				return true;

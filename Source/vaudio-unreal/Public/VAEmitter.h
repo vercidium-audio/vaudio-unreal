@@ -171,9 +171,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsRaytraced() const;
 
-	// True once the listener has raytraced this emitter and, if it casts reverb rays and affects grouped EAX, it has cast its own reverb rays too. Sources don't play until then. Stays true after a bRaytraceOnce emitter leaves the world
+	// True once the listener has raytraced this emitter and, if it casts reverb rays and affects grouped EAX, it has cast its own reverb rays too. Sources don't play until then
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsReadyToPlay() const;
+
+	// Stops this emitter casting rays, from the first tick where it's ready to play, as it keeps the reverb and ambient results it has then. The listener still raytraces it, so its muffling stays up to date. Passing false re-casts all of its rays and clears bRaytraceOnce, so it keeps casting them. Does nothing on a listener, or once this emitter is being removed
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void SetSuspended(bool bSuspended);
+
+	// True while this emitter casts no rays, because of SetSuspended or bRaytraceOnce
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	bool IsSuspended() const;
 
 	// The grouped EAX reverb this emitter contributes to, or -1 if it has none
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
@@ -209,7 +217,7 @@ public:
 	// Called from the OnRemoved callback once the SDK has removed handle from the world. The world destroys it later
 	void OnEmitterRemoved(VAEmitter* handle);
 
-	// Removes this emitter from the world once the listener has raytraced it, so it stops casting rays. The actor keeps its last muffling result
+	// Stops casting rays once this emitter is ready to play, and keeps its reverb and ambient results from then on. The listener still raytraces it, so its muffling stays up to date. For short sounds that don't move
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	bool bRaytraceOnce = false;
 
@@ -385,7 +393,7 @@ protected:
 	// Called from EndPlay before the VAEmitter* is destroyed and removed from the vaWorld. Subclasses tear down their own audio components/presets here
 	virtual void DeinitializeTypeSpecific();
 
-	// Called every Tick() after the shared position sync has run. Subclasses do their own per-frame work here (filter application, etc). Still runs with no handle after a bRaytraceOnce emitter has left the world
+	// Called every Tick() after the shared position sync has run. Subclasses do their own per-frame work here (filter application, etc)
 	virtual void TickTypeSpecific(float DeltaTime);
 
 	// Pushes every property to the SDK handle
@@ -431,6 +439,9 @@ private:
 	bool failedInitialisation = false;
 	bool finalRemoval = false;
 
+	// Kept separate from the handle, which doesn't exist before this emitter joins a VAWorld and is replaced if it joins another
+	bool suspendRequested = false;
+
 	// Set while this emitter waits for the level's VAWorld to begin play
 	FDelegateHandle WorldRegisteredHandle;
 
@@ -458,19 +469,10 @@ private:
 	// Tears down subclass state, leaves the world and releases the handle. Shared by EndPlay and OnWorldUnregistered
 	void LeaveWorld();
 
-	// bRaytraceOnce: set when the listener raytraces this emitter, and the emitter leaves the world at the end of the first Tick where IsReadyToPlay() is true
-	bool pendingRaytraceOnceRelease = false;
-	bool raytraceOnceReleased = false;
-
 	bool pendingRaytracingComplete = false;
 	bool pendingRaytracedByListener = false;
 	float pendingGainLF = 0.0f;
 	float pendingGainHF = 0.0f;
-
-	// Keeps the last muffling result after a bRaytraceOnce emitter leaves the world
-	bool hasLastMufflingResult = false;
-	float lastMufflingGainLF = 0.0f;
-	float lastMufflingGainHF = 0.0f;
 
 	// Removes the emitter from the world and hands its handle to the world, which destroys it once the SDK has let go of it
 	void ReleaseEmitter();
