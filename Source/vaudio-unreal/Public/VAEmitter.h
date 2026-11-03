@@ -406,6 +406,11 @@ protected:
 
 	bool IsRegistered() const { return registered; }
 
+	// Removes this emitter from the world for good, as its actor is about to be destroyed. It keeps its handle until the SDK invokes OnRemoved (after the in-flight raytracing results, and the reverb tail if bKeepReverbTailAlive), which clears Emitter. Tick and IsReadyToPlay stop until then
+	void BeginFinalRemoval();
+
+	bool IsFinalRemovalStarted() const { return finalRemoval; }
+
 	// Starts every UVAVisualisation on this actor that has begun play, once this actor holds a handle
 	void InitializeVisualisations();
 
@@ -424,6 +429,7 @@ protected:
 private:
 	bool registered = false;
 	bool failedInitialisation = false;
+	bool finalRemoval = false;
 
 	// Set while this emitter waits for the level's VAWorld to begin play
 	FDelegateHandle WorldRegisteredHandle;

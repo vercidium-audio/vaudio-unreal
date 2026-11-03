@@ -318,11 +318,11 @@ static AVASource* VASpawnOneShot(UWorld* world, USoundBase* sound, const FVector
 
 	source->SourceSound = sound;
 	source->bAutoPlay = true;
-	source->bDestroyWhenFinished = true;
 	source->bRaytraceOnce = raytraceOnce;
 
 	// Applied in BeginPlay, and cancelled by the first Play()
 	source->InitialLifeSpan = settings.MaxPlayDelay;
+	source->bCancelLifeSpanOnPlay = true;
 
 	source->VolumeMultiplier = settings.VolumeMultiplier;
 	source->PitchMultiplier = settings.PitchMultiplier;

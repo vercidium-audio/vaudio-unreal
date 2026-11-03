@@ -32,6 +32,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	bool bAutoPlay = false;
 
+	// Destroys this actor once it has played and nothing is playing any more. The reverb tail belongs to the listener, so it isn't waited for. Disable this to call Play() repeatedly. A source that never plays isn't destroyed
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
+	bool bAutoDestroy = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0", UIMax = "1.0"))
 	float VolumeMultiplier = 1.0f;
 
@@ -71,6 +75,9 @@ private:
 
 	// Cleared by the first Play(), whether bAutoPlay or the user called it
 	bool bAutoPlayPending = false;
+
+	// Set by the first Play(), whether or not a sound could be created
+	bool bPlayAttempted = false;
 
 	// Pushes the multipliers and the listener's reverb send to Playback
 	void UpdatePlayback();

@@ -14,6 +14,7 @@ class VAUDIOUNREAL_API AVASource : public AVARaytracedSource
 protected:
 	virtual bool ValidateConfig() override;
 	virtual void InitializeTypeSpecific() override;
+	virtual void DeinitializeTypeSpecific() override;
 	virtual void TickTypeSpecific(float DeltaTime) override;
 
 public:
@@ -31,9 +32,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bAutoPlay = false;
 
-	// Destroys this actor once it has played and nothing is playing any more, like the sources spawned by AVAWorld::PlaySoundAtLocation. Its first Play() also cancels its life span, which PlaySoundAtLocation sets so a source that never becomes ready doesn't wait forever
+	// Once this source has played and nothing is playing any more, removes it from the world and destroys this actor after its reverb tail has finished. A sound can't be played again once that starts, so disable this to call Play() repeatedly. A source that never plays isn't destroyed
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
-	bool bDestroyWhenFinished = false;
+	bool bAutoDestroy = true;
+
+	// Set by AVAWorld's one-shots, whose life span is their MaxPlayDelay, so the first Play() cancels it
+	bool bCancelLifeSpanOnPlay = false;
 
 	// Plays SourceSound. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, or if the sound couldn't be created (e.g. there's no audio device)
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")

@@ -37,6 +37,9 @@ AVASource* VAAmbientSoundConversion::Convert(AAmbientSound* ambientSound, TArray
 	if (!source)
 		return nullptr;
 
+	// An Ambient Sound outlives its sound, and a level may play it again
+	source->bAutoDestroy = false;
+
 	if (UAudioComponent* component = ambientSound->GetAudioComponent())
 	{
 		source->SourceSound = component->Sound;

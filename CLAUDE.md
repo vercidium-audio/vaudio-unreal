@@ -58,6 +58,8 @@ When the `AVAWorld` ends play it broadcasts `OnWorldUnregistered` last, after `v
 4. The SDK calls `OnRemoved` once its raytracing threads no longer read the emitter, which can be straight away, after the in-flight pass, or after the reverb tail (`VA_PENDING_REMOVAL`). The handle goes to `AVAWorld::DeferEmitterDestroy`, or to the static `OrphanedEmitters` map if the actor is already gone, and is destroyed after the next `vaWorldUpdate` returns. Never call `vaEmitterDestroy` before `OnRemoved` has fired, it returns `VA_ERROR_IN_USE`
 5. `AVAWorld::EndPlay` runs `vaWorldWait`, destroys primitives, `vaWorldDestroy`, then destroys every handle it still owns
 
+`bAutoDestroy` on `AVASource` takes a different path out of step 3: `BeginFinalRemoval` calls `vaWorldRemoveEmitter` but keeps the handle and user data, so `OnRemoved` reaches the actor and clears `Emitter`, and the source destroys itself on its next tick. If the actor ends play during that wait, `ReleaseEmitter` hands the handle to `OrphanedEmitters` without calling `vaWorldRemoveEmitter` again, as it would return `VA_NOT_FOUND` for a handle whose `OnRemoved` hasn't fired yet. `AVASourceLeech` and `AVASourceRelative` have no handle, so they're destroyed as soon as nothing is playing.
+
 SDK callbacks run inside `vaWorldUpdate`. They only set flags or queue (`QueueRaytracingComplete`, `QueueRaytracedByListener`), and `AVAWorld::Tick` broadcasts the Blueprint delegates after `vaWorldUpdate` returns, so a handler that spawns or destroys emitters can't re-enter the SDK.
 
 A source only plays once `AVAEmitter::IsReadyToPlay()` is true: the listener has raytraced it and, if it casts reverb rays and affects grouped EAX, its own reverb result exists.

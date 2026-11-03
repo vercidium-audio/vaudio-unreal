@@ -94,6 +94,12 @@ void AVASourceLeech::Tick(float DeltaTime)
 
 	Playback.RemoveFinished();
 
+	if (bAutoDestroy && bPlayAttempted && !IsPlaying())
+	{
+		Destroy();
+		return;
+	}
+
 	AVAEmitter* emitter = GetLeechedEmitter();
 
 	// Keeps the last filter and send while there's no emitter, e.g. after it was destroyed
@@ -157,6 +163,7 @@ bool AVASourceLeech::Play()
 		return false;
 
 	bAutoPlayPending = false;
+	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update
 	UpdatePlayback(GetLeechedEmitter());

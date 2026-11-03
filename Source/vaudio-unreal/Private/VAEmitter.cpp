@@ -166,9 +166,10 @@ void AVAEmitter::OnWorldUnregistered()
 	if (!AudioWorld)
 		return;
 
-	// Misconfigured, or a bRaytraceOnce emitter that already left. Neither joins the next VAWorld
+	// Misconfigured, a bRaytraceOnce emitter that already left, or one in its final removal. None join the next VAWorld
 	if (!registered)
 	{
+		ReleaseEmitter();
 		AudioWorld = nullptr;
 		return;
 	}
@@ -370,6 +371,15 @@ void AVAEmitter::ReleaseEmitter()
 		return;
 	}
 
+	// Already removed, and vaWorldRemoveEmitter returns VA_NOT_FOUND once the tail has finished but the in-flight results haven't been handled. OnRemoved is still to come, so the world takes over the handle
+	if (finalRemoval)
+	{
+		vaEmitterSetUserData(Emitter, nullptr);
+		AudioWorld->AddOrphanedEmitter(Emitter);
+		Emitter = nullptr;
+		return;
+	}
+
 	// If no raytracing results were pending, OnRemoved has already run, handing the handle to the world and clearing Emitter
 	VAResult result = vaWorldRemoveEmitter(vaWorld, Emitter);
 
@@ -399,6 +409,37 @@ void AVAEmitter::ReleaseEmitter()
 	}
 
 	Emitter = nullptr;
+}
+
+void AVAEmitter::BeginFinalRemoval()
+{
+	finalRemoval = true;
+
+	// The SDK refuses changes to the handle from here on
+	TeardownVisualisations();
+
+	if (registered)
+	{
+		DetachFromWorld();
+		registered = false;
+	}
+
+	VAWorld* vaWorld = AudioWorld ? AudioWorld->GetVAWorld() : nullptr;
+
+	if (!Emitter || !vaWorld)
+	{
+		ReleaseEmitter();
+		return;
+	}
+
+	// The user data stays set, so OnRemoved clears Emitter. It has already run if no raytracing results were pending
+	VAResult result = vaWorldRemoveEmitter(vaWorld, Emitter);
+
+	if (result != VA_SUCCESS && result != VA_PENDING_REMOVAL)
+	{
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to remove the emitter from its world."));
+		ReleaseEmitter();
+	}
 }
 
 void AVAEmitter::OnEmitterRemoved(VAEmitter* handle)
@@ -445,8 +486,8 @@ void AVAEmitter::FlushPendingEvents()
 
 void AVAEmitter::Tick(float DeltaTime)
 {
-	// Initialisation failed after the tick function was registered
-	if (!Emitter && !raytraceOnceReleased)
+	// Initialisation failed after the tick function was registered, or the SDK refuses changes as this emitter is leaving
+	if ((!Emitter && !raytraceOnceReleased) || finalRemoval)
 		return;
 
 	Super::Tick(DeltaTime);
@@ -533,6 +574,9 @@ bool AVAEmitter::IsRaytraced() const
 
 bool AVAEmitter::IsReadyToPlay() const
 {
+	if (finalRemoval)
+		return false;
+
 	// A bRaytraceOnce emitter only leaves the world once it's ready, and sources keep playing with its last result
 	if (raytraceOnceReleased)
 		return hasLastMufflingResult;
@@ -721,7 +765,7 @@ void AVAEmitter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEv
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	// Emitter only exists while PIE/game is running and TryInitializeEmitter() has completed - editing properties on a placed actor in the editor (not PIE) hits this every time
-	if (!Emitter)
+	if (!Emitter || finalRemoval)
 		return;
 
 	UpdateVAEmitter();

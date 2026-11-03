@@ -51,6 +51,13 @@ void AVASourceRelative::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	Playback.RemoveFinished();
+
+	if (bAutoDestroy && bPlayAttempted && !IsPlaying())
+	{
+		Destroy();
+		return;
+	}
+
 	UpdatePlayback();
 
 	if (bAutoPlayPending)
@@ -63,6 +70,7 @@ bool AVASourceRelative::Play()
 		return false;
 
 	bAutoPlayPending = false;
+	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update
 	UpdatePlayback();

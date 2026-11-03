@@ -40,6 +40,15 @@ void AVASource::InitializeTypeSpecific()
 	bAutoPlayPending = bAutoPlay;
 }
 
+void AVASource::DeinitializeTypeSpecific()
+{
+	// A loop stopped by its VAWorld ending hasn't finished, so this source waits for the next VAWorld rather than being destroyed
+	if (IsPlaying() && SourceSound && SourceSound->IsLooping())
+		bPlayAttempted = false;
+
+	Super::DeinitializeTypeSpecific();
+}
+
 void AVASource::Tick(float DeltaTime)
 {
 	// Checked before the emitter's own tick, which returns early until this source has joined a VAWorld
@@ -58,7 +67,16 @@ void AVASource::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	// After the emitter's tick, which may still release a bRaytraceOnce handle. Finished sounds were dropped in TickTypeSpecific
-	if (bDestroyWhenFinished && bPlayAttempted && !IsPlaying())
+	if (!IsFinalRemovalStarted())
+	{
+		if (!bAutoDestroy || !bPlayAttempted || IsPlaying())
+			return;
+
+		BeginFinalRemoval();
+	}
+
+	// OnRemoved clears the handle during vaWorldUpdate, where this actor can't be destroyed, so it's checked here. A bRaytraceOnce handle is already the VAWorld's, and finishes its tail without this actor
+	if (!Emitter)
 		Destroy();
 }
 
@@ -84,8 +102,11 @@ bool AVASource::Play()
 
 	bAutoPlayPending = false;
 
-	if (bDestroyWhenFinished && !bPlayAttempted)
+	if (bCancelLifeSpanOnPlay)
+	{
+		bCancelLifeSpanOnPlay = false;
 		SetLifeSpan(0.0f);
+	}
 
 	bPlayAttempted = true;
 

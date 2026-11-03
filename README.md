@@ -92,6 +92,8 @@ Every source is muffled relative to the current listener automatically. Sounds s
 - **VASource** (`AVASource`) is a raytraced 3D sound. It only plays once it has been raytraced (`IsReadyToPlay()`), so it never starts unmuffled. `Play()` can be called repeatedly and the sounds overlap. Looping comes from the sound asset.
 - **VASourceLeech** (`AVASourceLeech`) is a 3D sound that reuses the muffling and reverb of the `VAEmitter` it's attached to (or its `Emitter` property) instead of casting rays, e.g. gunshots and footsteps on one character.
 - **VASourceRelative** (`AVASourceRelative`) is a 2D sound for the player's own sounds. It isn't muffled, and uses the listener's reverb.
+
+These three sources have `bAutoDestroy`, on by default, so a source can be spawned, played and forgotten. Once it has played and nothing is playing any more, including after `Stop()`, its actor is destroyed. A `VASource` first leaves the world and waits for its reverb tail to finish, and can't play again during that wait. A leech or relative source is destroyed straight away, as its reverb belongs to the emitter or listener. A source that has never played isn't destroyed. Disable `bAutoDestroy` on a source that plays more than once, e.g. a `VASourceLeech` for a character's footsteps.
 - **VASourceAmbient** (`AVASourceAmbient`) is a 2D sound for rain, wind or room tone, filtered by how enclosed the listener is. The listener needs ambient rays (`AmbientOcclusionRayCount` or `AmbientPermeationRayCount`).
 - **VAStreamSource** (`AVAStreamSource`) is a raytraced sound that plays raw PCM pushed at runtime: `OpenStream`, `PushAudioData`, `CloseStream`.
 - **VAInputStreamSource** (`AVAInputStreamSource`) is a stream fed by a microphone, with an `OnAudioCaptured` event for sending it elsewhere. Microphone capture doesn't work on Linux: Unreal has no capture backend there, so `OpenCapture` logs a warning and returns false, and with `bAutoCapture` the source stays silent.
@@ -106,7 +108,7 @@ Useful emitter properties, shared by the listener and the raytraced sources:
 
 Reverb is sent before distance attenuation, and the send level is divided by the muffled volume so the reverb hears the unmuffled sound. Unreal caps submix send levels at 1, so a heavily muffled source (its volume below its reverb send level) has quieter reverb than the raytraced result says. `GetReverbSendLevel` on a source returns the level actually sent.
 
-To convert an existing level, select its **Ambient Sound** actors, right-click and choose **Vercidium Audio → Convert to VASource**. Each one is replaced by a `VASource` with the same sound, transform, label, folder, tags and attachments, and its Auto Activate, Volume Multiplier and Pitch Multiplier become `bAutoPlay`, `VolumeMultiplier` and `PitchMultiplier`. A `VASource` uses the Sound Attenuation on its sound, so attenuation set on the ambient sound's audio component isn't kept, and neither are its low and high pass filters. The Output Log lists anything that wasn't kept. The conversion can be undone, and the new sources still need reverb rays.
+To convert an existing level, select its **Ambient Sound** actors, right-click and choose **Vercidium Audio → Convert to VASource**. Each one is replaced by a `VASource` with the same sound, transform, label, folder, tags and attachments, and its Auto Activate, Volume Multiplier and Pitch Multiplier become `bAutoPlay`, `VolumeMultiplier` and `PitchMultiplier`. `bAutoDestroy` is disabled, as an Ambient Sound outlives its sound. A `VASource` uses the Sound Attenuation on its sound, so attenuation set on the ambient sound's audio component isn't kept, and neither are its low and high pass filters. The Output Log lists anything that wasn't kept. The conversion can be undone, and the new sources still need reverb rays.
 
 ### One-shot sounds
 
@@ -143,7 +145,7 @@ AVAWorld::PlaySoundRelative(this, FootstepSound, Volume, Pitch);
 
 `PlaySoundRelative` and `PlaySoundLeech` don't spawn an actor, so they cost about the same as the `UGameplayStatics` functions. The `VAWorld` keeps each sound's filter and reverb send up to date until it finishes. Both return the `UAudioComponent`, or null with no audio device. Call `Stop()` on it to stop a looping sound, or destroy it to cancel a leech that hasn't started yet.
 
-`bDestroyWhenFinished` and `AttenuationSettings` can also be set on a placed `VASource`.
+`AttenuationSettings` can also be set on a placed `VASource`.
 
 ### Geometry and materials
 
@@ -237,7 +239,7 @@ Sources that are loaded but outside the box aren't raytraced. `bEmittersOutsideT
 
 **When the VAWorld ends play**
 
-If the `VAWorld` is destroyed or streams out while other actors stay loaded, they stop raytracing and wait. When another `VAWorld` begins play they join it, and their geometry is added again. Their sounds stop when the `VAWorld` ends: a `VASource` with `bAutoPlay` plays again once it rejoins, but a stream source's stream is closed, so call `OpenStream` again (and `OpenCapture` + `StartCapture` on a `VAInputStreamSource`).
+If the `VAWorld` is destroyed or streams out while other actors stay loaded, they stop raytracing and wait. When another `VAWorld` begins play they join it, and their geometry is added again. Their sounds stop when the `VAWorld` ends: a `VASource` with `bAutoPlay` plays again once it rejoins (with `bAutoDestroy`, only if its sound loops, otherwise it's destroyed), but a stream source's stream is closed, so call `OpenStream` again (and `OpenCapture` + `StartCapture` on a `VAInputStreamSource`).
 
 ## References
 - [Vercidium Audio documentation](https://vercidium.com/docs)
