@@ -96,6 +96,10 @@ void AVAWorld::DestroyPrimitive(const FVAPrimitiveBinding& binding)
 			vaPrismPrimitiveDestroy(static_cast<VAPrismPrimitive*>(primitive));
 			break;
 
+		case EVAPrimitiveKind::PlaneFromMesh:
+			vaPlanePrimitiveDestroy(static_cast<VAPlanePrimitive*>(primitive));
+			break;
+
 		case EVAPrimitiveKind::Capsule:
 		case EVAPrimitiveKind::CapsuleFromMesh:
 			vaCapsulePrimitiveDestroy(static_cast<VACapsulePrimitive*>(primitive));
@@ -203,6 +207,12 @@ void AVAWorld::RefreshPrimitiveTransform(const FVAPrimitiveBinding& binding)
 			VAPrismPrimitive* vaPrism = static_cast<VAPrismPrimitive*>(binding.Primitive);
 			vaPrismPrimitiveSetSizeUnreal(vaPrism, binding.LocalExtent * meshScale);
 			vaPrismPrimitiveSetTransformUnreal(vaPrism, elementTransform);
+			break;
+		}
+		case EVAPrimitiveKind::PlaneFromMesh:
+		{
+			FTransform elementTransform(meshTransform.GetRotation() * MirrorElementRotation(binding.ElementTransform.GetRotation(), signedMeshScale), meshTransform.TransformPosition(binding.ElementTransform.GetTranslation()));
+			vaPlanePrimitiveSetFromBoxUnreal(static_cast<VAPlanePrimitive*>(binding.Primitive), binding.LocalExtent, meshScale, elementTransform);
 			break;
 		}
 		case EVAPrimitiveKind::CapsuleFromMesh:

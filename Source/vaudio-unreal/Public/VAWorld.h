@@ -50,6 +50,7 @@ enum class EVAPrimitiveKind : uint8
 	CapsuleFromMesh,
 	SphereFromMesh,
 	PrismFromMesh,
+	PlaneFromMesh,
 	Heightmap,
 };
 

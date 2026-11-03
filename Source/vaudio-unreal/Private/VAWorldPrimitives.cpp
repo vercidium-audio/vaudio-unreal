@@ -622,6 +622,15 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 
 		for (const FKBoxElem& boxElem : agg.BoxElems)
 		{
+			// A box with no thickness, e.g. /Engine/BasicShapes/Plane's. A prism this thin leaks bouncing rays through it, and its transmission does nothing as rays have no length inside it
+			if (FVector(boxElem.X, boxElem.Y, boxElem.Z).GetMin() <= KINDA_SMALL_NUMBER)
+			{
+				VAPlanePrimitive* plane = vaPlanePrimitiveCreate();
+				vaPlanePrimitiveSetMaterial(plane, materialType);
+				addedSimple |= AddBinding(makeBinding(plane, EVAPrimitiveKind::PlaneFromMesh, FTransform(boxElem.GetTransform().GetRotation(), boxElem.GetTransform().GetTranslation()), FVector(boxElem.X, boxElem.Y, boxElem.Z)), TEXT("plane"));
+				continue;
+			}
+
 			VAPrismPrimitive* prism = vaPrismPrimitiveCreate();
 			vaPrismPrimitiveSetMaterial(prism, materialType);
 			addedSimple |= AddBinding(makeBinding(prism, EVAPrimitiveKind::PrismFromMesh, FTransform(boxElem.GetTransform().GetRotation(), boxElem.GetTransform().GetTranslation()), FVector(boxElem.X, boxElem.Y, boxElem.Z)), TEXT("box"));

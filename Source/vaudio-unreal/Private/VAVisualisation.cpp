@@ -24,6 +24,9 @@ extern "C" {
 #include "Materials/MaterialExpressionPerInstanceCustomData.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+#include "Materials/MaterialExpressionVertexInterpolator.h"
+#endif
 #endif
 
 enum EVAVisualisationMaterialWarningOffset : uint32
@@ -468,7 +471,14 @@ void UVAVisualisation::GenerateFadeNodes()
 	fadeExpression->RebuildOutputs(); // populates Outputs - CreateMaterialExpression doesn't call PostEditChangeProperty, so this never runs implicitly
 #endif // on 4.27 it isn't exported, but the UMaterialExpression constructor already adds the one unnamed output it would build
 
+	// 4.27 only compiles per-instance custom data in the vertex shader, so it reaches the pixel shader's opacity through an interpolator
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	UMaterialExpression* spawnTimeInterpolator = createExpression(UMaterialExpressionVertexInterpolator::StaticClass(), -400, 0);
+	UMaterialEditingLibrary::ConnectMaterialExpressions(spawnTimeExpression, TEXT(""), spawnTimeInterpolator, TEXT("VS"));
+	UMaterialEditingLibrary::ConnectMaterialExpressions(spawnTimeInterpolator, TEXT("PS"), fadeExpression, TEXT("SpawnTime"));
+#else
 	UMaterialEditingLibrary::ConnectMaterialExpressions(spawnTimeExpression, TEXT(""), fadeExpression, TEXT("SpawnTime"));
+#endif
 	UMaterialEditingLibrary::ConnectMaterialExpressions(currentTimeExpression, TEXT(""), fadeExpression, TEXT("CurrentTime"));
 	UMaterialEditingLibrary::ConnectMaterialExpressions(fadeInExpression, TEXT(""), fadeExpression, TEXT("FadeInMs"));
 	UMaterialEditingLibrary::ConnectMaterialExpressions(fadeOutExpression, TEXT(""), fadeExpression, TEXT("FadeOutMs"));

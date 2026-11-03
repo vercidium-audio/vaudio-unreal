@@ -152,6 +152,8 @@ AVAWorld::PlaySoundRelative(this, FootstepSound, Volume, Pitch);
 
 A **VAMaterialComponent** (`UVAMaterialComponent`) makes its actor part of the raytraced scene, along with any attached child actors that don't have their own. Shape components and simple collision are used where they exist, and render triangles otherwise.
 
+**Planes**: a mesh whose box collision has no thickness, like `/Engine/BasicShapes/Plane`, is an open sheet that always uses flat transmission (`bUseFlatTransmission` is ignored). It reflects rays from both sides, but if the listener casts permeation rays, flat transmission on the built-in materials is too low to muffle sound crossing it. Give it a `VACustomMaterial` with `FlatTransmissionLF`/`HF` near 1 to muffle that sound.
+
 On a **Level Instance** actor, it also covers the actors in the instance's level that don't have their own, added once that level has loaded. In World Partition maps, level instances with the default "Partitioned" Level Behavior are embedded into the map's cells when played, so for those put the `VAMaterialComponent` on actors inside the instance's level instead.
 
 - `Material` picks a built-in material (concrete, wood, glass, ...). `MaterialAsset` uses a material asset instead.
