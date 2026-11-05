@@ -5,7 +5,7 @@ Unreal Engine plugin for Vercidium Audio — raytraced audio simulation with rea
 > [!WARNING]
 > This plugin is experimental and requires much testing and feedback
 
-This repository requires Vercidium Audio v1.11.1 to run. Windows, Linux and macOS (Apple Silicon and Intel) are supported, and sound plays through Unreal's own audio engine.
+This repository requires Vercidium Audio v1.11.1 to run. Unreal Engine 4.27, 5.7 and 5.8 are supported on Windows, Linux and macOS (Apple Silicon and Intel), and sound plays through Unreal's own audio engine.
 - Download the Vercidium Audio SDK from [vercidium.com](https://vercidium.com)
 
 > Please note that the Vercidium Audio SDK is not free for commercial use. See [vercidium.com/eula](https://vercidium.com/eula)
@@ -20,7 +20,7 @@ This repository requires Vercidium Audio v1.11.1 to run. Windows, Linux and macO
 
 ## Requirements
 
-- Unreal Engine 5, C++ project (this plugin is a C++ module, so your project needs a `Source` folder — if you have a Blueprint-only project, Unreal will offer to create one the first time you add a C++ plugin)
+- Unreal Engine 5.7 or 5.8, or [4.27](#unreal-engine-427), C++ project (this plugin is a C++ module, so your project needs a `Source` folder — if you have a Blueprint-only project, Unreal will offer to create one the first time you add a C++ plugin)
 - Visual Studio (or another C++ toolchain) installed and set up for Unreal development
 - [Vercidium Audio SDK](https://vercidium.com)
 
@@ -28,7 +28,7 @@ This repository requires Vercidium Audio v1.11.1 to run. Windows, Linux and macO
 
 ### 1. Add the plugin
 
-Download the zip for your engine version from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases) (`vaudio-unreal-5.7.zip` or `vaudio-unreal-5.8.zip`) and extract it into your project's `Plugins` folder. It contains the plugin source plus prebuilt binaries for Win64, Linux and Mac (arm64 and x86_64). You can also clone this repository instead, which builds the plugin from source. Either way, the `.uplugin` file must exist at:
+Download the zip for your engine version from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases) (`vaudio-unreal-4.27.zip`, `vaudio-unreal-5.7.zip` or `vaudio-unreal-5.8.zip`) and extract it into your project's `Plugins` folder. It contains the plugin source plus prebuilt binaries for Win64, Linux and Mac (arm64 and x86_64 on 5.x, x86_64 on 4.27). On 5.x you can also clone this repository instead, which builds the plugin from source. On 4.27 you must use the zip, as the repository's source only builds on 5.x. Either way, the `.uplugin` file must exist at:
 
 ```
 YourProject/Plugins/vaudio-unreal/vaudio-unreal.uplugin
@@ -54,7 +54,7 @@ YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Linux/libvaudiona
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Mac/libvaudionative.dylib
 ```
 
-Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. The plugin only works with the double precision SDK: Unreal positions are doubles, and it keeps them that way, so raytracing stays accurate any distance from the origin. The single precision SDK (`3d/native`) fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`, or `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`.
+Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. The plugin only works with the double precision SDK, on every engine version: Unreal 5 positions are doubles, and it keeps them that way, so raytracing stays accurate any distance from the origin. The single precision SDK (`3d/native`) fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`, or `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`.
 
 The Mac SDK is universal (arm64 and x86_64), so Mac builds can target Apple Silicon, Intel or Universal. Intel builds have been tested under Rosetta, not on Intel hardware. The debug window is Apple Silicon only, so it can't open on an Intel Mac.
 
@@ -65,6 +65,27 @@ When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platfo
 - Regenerate your project files (right-click your `.uproject` → **Generate Visual Studio project files**), then build the project in Visual Studio (or open the `.uproject` and let Unreal prompt you to rebuild missing modules).
 - Open the project in the Unreal Editor, go to **Edit → Plugins**, search for **Vercidium Audio**, and make sure it's enabled.
 - Restart the editor if prompted.
+
+## Unreal Engine 4.27
+
+Use `vaudio-unreal-4.27.zip` from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases). Cloning this repository doesn't work on 4.27. The SDK setup is the same as on 5.x, including the double precision SDK.
+
+Some features don't exist in 4.27, so the plugin doesn't have them there:
+- World Partition isn't available, so the World Partition notes in this README don't apply, and **Bake Geometry For Shipping** covers the level's loaded actors.
+- Level Instances aren't available, so a `VAMaterialComponent` can't reach into one.
+
+Other differences on 4.27:
+- Unreal's positions are floats, so geometry and sources far from the origin are less precise than on 5.x.
+- Landscapes and convex hulls are read from PhysX collision rather than Chaos. Landscape holes follow that collision, which may be one quad away from where they were painted.
+
+Platform requirements:
+- **Windows:** build with Visual Studio 2019.
+- **Linux:** 4.27 has to be built from source, and prebuilt modules only load in the exact engine build that made them. A Blueprint-only project fails at startup with `Plugin 'vaudio-unreal' failed to load because module 'VaudioUnreal' could not be found`, so use a C++ project, which rebuilds the plugin for your engine.
+- **Mac:** the 4.27 editor is x86_64 only, so on Apple Silicon it runs under Rosetta. To build a C++ project with Xcode 27, set this environment variable first, as Xcode 27 can't build the 4.27 engine headers or load the result without it:
+
+```
+export CCC_OVERRIDE_OPTIONS="# +-Wno-error +-Wno-deprecated-builtins +-fno-access-control +-Wl,-rpath,/usr/lib/swift"
+```
 
 ## Usage
 
