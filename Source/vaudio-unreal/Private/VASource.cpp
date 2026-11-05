@@ -13,7 +13,7 @@ bool AVASource::ValidateConfig()
 
 	if (!SourceSound)
 	{
-		VA_WARN_NAMED(TEXT("Will not play as it has no SourceSound assigned"));
+		VA_WARN_NAMED(TEXT("Will not play as it has no SourceSound assigned%s"), VANeverDestroyedSuffix(bAutoDestroy));
 		return false;
 	}
 
@@ -96,9 +96,21 @@ void AVASource::DestroyWithComponent(USceneComponent* component)
 
 bool AVASource::Play()
 {
-	// Wait for the muffling and reverb results, so the sound never starts unmuffled or without reverb
-	if (!SourceSound || !IsReadyToPlay())
+	if (!SourceSound)
 		return false;
+
+	// Wait for the muffling and reverb results, so the sound never starts unmuffled or without reverb
+	if (!IsReadyToPlay())
+	{
+		// bAutoPlay plays it once it's ready, and a source that has played or is leaving will still be destroyed
+		if (bAutoDestroy && !bAutoPlayPending && !bPlayAttempted && !IsFinalRemovalStarted() && !bWarnedPlayBeforeReady)
+		{
+			bWarnedPlayBeforeReady = true;
+			VA_WARN_PLAY_BEFORE_READY();
+		}
+
+		return false;
+	}
 
 	bAutoPlayPending = false;
 

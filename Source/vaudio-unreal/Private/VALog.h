@@ -77,5 +77,13 @@ void VASdkEmitterLogErrorCallback(VAEmitter* emitter, const char* message);
 #define VA_WARN_NAMED_RESULT(Result, Format, ...) VAReport(ELogVerbosity::Warning, this, VA_CALL_SITE_KEY(this), FString::Printf(Format, ##__VA_ARGS__) + VA_RESULT_SUFFIX(Result))
 #define VA_ERROR_NAMED_RESULT(Result, Format, ...) VAReport(ELogVerbosity::Error, this, VA_CALL_SITE_KEY(this), FString::Printf(Format, ##__VA_ARGS__) + VA_RESULT_SUFFIX(Result))
 
+// Appended to warnings about a source that can't play, as bAutoDestroy only destroys a source that has played
+inline const TCHAR* VANeverDestroyedSuffix(bool bAutoDestroy)
+{
+	return bAutoDestroy ? TEXT(". bAutoDestroy won't destroy this actor, as it hasn't played") : TEXT("");
+}
+
+#define VA_WARN_PLAY_BEFORE_READY() VA_WARN_NAMED(TEXT("Play() was called before this source was ready to play, so nothing played. bAutoDestroy won't destroy this actor until it has played, so set bAutoPlay, or call Play() once IsReadyToPlay() returns true"))
+
 // Same as VA_WARN_NAMED, but keyed by an explicit slot so the message can be cleared later with VAClearMessage(VAMessageKey(this, Slot))
 #define VA_WARN_NAMED_SLOT(Slot, Format, ...) VAReport(ELogVerbosity::Warning, this, VAMessageKey(this, Slot), FString::Printf(Format, ##__VA_ARGS__))

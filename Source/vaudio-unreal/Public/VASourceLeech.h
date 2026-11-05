@@ -96,6 +96,8 @@ private:
 
 	bool bWarnedNoEmitter = false;
 
+	bool bWarnedPlayBeforeReady = false;
+
 	// Pushes the multipliers, and the emitter's muffling and reverb send, to Playback
 	void UpdatePlayback(AVAEmitter* emitter);
 };

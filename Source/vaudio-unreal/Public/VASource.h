@@ -53,6 +53,8 @@ private:
 	// Set by the first Play() once this source is ready, whether or not a sound could be created
 	bool bPlayAttempted = false;
 
+	bool bWarnedPlayBeforeReady = false;
+
 	bool bDestroyWithComponent = false;
 	TWeakObjectPtr<USceneComponent> DestroyWithComponentTarget;
 };

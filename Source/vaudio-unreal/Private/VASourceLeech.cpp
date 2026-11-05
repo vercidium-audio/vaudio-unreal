@@ -37,7 +37,7 @@ void AVASourceLeech::BeginPlay()
 	// Disable the actor if validation fails
 	if (SourceSounds.Num() == 0)
 	{
-		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound"));
+		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound%s"), VANeverDestroyedSuffix(bAutoDestroy));
 		SetActorTickEnabled(false);
 		return;
 	}
@@ -48,7 +48,7 @@ void AVASourceLeech::BeginPlay()
 
 		if (!sound)
 		{
-			VA_WARN_NAMED(TEXT("Will not play as it has a null sound assigned to index %d"), i);
+			VA_WARN_NAMED(TEXT("Will not play as it has a null sound assigned to index %d%s"), i, VANeverDestroyedSuffix(bAutoDestroy));
 			SetActorTickEnabled(false);
 			return;
 		}
@@ -111,7 +111,7 @@ void AVASourceLeech::Tick(float DeltaTime)
 		if (!bWarnedNoEmitter)
 		{
 			bWarnedNoEmitter = true;
-			VA_WARN_NAMED(TEXT("Is not attached to an AVAEmitter and has no Emitter assigned, so it will not play"));
+			VA_WARN_NAMED(TEXT("Is not attached to an AVAEmitter and has no Emitter assigned, so it will not play%s"), VANeverDestroyedSuffix(bAutoDestroy && !bPlayAttempted));
 		}
 
 		return;
@@ -120,7 +120,7 @@ void AVASourceLeech::Tick(float DeltaTime)
 	// A listener never raytraces itself, so it has no muffling for a leech to read
 	if (emitter->IsA<AVAListener>())
 	{
-		VA_WARN_NAMED(TEXT("Leeches the listener '%s', which has no muffling result, so it will not play. Use a VASourceRelative instead"), *VAActorName(emitter));
+		VA_WARN_NAMED(TEXT("Leeches the listener '%s', which has no muffling result, so it will not play. Use a VASourceRelative instead%s"), *VAActorName(emitter), VANeverDestroyedSuffix(bAutoDestroy && !bPlayAttempted));
 		SetActorTickEnabled(false);
 		return;
 	}
@@ -158,9 +158,21 @@ void AVASourceLeech::ApplyEmitterResults(FVASourcePlayback& playback, const AVAE
 
 bool AVASourceLeech::Play()
 {
-	// Wait for the emitter's muffling and reverb results, so the sound never starts unmuffled or without reverb
-	if (!bValidConfig || !IsReadyToPlay())
+	if (!bValidConfig)
 		return false;
+
+	// Wait for the emitter's muffling and reverb results, so the sound never starts unmuffled or without reverb
+	if (!IsReadyToPlay())
+	{
+		// bAutoPlay plays it once it's ready, and a source that has played will still be destroyed
+		if (bAutoDestroy && !bAutoPlayPending && !bPlayAttempted && !bWarnedPlayBeforeReady)
+		{
+			bWarnedPlayBeforeReady = true;
+			VA_WARN_PLAY_BEFORE_READY();
+		}
+
+		return false;
+	}
 
 	bAutoPlayPending = false;
 	bPlayAttempted = true;

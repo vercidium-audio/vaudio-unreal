@@ -20,7 +20,7 @@ void AVASourceRelative::BeginPlay()
 
 	if (SourceSounds.Num() == 0)
 	{
-		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound"));
+		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound%s"), VANeverDestroyedSuffix(bAutoDestroy));
 		SetActorTickEnabled(false);
 		return;
 	}
@@ -29,7 +29,7 @@ void AVASourceRelative::BeginPlay()
 	{
 		if (!SourceSounds[i])
 		{
-			VA_WARN_NAMED(TEXT("Will not play as it has a null sound assigned to index %d"), i);
+			VA_WARN_NAMED(TEXT("Will not play as it has a null sound assigned to index %d%s"), i, VANeverDestroyedSuffix(bAutoDestroy));
 			SetActorTickEnabled(false);
 			return;
 		}
