@@ -878,60 +878,18 @@ void AVAWorld::Tick(float DeltaTime)
 
 void AVAWorld::ShowDebugMessages()
 {
-	// Per-emitter position and world-bounds check
-	// Listeners that aren't current have no handle
-	TArray<AVAEmitter*> statusEmitters;
-
-	if (MainListener)
-		statusEmitters.Add(MainListener);
-
-	statusEmitters.Append(RegisteredEmitters);
-
-	for (int32 i = 0; i < statusEmitters.Num(); ++i)
+	// Only configuration problems are shown. Initialising, waiting to be raytraced and not playing yet are normal states, e.g. every one-shot passes through them
+	for (int32 i = 0; i < RegisteredEmitters.Num(); ++i)
 	{
-		AVAEmitter* baseEmitter = statusEmitters[i];
-		AVAListener* listener = Cast<AVAListener>(baseEmitter);
-		AVAEmitter* continuousEmitter = listener ? nullptr : baseEmitter;
+		AVASource* source = Cast<AVASource>(RegisteredEmitters[i]);
 
-		VAEmitter* vaEmitter = baseEmitter->GetVAEmitter();
-
-		uint64 messageID = VAMessageKey(baseEmitter, EVAMessageSlot::Status);
-
-		if (!vaEmitter)
-		{
-			VAShowMessage(messageID, 0.0f, FColor::Orange,
-				FString::Printf(TEXT("[VA] Emitter %d '%s': initialising"), i, *VAActorName(baseEmitter)));
-
+		if (!source)
 			continue;
-		}
 
-		bool bInBounds = vaEmitterGetWithinWorldBounds(vaEmitter);
-		VAVector P = vaEmitterGetPosition(vaEmitter);
-
-		if (!listener)
-		{
-			AVASource* source = Cast<AVASource>(continuousEmitter);
-
-			// If it's a source (not continuous), ensure its audio component is configured correctly
-			if (source)
-			{
-				if (!source->SourceSound)
-				{
-					uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::SourceStatus);
-					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no sound file assigned"), i, *VAActorName(continuousEmitter)));
-				}
-				else if (!source->SourceSound->AttenuationSettings)
-				{
-					uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::AttenuationStatus);
-					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *VAActorName(continuousEmitter)));
-				}
-				else if (!source->IsPlaying())
-				{
-					uint64 errorMessageID = VAMessageKey(continuousEmitter, EVAMessageSlot::SourceStatus);
-					VAShowMessage(errorMessageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' is not playing"), i, *VAActorName(continuousEmitter)));
-				}
-			}
-		}
+		if (!source->SourceSound)
+			VAShowMessage(VAMessageKey(source, EVAMessageSlot::SourceStatus), 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no sound file assigned"), i, *VAActorName(source)));
+		else if (!source->SourceSound->AttenuationSettings && !source->AttenuationSettings)
+			VAShowMessage(VAMessageKey(source, EVAMessageSlot::AttenuationStatus), 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Source Emitter %d '%s' has no Sound Attenuation - it will not fall off with distance"), i, *VAActorName(source)));
 	}
 
 	// Per-target LPF from the main listener, the same filter each source applies to itself
@@ -953,11 +911,9 @@ void AVAWorld::ShowDebugMessages()
 					continue;
 				}
 
+				// Not raytraced yet is a normal state, and it has no filter to check until it is
 				if (vaEmitterHasRaytracedTarget(ListenerVA, Target->GetVAEmitter()) != VA_TRUE)
-				{
-					VAShowMessage(messageID, 0.0f, FColor::Orange, FString::Printf(TEXT("[VA] Listener '%s' has not raytraced the '%s' emitter yet"), *VAActorName(MessageListener), *VAActorName(Target)));
 					continue;
-				}
 
 				VALowPassFilter* lowPassFilter = nullptr;
 
