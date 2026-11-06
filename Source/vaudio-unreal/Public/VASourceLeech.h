@@ -68,9 +68,6 @@ public:
 
 	const FVASourcePlayback& GetPlayback() const { return Playback; }
 
-	// Pushes the emitter's muffling filter and reverb send to playback. Shared with AVAWorld::PlaySoundLeech
-	static void ApplyEmitterResults(FVASourcePlayback& playback, const AVAEmitter* emitter);
-
 	// The leeched emitter's grouped EAX submix (at its relative gain), the listener's ListenerReverbSubmix (bUseListenerReverb), or null. Resolved every tick, even with no audio device
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
 	USoundSubmix* GetReverbSubmix() const { return Playback.GetReverbSubmix(); }

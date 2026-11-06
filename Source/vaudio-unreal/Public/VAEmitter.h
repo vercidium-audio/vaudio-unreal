@@ -11,6 +11,7 @@ class UVAVisualisation;
 class UVAWorldSubsystem;
 class USoundSubmix;
 struct VALowPassFilter;
+struct FVASourcePlayback;
 
 // Mirrors every field of the SDK's VAEAXReverb for Blueprint consumption, like Godot's get_eax_debug_info
 USTRUCT(BlueprintType)
@@ -197,6 +198,9 @@ public:
 
 	// Mirrors Godot's VAWorld::get_reverb_effect: the grouped EAX submix at its relative gain, else the listener's ListenerReverbSubmix (bUseListenerReverb), else null. Returns false to keep the current send, e.g. while the listener is switching
 	bool ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel) const;
+
+	// Pushes the muffling filter, then the reverb send, to playback. The last result is kept while either is unavailable
+	void ApplyResultsToPlayback(FVASourcePlayback& playback) const;
 
 	// Broadcast after this emitter casts its rays for the first time
 	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio")
@@ -476,4 +480,7 @@ private:
 
 	// Removes the emitter from the world and hands its handle to the world, which destroys it once the SDK has let go of it
 	void ReleaseEmitter();
+
+	// CurrentGroupedEAXIndex, or -1 without bAffectsGroupedEAX
+	int32 GetReverbSendGroupedEAXIndex() const;
 };

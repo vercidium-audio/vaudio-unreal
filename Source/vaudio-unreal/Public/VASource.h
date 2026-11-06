@@ -36,7 +36,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bAutoDestroy = true;
 
-	// Set by AVAWorld's one-shots, whose life span is their MaxPlayDelay, so the first Play() cancels it
+	// Set by AVAWorld::SpawnSoundAtLocation and SpawnSoundAttached, whose life span is their MaxPlayDelay, so the first Play() cancels it
 	bool bCancelLifeSpanOnPlay = false;
 
 	// Plays SourceSound. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, or if the sound couldn't be created (e.g. there's no audio device)

@@ -123,6 +123,11 @@ void AVAListener::Deactivate()
 
 void AVAListener::AddTarget(AVAEmitter* target)
 {
+	AddTarget(target->GetVAEmitter(), VAActorName(target));
+}
+
+void AVAListener::AddTarget(VAEmitter* target, const FString& name)
+{
 	if (!vaEmitterGetOcclusionEnabled(Emitter) && !vaEmitterGetPermeationEnabled(Emitter))
 	{
 		// Every emitter in the world is a target, so only say it once
@@ -135,7 +140,7 @@ void AVAListener::AddTarget(AVAEmitter* target)
 		return;
 	}
 
-	VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());
+	VAResult result = vaEmitterAddTarget(Emitter, target);
 
 	switch (result)
 	{
@@ -144,15 +149,15 @@ void AVAListener::AddTarget(AVAEmitter* target)
 			break;
 
 		case VA_NOT_ADDED_TO_WORLD:
-			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as it has not been added to the same world as this listener."), *VAActorName(target));
+			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as it has not been added to the same world as this listener."), *name);
 			break;
 
 		case VA_FEATURE_DISABLED:
-			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as this listener casts neither occlusion nor permeation rays."), *VAActorName(target));
+			VA_ERROR_NAMED(TEXT("Failed to add target '%s' as this listener casts neither occlusion nor permeation rays."), *name);
 			break;
 
 		default:
-			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to add target '%s'."), *VAActorName(target));
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to add target '%s'."), *name);
 			break;
 	}
 }

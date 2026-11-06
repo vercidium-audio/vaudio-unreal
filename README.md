@@ -134,7 +134,19 @@ To convert an existing level, select its **Ambient Sound** actors, right-click a
 
 ### One-shot sounds
 
-`AVAWorld::PlaySoundAtLocation` and `AVAWorld::SpawnSoundAttached` replace the `UGameplayStatics` functions of the same name, and are also available in Blueprints under **Vercidium Audio**. Each spawns a `VASource` that plays the sound once it has been raytraced, then destroys itself when the sound finishes. The `FVAOneShotSettings` struct sets the source's volume and pitch multipliers, an optional `AttenuationSettings` override, and its reverb, muffling and clustering properties. It defaults to 64 reverb rays with 64 bounces.
+`AVAWorld` has static functions that replace the `UGameplayStatics` sound functions, and they're also available in Blueprints under **Vercidium Audio**. As in Unreal, the `Play*` functions are fire-and-forget and return nothing, and the `Spawn*` functions return something that can be controlled:
+
+| Function | Replaces | Returns | Raytracing |
+|---|---|---|---|
+| `PlaySoundAtLocation` | `UGameplayStatics::PlaySoundAtLocation` | nothing | Its own rays, cast once |
+| `PlaySoundLeech` | | nothing | Reuses a `VAEmitter`'s rays |
+| `PlaySoundRelative` | `UGameplayStatics::PlaySound2D` | nothing | None |
+| `SpawnSoundAtLocation` | `UGameplayStatics::SpawnSoundAtLocation` | `AVASource*` | Its own rays, cast once |
+| `SpawnSoundAttached` | `UGameplayStatics::SpawnSoundAttached` | `AVASource*` | Its own rays, every frame |
+
+The `Play*` functions don't spawn an actor: the `VAWorld` keeps each sound's filter and reverb send up to date until it finishes, so they cost about the same as the `UGameplayStatics` functions plus their rays. The `Spawn*` functions spawn a `VASource`, which plays the sound once it has been raytraced and then destroys itself when the sound finishes. Use them to read the source's results (e.g. `GetReverbResult`) or to stop it with `Stop()`, which also destroys it.
+
+`PlaySoundAtLocation`, `SpawnSoundAtLocation` and `SpawnSoundAttached` take an `FVAOneShotSettings`, which sets the sound's volume and pitch multipliers, an optional `AttenuationSettings` override, `MaxPlayDelay`, and its reverb, muffling and clustering properties. It defaults to 64 reverb rays with 64 bounces.
 
 ```cpp
 FVAOneShotSettings settings;
@@ -142,16 +154,19 @@ settings.VolumeMultiplier = Volume;
 settings.PitchMultiplier = Pitch;
 settings.AttenuationSettings = AttenuationSettings;
 
+// Fire and forget, e.g. an explosion or an impact
 AVAWorld::PlaySoundAtLocation(this, Sound, SoundLocation, settings);
-AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, bStopWhenAttachedToDestroyed, settings);
+
+// A VASource that can be read or stopped
+AVASource* source = AVAWorld::SpawnSoundAtLocation(this, Sound, SoundLocation, settings);
+AVASource* attached = AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, bStopWhenAttachedToDestroyed, settings);
 ```
 
-- A sound at a location raytraces once (`bRaytraceOnce`), and its reverb tail starts when the sound finishes. An attached sound keeps raytracing as it moves.
-- The sound starts after the first raytracing result, not straight away, so it's never heard unmuffled. If it hasn't started after `MaxPlayDelay` seconds (e.g. there's no listener), the source is destroyed without playing.
-- Both return the `VASource`, so a looping sound can be stopped with `Stop()`, which also destroys it.
-- For frequent sounds on another character, like an enemy's footsteps or gunshots, use `PlaySoundLeech` below instead, as it shares that character's rays and plays with no delay.
+- A sound at a location raytraces once (`bRaytraceOnce`), and its reverb tail starts when the sound finishes. An attached sound keeps raytracing every frame as it moves, so `SpawnSoundAttached` is the expensive choice for frequent sounds.
+- The sound starts after the first raytracing result, not straight away, so it's never heard unmuffled. If it hasn't started after `MaxPlayDelay` seconds (e.g. there's no listener), it's dropped without playing.
+- `PlaySoundAtLocation` needs a `VAWorld` that has begun play in the world context object's level, and does nothing otherwise. The `Spawn*` functions return null if the sound, world or component is missing.
 
-For sounds made by something that's already raytraced, `AVAWorld::PlaySoundLeech` plays a sound like a `VASourceLeech`: attached to a `VAEmitter`, with that emitter's muffling and reverb instead of rays of its own, e.g. put one `VAEmitter` on each enemy, and play all of its footsteps and gunshots through it:
+For frequent sounds on a character, like an enemy's footsteps or gunshots, put one `VAEmitter` on each enemy and play all of its sounds through it with `AVAWorld::PlaySoundLeech`. Like a `VASourceLeech`, the sound is attached to the `VAEmitter` and uses its muffling and reverb instead of rays of its own, so hundreds of sounds a second cost no more rays than the one emitter:
 
 ```cpp
 AVAWorld::PlaySoundLeech(GunshotSound, EnemyEmitter, Volume, Pitch, AttenuationSettings);
@@ -165,7 +180,11 @@ For the player's own sounds, `AVAWorld::PlaySoundRelative` replaces `UGameplaySt
 AVAWorld::PlaySoundRelative(this, FootstepSound, Volume, Pitch);
 ```
 
-`PlaySoundRelative` and `PlaySoundLeech` don't spawn an actor, so they cost about the same as the `UGameplayStatics` functions. The `VAWorld` keeps each sound's filter and reverb send up to date until it finishes. Both return the `UAudioComponent`, or null with no audio device. Call `Stop()` on it to stop a looping sound, or destroy it to cancel a leech that hasn't started yet.
+`PlaySoundLeech` and `PlaySoundRelative` do nothing if there's no audio device. `PlaySoundAtLocation` is still raytraced without one, but isn't heard.
+
+The `Play*` functions release a sound when it finishes, so a looping sound would play forever. The Output Log warns once per sound and still plays it. Use `SpawnSoundAtLocation`, a `VASourceLeech` or a `VASourceRelative` for looping sounds instead, as they can be stopped. `StopOneShots()` on the `VAWorld` stops every sound started by the `Play*` functions at once.
+
+The `Play*` functions reuse their audio components: once a sound finishes, its component is kept by the `VAWorld` and reset for the next sound, so playing many sounds doesn't create a new component each time. `MaxPooledAudioComponents` on the `VAWorld` (default 64) is how many idle components are kept, and any finished beyond it are destroyed. Raise it if more sounds than that overlap regularly. The pooled components are owned by the `VAWorld`.
 
 `AttenuationSettings` can also be set on a placed `VASource`.
 

@@ -32,16 +32,7 @@ void AVARaytracedSource::UpdatePlayback()
 	Playback.SetVolumeMultiplier(VolumeMultiplier);
 	Playback.SetPitchMultiplier(PitchMultiplier);
 
-	// Null until the main listener has raytraced this source. The last result is kept
-	if (VALowPassFilter* lowPassFilter = GetMufflingResult())
-		Playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
-
-	USoundSubmix* submix = nullptr;
-	float sendLevel = 0.0f;
-
-	// Set after the filter, as the send level is compensated by gainLF
-	if (ResolveReverbSend(submix, sendLevel))
-		Playback.SetReverbSend(submix, sendLevel);
+	ApplyResultsToPlayback(Playback);
 }
 
 void AVARaytracedSource::Stop()

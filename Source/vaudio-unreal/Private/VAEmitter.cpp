@@ -11,51 +11,9 @@ extern "C" {
 }
 
 #include "VAConstants.h"
+#include "VAEmitterHandle.h"
 #include "VAEditorSprite.h"
 #include "VALog.h"
-
-// vaEmitterSetUserData() stashes the owning actor on the VAEmitter* itself, so these trampolines
-// can resolve identity directly instead of needing a side registry.
-static void VAOnRaytracingCompleteTrampoline(VAEmitter* emitter)
-{
-	if (AVAEmitter* owner = static_cast<AVAEmitter*>(vaEmitterGetUserData(emitter)))
-		owner->QueueRaytracingComplete();
-}
-
-static void VAOnRaytracedByAnotherEmitterTrampoline(VAEmitter* source, VAEmitter* target)
-{
-	AVAEmitter* owner = static_cast<AVAEmitter*>(vaEmitterGetUserData(target));
-
-	if (!owner)
-		return;
-
-	VALowPassFilter* filter = nullptr;
-
-	if (vaEmitterGetTargetFilter(source, target, &filter) == VA_SUCCESS)
-		owner->QueueRaytracedByListener(filter->gainLF, filter->gainHF);
-}
-
-static void VAOnRemovedTrampoline(VAEmitter* emitter)
-{
-	if (AVAEmitter* owner = static_cast<AVAEmitter*>(vaEmitterGetUserData(emitter)))
-	{
-		owner->OnEmitterRemoved(emitter);
-		return;
-	}
-
-	// The actor already released this handle while its removal was pending
-	AVAWorld::OnOrphanedEmitterRemoved(emitter);
-}
-
-static int32 VARandomScatteringSeed()
-{
-#if UE_VERSION_OLDER_THAN(5, 0, 0)
-	// 4.27 has no Rand32, and its Rand() is only 15 bits on MSVC
-	return (int32)(FGuid::NewGuid().A & 0x7fffffff);
-#else
-	return (int32)(FMath::Rand32() & 0x7fffffff);
-#endif
-}
 
 AVAEmitter::AVAEmitter()
 {
@@ -294,15 +252,7 @@ void AVAEmitter::DeinitializeTypeSpecific()
 
 void AVAEmitter::CreateEmitter()
 {
-	VAEmitter* handle = vaEmitterCreate();
-
-	vaEmitterSetLogCallback(handle, &VASdkEmitterLogCallback);
-	vaEmitterSetLogErrorCallback(handle, &VASdkEmitterLogErrorCallback);
-	vaEmitterSetOnRaytracingCompleteCallback(handle, &VAOnRaytracingCompleteTrampoline);
-	vaEmitterSetOnRaytracedByAnotherEmitterCallback(handle, &VAOnRaytracedByAnotherEmitterTrampoline);
-	vaEmitterSetOnRemovedCallback(handle, &VAOnRemovedTrampoline);
-
-	AdoptEmitter(handle);
+	AdoptEmitter(VACreateEmitterHandle());
 }
 
 void AVAEmitter::AdoptEmitter(VAEmitter* handle)
@@ -317,8 +267,7 @@ void AVAEmitter::AdoptEmitter(VAEmitter* handle)
 
 void AVAEmitter::DestroyUnaddedEmitter()
 {
-	vaEmitterSetUserData(Emitter, nullptr);
-	vaEmitterDestroy(Emitter);
+	VADestroyEmitterHandle(Emitter);
 	Emitter = nullptr;
 }
 
@@ -355,59 +304,15 @@ void AVAEmitter::ReleaseEmitter()
 	if (!Emitter)
 		return;
 
-	VAWorld* vaWorld = AudioWorld ? AudioWorld->GetVAWorld() : nullptr;
-
-	// The world ended first, and vaWorldDestroy unlinked this emitter from it, so it can be freed now
-	if (!vaWorld)
-	{
-		vaEmitterSetUserData(Emitter, nullptr);
-		VAResult result = vaEmitterDestroy(Emitter);
-
-		if (result != VA_SUCCESS)
-			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to destroy the emitter after its world ended."));
-
-		Emitter = nullptr;
-		return;
-	}
-
-	// Already removed, and vaWorldRemoveEmitter returns VA_NOT_FOUND once the tail has finished but the in-flight results haven't been handled. OnRemoved is still to come, so the world takes over the handle
-	if (finalRemoval)
-	{
-		vaEmitterSetUserData(Emitter, nullptr);
-		AudioWorld->AddOrphanedEmitter(Emitter);
-		Emitter = nullptr;
-		return;
-	}
-
-	// If no raytracing results were pending, OnRemoved has already run, handing the handle to the world and clearing Emitter
-	VAResult result = vaWorldRemoveEmitter(vaWorld, Emitter);
-
-	if (!Emitter)
-		return;
-
-	switch (result)
-	{
-		// OnRemoved fires once the in-flight raytracing results are handled, or once its reverb tail finishes (VA_PENDING_REMOVAL). This actor may be gone by then, so the world takes over the handle
-		case VA_SUCCESS:
-		case VA_PENDING_REMOVAL:
-			vaEmitterSetUserData(Emitter, nullptr);
-			AudioWorld->AddOrphanedEmitter(Emitter);
-			break;
-
-		// Never added to the world
-		case VA_NOT_FOUND:
-			vaEmitterSetUserData(Emitter, nullptr);
-			vaEmitterDestroy(Emitter);
-			break;
-
-		default:
-			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to remove the emitter from its world."));
-			vaEmitterSetUserData(Emitter, nullptr);
-			AudioWorld->AddOrphanedEmitter(Emitter);
-			break;
-	}
-
+	// Cleared first, as this actor may be gone by the time OnRemoved fires, so the world takes over the handle
+	VAEmitter* handle = Emitter;
 	Emitter = nullptr;
+
+	// BeginFinalRemoval already removed it
+	if (AudioWorld)
+		AudioWorld->ReleaseEmitterHandle(handle, VAActorName(this), finalRemoval);
+	else
+		VADestroyEmitterHandle(handle);
 }
 
 void AVAEmitter::BeginFinalRemoval()
@@ -533,44 +438,7 @@ void AVAEmitter::TickTypeSpecific(float DeltaTime)
 
 void AVAEmitter::UpdateVAEmitter()
 {
-	vaEmitterSetReverbRayCount(Emitter, ReverbRayCount);
-	vaEmitterSetReverbBounceCount(Emitter, ReverbBounceCount);
-	vaEmitterSetReverbEnergyCap(Emitter, ReverbEnergyCap);
-	vaEmitterSetMinimumReverbEnergy(Emitter, MinimumReverbEnergy);
-	vaEmitterSetMaxVolume(Emitter, MaxVolume);
-	vaEmitterSetMaxEchogramTime(Emitter, MaxEchogramTime);
-	vaEmitterSetEchogramGranularity(Emitter, EchogramGranularity);
-	vaEmitterSetAffectsGroupedEAX(Emitter, bAffectsGroupedEAX);
-	vaEmitterSetKeepReverbTailAlive(Emitter, bKeepReverbTailAlive);
-	vaEmitterSetHasRelativeReverb(Emitter, bHasRelativeReverb);
-
-	vaEmitterSetOcclusionEnergyCap(Emitter, OcclusionEnergyCap);
-	vaEmitterSetPermeationEnergyCap(Emitter, PermeationEnergyCap);
-
-	vaEmitterSetAmbientOcclusionRayCount(Emitter, AmbientOcclusionRayCount);
-	vaEmitterSetAmbientOcclusionBounceCount(Emitter, AmbientOcclusionBounceCount);
-	vaEmitterSetAmbientOcclusionEnergyCap(Emitter, AmbientOcclusionEnergyCap);
-	vaEmitterSetMinimumAmbientOcclusionEnergy(Emitter, MinimumAmbientOcclusionEnergy);
-	vaEmitterSetAmbientPermeationRayCount(Emitter, AmbientPermeationRayCount);
-	vaEmitterSetAmbientPermeationBounceCount(Emitter, AmbientPermeationBounceCount);
-	vaEmitterSetAmbientPermeationEnergyCap(Emitter, AmbientPermeationEnergyCap);
-	vaEmitterSetMinimumAmbientPermeationEnergy(Emitter, MinimumAmbientPermeationEnergy);
-
-	vaEmitterSetClusteringEnabled(Emitter, bClusteringEnabled);
-	vaEmitterSetClusteringDistance(Emitter, FMath::Max(0.01f, ClusteringDistance));
-
-	vaEmitterSetType(Emitter, Type);
-	vaEmitterSetTrailRefreshCount(Emitter, TrailRefreshCount);
-	vaEmitterSetRefreshDistanceThreshold(Emitter, RefreshDistanceThreshold);
-	vaEmitterSetScatteringSeed(Emitter, ScatteringSeed);
-	vaEmitterSetClampPosition(Emitter, bClampPosition);
-
-	vaEmitterSetRandomTrailColor(Emitter, bRandomTrailColor);
-	vaEmitterSetTrailColor(Emitter, FColorToVA(TrailColor));
-	vaEmitterSetReverbColor(Emitter, FColorToVA(ReverbColor));
-	vaEmitterSetOcclusionColor(Emitter, FColorToVA(OcclusionColor));
-	vaEmitterSetPermeationColor(Emitter, FColorToVA(PermeationColor));
-	vaEmitterSetAmbientPermeationColor(Emitter, FColorToVA(AmbientPermeationColor));
+	VAPushEmitterProperties(Emitter, *this);
 }
 
 bool AVAEmitter::IsRaytraced() const
@@ -580,17 +448,7 @@ bool AVAEmitter::IsRaytraced() const
 
 bool AVAEmitter::IsReadyToPlay() const
 {
-	if (finalRemoval)
-		return false;
-
-	if (!GetMufflingResult())
-		return false;
-
-	// Its grouped EAX slot, and so its reverb send, isn't known until it casts its own reverb rays
-	if (vaEmitterGetAffectsGroupedEAX(Emitter) && vaEmitterGetReverbEnabled(Emitter))
-		return vaEmitterGetEAX(Emitter) != nullptr;
-
-	return true;
+	return !finalRemoval && VAIsHandleReadyToPlay(Emitter, AudioWorld);
 }
 
 int32 AVAEmitter::GetGroupedEAXIndex() const
@@ -669,17 +527,7 @@ void AVAEmitter::GetAmbientFilterResult(bool& bSuccess, float& GainLF, float& Ga
 
 VALowPassFilter* AVAEmitter::GetMufflingResult() const
 {
-	if (!AudioWorld || !Emitter)
-		return nullptr;
-
-	AVAListener* Listener = AudioWorld->GetMainListener();
-
-	if (!Listener || !Listener->GetVAEmitter())
-		return nullptr;
-
-	VALowPassFilter* filter = nullptr;
-	vaEmitterGetTargetFilter(Listener->GetVAEmitter(), Emitter, &filter);
-	return filter;
+	return VAGetMufflingResult(Emitter, AudioWorld);
 }
 
 void AVAEmitter::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
@@ -700,56 +548,19 @@ void AVAEmitter::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& G
 	GainHF = MufflingFilter->gainHF;
 }
 
+int32 AVAEmitter::GetReverbSendGroupedEAXIndex() const
+{
+	return bAffectsGroupedEAX ? GetGroupedEAXIndex() : -1;
+}
+
 bool AVAEmitter::ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel) const
 {
-	OutSubmix = nullptr;
-	OutSendLevel = 0.0f;
+	return VAResolveReverbSend(Emitter, AudioWorld, GetReverbSendGroupedEAXIndex(), bUseListenerReverb, this, OutSubmix, OutSendLevel);
+}
 
-	// Not added to a world yet, or already removed
-	if (!AudioWorld || !Emitter)
-		return false;
-
-	VAWorld* vaWorld = AudioWorld->GetVAWorld();
-	AVAListener* Listener = AudioWorld->GetMainListener();
-
-	// The listener ended play
-	if (!vaWorld || !Listener || !Listener->GetVAEmitter())
-		return false;
-
-	int32 GroupedEAXIndex = bAffectsGroupedEAX ? GetGroupedEAXIndex() : -1;
-
-	if (GroupedEAXIndex >= 0)
-	{
-		int groupedEAXCount = vaWorldGetGroupedEAXCount(vaWorld);
-
-		if (GroupedEAXIndex >= groupedEAXCount)
-		{
-			VA_WARN_NAMED(TEXT("Has an invalid grouped EAX index: %d. There are only %d grouped EAX submixes available"), GroupedEAXIndex, groupedEAXCount);
-			return false;
-		}
-
-		// A grouped EAX index is only assigned once this emitter's own reverb rays have completed, so its grouped EAX is guaranteed to be available
-		const VAEAXReverb* EAX = vaWorldGetGroupedEAX(vaWorld)[GroupedEAXIndex];
-
-		// Only relative gain is supported. Can't do directional reverb in Unreal :(
-		const float* relativeGain = vaEAXReverbGetRelativeGain(EAX, Listener->GetVAEmitter());
-
-		if (!relativeGain)
-			return false;
-
-		// Null if the user assigned a null submix to World.groupedEAX[]. A warning is already logged in VAWorld.cpp
-		OutSubmix = AudioWorld->GetGroupedEAXSubmix(GroupedEAXIndex);
-		OutSendLevel = *relativeGain;
-		return true;
-	}
-
-	if (bUseListenerReverb && Listener->ListenerReverbSubmix)
-	{
-		OutSubmix = Listener->ListenerReverbSubmix;
-		OutSendLevel = 1.0f;
-	}
-
-	return true;
+void AVAEmitter::ApplyResultsToPlayback(FVASourcePlayback& playback) const
+{
+	VAApplyHandleResults(playback, Emitter, AudioWorld, GetReverbSendGroupedEAXIndex(), bUseListenerReverb, this);
 }
 
 #if WITH_EDITOR

@@ -20,8 +20,11 @@ struct VAUDIOUNREAL_API FVASourcePlayback
 
 	bool IsPlaying() const;
 
-	// Drops components that finished playing
+	// Drops components that finished playing. Only for auto-destroyed components, as nothing else would destroy the dropped ones
 	void RemoveFinished();
+
+	// Set on each component by Play(). Off for pooled components, which their owner takes back after Stop()
+	bool bAutoDestroy = true;
 
 	// Kept with no components (not playing yet, or no audio device), and applied by the next Play()
 	void SetFilter(float GainLF, float GainHF);
@@ -43,6 +46,8 @@ struct VAUDIOUNREAL_API FVASourcePlayback
 	// The component volume: gainLF x the volume multiplier
 	float GetVolume() const { return Filter.GetVolume() * VolumeMultiplier; }
 	float GetPitchMultiplier() const { return PitchMultiplier; }
+
+	const TArray<UAudioComponent*>& GetComponents() const { return Components; }
 
 private:
 	UPROPERTY(Transient)
