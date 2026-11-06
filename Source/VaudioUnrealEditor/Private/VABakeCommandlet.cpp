@@ -2,12 +2,70 @@
 #include "VAWorld.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/ARFilter.h"
-#include "EditorWorldUtils.h"
 #include "EngineUtils.h"
+#include "Misc/EngineVersionComparison.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+#include "Editor.h"
+#else
+#include "EditorWorldUtils.h"
+#endif
+
 DEFINE_LOG_CATEGORY_STATIC(LogVABakeCommandlet, Log, All);
+
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+// 4.27 doesn't have FScopedEditorWorld, so this does the same as the 5.x one
+class FScopedEditorWorld
+{
+public:
+	FScopedEditorWorld(const FString& LongPackageName, const UWorld::InitializationValues& IVS)
+	{
+		const FName PackageName(*LongPackageName);
+		UWorld::WorldTypePreLoadMap.FindOrAdd(PackageName) = EWorldType::Editor;
+		UPackage* Package = LoadPackage(nullptr, *LongPackageName, LOAD_None);
+		UWorld::WorldTypePreLoadMap.Remove(PackageName);
+
+		World = Package ? UWorld::FindWorldInPackage(Package) : nullptr;
+
+		if (!World)
+			return;
+
+		World->AddToRoot();
+
+		GEditor->GetEditorWorldContext(true).SetCurrentWorld(World);
+		PrevGWorld = GWorld;
+		GWorld = World;
+
+		World->WorldType = EWorldType::Editor;
+		World->InitWorld(IVS);
+		World->PersistentLevel->UpdateModelComponents();
+		World->UpdateWorldComponents(true, false);
+		World->UpdateLevelStreaming();
+	}
+
+	~FScopedEditorWorld()
+	{
+		if (!World)
+			return;
+
+		GEditor->Cleanse(true, true, FText::FromString(TEXT("Resetting the transaction system after baking")));
+
+		World->DestroyWorld(false);
+		World->RemoveFromRoot();
+
+		GEditor->GetEditorWorldContext(true).SetCurrentWorld(PrevGWorld);
+		GWorld = PrevGWorld;
+	}
+
+	UWorld* GetWorld() const { return World; }
+
+private:
+	UWorld* World = nullptr;
+	UWorld* PrevGWorld = nullptr;
+};
+#endif
 
 int32 UVABakeCommandlet::Main(const FString& Params)
 {
@@ -16,7 +74,11 @@ int32 UVABakeCommandlet::Main(const FString& Params)
 
 	FARFilter Filter;
 	Filter.bIncludeOnlyOnDiskAssets = true;
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	Filter.ClassNames.Add(UWorld::StaticClass()->GetFName());
+#else
 	Filter.ClassPaths.Add(UWorld::StaticClass()->GetClassPathName());
+#endif
 
 	TArray<FAssetData> WorldAssets;
 	AssetRegistry.GetAssets(Filter, WorldAssets);
@@ -59,11 +121,17 @@ int32 UVABakeCommandlet::Main(const FString& Params)
 			const bool bIsMap = Package == World->GetPackage();
 			const FString PackageFileName = FPackageName::LongPackageNameToFilename(Package->GetName(), bIsMap ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+			const bool bSaved = UPackage::SavePackage(Package, bIsMap ? World : nullptr, RF_Standalone, *PackageFileName, GError, nullptr, false, true, SAVE_NoError);
+#else
 			FSavePackageArgs SaveArgs;
 			SaveArgs.TopLevelFlags = RF_Standalone;
 			SaveArgs.SaveFlags = SAVE_NoError;
 
-			if (UPackage::SavePackage(Package, bIsMap ? World : nullptr, *PackageFileName, SaveArgs))
+			const bool bSaved = UPackage::SavePackage(Package, bIsMap ? World : nullptr, *PackageFileName, SaveArgs);
+#endif
+
+			if (bSaved)
 			{
 				++PackagesSaved;
 				UE_LOG(LogVABakeCommandlet, Log, TEXT("VABake: baked '%s' and saved '%s'"), *LongPackageName, *Package->GetName());

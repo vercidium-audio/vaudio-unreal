@@ -2,9 +2,9 @@
 
 This is a public repo for the Vercidium Audio Unreal Engine plugin. It wraps the Vercidium Audio 3D C SDK (`vaudionative`) and plays sound through Unreal's own audio mixer: muffling is a low-pass filter and volume on each audio component, and reverb is `USubmixEffectReverbPreset`s on submixes. It doesn't use OpenAL.
 
-Windows (Win64), Linux (x86_64) and Mac (arm64 only) are supported, tested with Unreal Engine 5.7.
+Windows (Win64), Linux (x86_64) and Mac (arm64 and x86_64, x86_64 only on 4.27) are supported, tested with Unreal Engine 4.27, 5.7 and 5.8. Use `UE_VERSION_OLDER_THAN` (from `Misc/EngineVersionComparison.h`) where the engine APIs differ, e.g. `VAEngineCompat.h`, so one source tree builds on all of them. See "Unreal Engine 4.27" below for the rules that keep it building there.
 
-The SDK is vendored in `Source/ThirdParty/vaudio/{include,lib/Win64,lib/Linux,lib/Mac}` and is git-ignored, never commit it. `Source/ThirdParty/vaudio/include/vaudio.h` is its public header. `VAudioUnreal.Build.cs` links the library for the target platform and stages it into `Binaries/ThirdParty/vaudio/<platform>`, along with the debug window and GLFW when the dev SDK is used. Linux packaged games stage it into `$(TargetOutputDir)` instead, beside the executable, as UBT makes the `PublicRuntimeLibraryPaths` rpath relative through the building machine's engine folder. A Blueprint-only project never builds, so nothing is staged: Windows' `LoadSdk` falls back to `Source/ThirdParty/vaudio/lib/Win64`, Mac's modules already have an `@loader_path` rpath to `Source/ThirdParty/vaudio/lib/Mac`, and the released Linux modules' RPATH is rewritten to `${ORIGIN}/../ThirdParty/vaudio/Linux:${ORIGIN}/../../Source/ThirdParty/vaudio/lib/Linux` after BuildPlugin. Mac targets that include x64 (e.g. Universal distribution builds) fail in the Build.cs, as the SDK is arm64 only. `FVaudioUnrealModule::StartupModule` loads it and checks its version and precision (`vaGetFloatSize()` against the header's `VA_FLOAT_SIZE`), and `FVaudioUnrealModule::IsSdkLoaded()` gates every entry point that doesn't go through a world.
+The SDK is vendored in `Source/ThirdParty/vaudio/{include,lib/Win64,lib/Linux,lib/Mac}` and is git-ignored, never commit it. `Source/ThirdParty/vaudio/include/vaudio.h` is its public header. `VAudioUnreal.Build.cs` links the library for the target platform and stages it into `Binaries/ThirdParty/vaudio/<platform>`, along with the debug window and GLFW when the dev SDK is used. Linux packaged games stage it into `$(TargetOutputDir)` instead, beside the executable, as UBT makes the `PublicRuntimeLibraryPaths` rpath relative through the building machine's engine folder. A Blueprint-only project never builds, so nothing is staged: Windows' `LoadSdk` falls back to `Source/ThirdParty/vaudio/lib/Win64`, Mac's modules already have an `@loader_path` rpath to `Source/ThirdParty/vaudio/lib/Mac`, and the released Linux modules' RPATH is rewritten to `${ORIGIN}/../ThirdParty/vaudio/Linux:${ORIGIN}/../../Source/ThirdParty/vaudio/lib/Linux` after BuildPlugin. The Mac SDK is universal, but its debug window is arm64 only, so it can't open on an Intel Mac. `FVaudioUnrealModule::StartupModule` loads it and checks its version and precision (`vaGetFloatSize()` against the header's `VA_FLOAT_SIZE`), and `FVaudioUnrealModule::IsSdkLoaded()` gates every entry point that doesn't go through a world.
 
 The plugin only works with the double precision SDK (`3d/native-double`), where `VAFloat` is `double`: `VAConstants.h` has a `static_assert` on `VA_FLOAT_SIZE`, and `StartupModule` refuses a single precision library, which has the same name. Geometry (positions, sizes, radii, transforms, epsilon) is `VAFloat` in `vaudio.h`, so pass Unreal's doubles straight through (`FVectorToVAVector`) and never narrow them with `(float)`. Acoustic values (gains, EAX, materials) are `float`.
 
@@ -58,6 +58,12 @@ When the `AVAWorld` ends play it broadcasts `OnWorldUnregistered` last, after `v
 4. The SDK calls `OnRemoved` once its raytracing threads no longer read the emitter, which can be straight away, after the in-flight pass, or after the reverb tail (`VA_PENDING_REMOVAL`). The handle goes to `AVAWorld::DeferEmitterDestroy`, or to the static `OrphanedEmitters` map if the actor is already gone, and is destroyed after the next `vaWorldUpdate` returns. Never call `vaEmitterDestroy` before `OnRemoved` has fired, it returns `VA_ERROR_IN_USE`
 5. `AVAWorld::EndPlay` runs `vaWorldWait`, destroys primitives, `vaWorldDestroy`, then destroys every handle it still owns
 
+`bAutoDestroy` on `AVASource` takes a different path out of step 3: `BeginFinalRemoval` calls `vaWorldRemoveEmitter` but keeps the handle and user data, so `OnRemoved` reaches the actor and clears `Emitter`, and the source destroys itself on its next tick. If the actor ends play during that wait, `ReleaseEmitter` hands the handle to `OrphanedEmitters` without calling `vaWorldRemoveEmitter` again, as it would return `VA_NOT_FOUND` for a handle whose `OnRemoved` hasn't fired yet. `AVASourceLeech` and `AVASourceRelative` have no handle, so they're destroyed as soon as nothing is playing.
+
+`bRaytraceOnce` doesn't leave the world. `AVAEmitter::Tick` calls `vaEmitterSetSuspended` on the first tick where `IsReadyToPlay()` is true, after subclasses have played. It must not suspend any earlier: an emitter suspended before its first results has no reverb to keep, even though `vaEmitterGetInitialising` goes false. The handle stays until the actor ends play or `BeginFinalRemoval`, so the reverb tail starts when the sound finishes, not when it starts.
+
+`SetSuspended(true)` goes through the same check in `Tick`, so it's safe to call before the first results or before joining a VAWorld, and it's reapplied if the emitter joins another VAWorld. `SetSuspended(false)` also clears `bRaytraceOnce`, or `Tick` would suspend the emitter again straight away.
+
 SDK callbacks run inside `vaWorldUpdate`. They only set flags or queue (`QueueRaytracingComplete`, `QueueRaytracedByListener`), and `AVAWorld::Tick` broadcasts the Blueprint delegates after `vaWorldUpdate` returns, so a handler that spawns or destroys emitters can't re-enter the SDK.
 
 A source only plays once `AVAEmitter::IsReadyToPlay()` is true: the listener has raytraced it and, if it casts reverb rays and affects grouped EAX, its own reverb result exists.
@@ -73,9 +79,10 @@ A `UVAVisualisation` on a listener follows the handle: `AVAListener::Deactivate`
 `UVAMaterialComponent` is the registration point. On BeginPlay it calls `AVAWorld::AddMaterialPrimitives`, which adds its actor and every attached child actor that has no material component of its own, and on EndPlay it removes them. That covers spawned actors, streamed levels, World Partition cells and level instances with no extra code. A level instance's actors aren't attached to its `ALevelInstance` (they're in their own `ULevelStreamingLevelInstance` level), so a material component on the `ALevelInstance` reaches them through `ULevelInstanceSubsystem`: `AddActorTree` calls `AddLevelInstanceContents`, which adds the unattached actors of the instance's level once it's visible, and `AVAWorld::OnLevelAddedToWorld` (bound to `FWorldDelegates::LevelAddedToWorld`) adds them when it becomes visible later or reloads. `LevelInstanceSources` tracks those instances. Only add the contents of a visible level, as `AddBinding` doesn't dedupe and the level is registered as loaded before it's added to the world. `FindMaterialInChain` and `SyncPrimitive` also step from an unattached actor in an instance's level to its `ALevelInstance`.
 
 - Shape components and static mesh simple collision become SDK prisms, spheres and capsules. Convex hulls and render triangles become mesh primitives
+- A static mesh's simple collision box with no thickness, e.g. `/Engine/BasicShapes/Plane`'s 100 x 100 x 0 box, becomes an SDK plane (`EVAPrimitiveKind::PlaneFromMesh`), because a prism that thin leaks bouncing rays (measured LF 0.32, HF 0.10 through a sealing brick one with permeation off, against 0 for a plane or a 5 cm box) and has no length inside it for transmission. Planes always use flat transmission, so `bUseFlatTransmission` is ignored. The default gain formula clamps at `PermeationEnergyCap` (15%), and the built-in materials' flat transmission leaves far more energy than that, so permeation through a plane only muffles with a `VACustomMaterial` that has `FlatTransmissionLF`/`HF` near 1. `geometry_flat_box` covers it
 - `PropagateMode`, `MeshLOD`, `MaterialOverrides` and the world's `CollisionObjectTypes` decide what is added
 - Mesh primitives share triangle data through `AVAWorld::SharedMeshes`, keyed by static mesh, LOD and convex hull index
-- The SDK's mesh triangle test is one-sided. Unreal render triangles already have the winding it expects, but Chaos convex hull `IndexData` is wound the other way and is reversed
+- The SDK's mesh triangle test is one-sided. Unreal render triangles already have the winding it expects. Chaos convex hull `IndexData` is saved with the asset and its winding depends on what generated it, so each hull triangle is faced away from the hull's centre (`geometry_convex` covers a reversed hull)
 - Unreal has no global attach event, so a child attached after its parent began play, instances added to an ISM at runtime and a swapped mesh are only picked up by `AVAWorld::SyncPrimitive`
 - A landscape (`ALandscapeProxy`) adds one SDK heightmap primitive (`EVAPrimitiveKind::Heightmap`) per `ULandscapeHeightfieldCollisionComponent`, read from its Chaos heightfield (which exists in cooked builds), with holes from the visibility layer. Heightmaps are open surfaces that always use flat transmission, so `bUseFlatTransmission` is ignored (crossed from either side, one loss per crossing). The SDK heightmap is Y-up, so `vaHeightmapPrimitiveSetTransformUnreal` swaps the axes around (a rotation, not a mirror), and the component's scale goes into the heightmap's per-axis scale on each transform refresh (`LocalExtent` holds the unscaled sample spacing in X and Y, and 1 for heights). Components with a negative or zero scale on any axis are skipped with a warning. `AVAWorld::LandscapeLOD` splits each side into `ceil(quads / 2^N)` equal cells, as a component's 2^k - 1 quads never divide by a power of two, and samples the collision's own triangles between heightfield points, so heights are exact at LOD 0 and component edges still match. It replaced `MeshLOD` picking Unreal's simple collision heightfield, which only exists when `Simple Collision Mip Level` is set. `geometry_landscape` covers it, with a custom ground material
 - Skeletal meshes, spline meshes and BSP brushes aren't supported
@@ -120,6 +127,36 @@ When that project is available on this machine you may build and run the tests y
 - `UE_LOG` and the `VA_*` macros need braces in an unbraced `if`/`else`
 - UHT rejects a function parameter named like a member, case-insensitively (`materials` vs `Materials`)
 - An effect preset's `Settings` UPROPERTY is stale after `UpdateSettings`, read live values with `GetSettings()`
+
+## Unreal Engine 4.27
+
+The repo source is plain 5.x, and only builds on 4.27 once its marker blocks are resolved. 4.27 users get that resolved source from the release zip.
+
+4.27's UHT rejects any `#if` in a parsed header other than `WITH_EDITOR`, `WITH_EDITORONLY_DATA`, `0` or `1`. So anything that differs between engines inside a `UCLASS`/`USTRUCT` body, even a plain virtual override, is a marker block, never `UE_VERSION_OLDER_THAN`:
+
+```cpp
+#if 0 // VA_UE4
+	// 4.27 branch
+#else // VA_UE4
+	// 5.x branch
+#endif // VA_UE4
+```
+
+Code rules:
+- No `TObjectPtr`, use raw pointers
+- No container `IsEmpty()`, use `Num() == 0`
+- `VAActorName` instead of `GetActorNameOrLabel`, and the other helpers in `VAEngineCompat.h`
+- `FVAVector3f`/`FVAVector2f` instead of `FVector3f`/`FVector2f` outside reflected members
+- `FVector` is float on 4.27, so SDK doubles only narrow through `VAVectorToFVector`
+- 4.27's UHT rejects `double` in Blueprint-exposed members, so those are declared with a marker block, and `VABlueprintReal` is the matching type in plain C++
+
+Compiled out on 4.27, as the engine doesn't have them: World Partition (including the bake's `ForEachActorWithLoading`) and Level Instances (`AddLevelInstanceContents`, `LevelInstanceSources`, and the level instance step in `FindMaterialInChain`/`SyncPrimitive`).
+
+Other differences:
+- Launcher 4.27 is PhysX, so convex hulls and `FVALandscapeHeightfield` have a `UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS` path. Holes follow the PhysX collision, which from reading the engine code sits one quad towards -X of the painted quads
+- Slate has no SVG brushes, so `VAEditorStyle` uses PNGs rendered from `VALogo.svg`
+- Assets saved by 5.x don't load, so the committed `Content/Icons` are 5.x and the release zip's are generated by 4.27
+- The test suite runs with `-nullrhi -nosound`, so a pass doesn't cover the RT60 table in `VAReverbConversion.cpp`, submix registration or rendering on 4.27
 
 ## Actor Initialisation
 

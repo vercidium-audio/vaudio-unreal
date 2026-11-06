@@ -29,7 +29,7 @@ void FVAWorldDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 		}
 	}
 
-	if (roots.IsEmpty())
+	if (roots.Num() == 0)
 		return;
 
 	IDetailCategoryBuilder& category = DetailBuilder.EditCategory("VAWorldTransform", LOCTEXT("Transform", "Transform"), ECategoryPriority::Transform);

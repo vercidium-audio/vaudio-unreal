@@ -25,12 +25,11 @@ class VAUDIOUNREAL_API AVAStreamSource : public AVARaytracedSource
 
 protected:
 	virtual void DeinitializeTypeSpecific() override;
-	virtual void TickTypeSpecific(float DeltaTime) override;
 
 public:
 	// Distance falloff for the stream. Without it the stream doesn't fall off with distance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
-	TObjectPtr<USoundAttenuation> Attenuation = nullptr;
+	USoundAttenuation* Attenuation = nullptr;
 
 	// Starts playing a new stream, closing any open one first. With no audio device (e.g. -nosound) the stream still opens, and is raytraced but not heard. Returns false if SampleRate is invalid or the sound couldn't be created
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Stream")
@@ -60,13 +59,13 @@ public:
 
 private:
 	UPROPERTY(Transient)
-	TObjectPtr<USoundWaveProcedural> StreamWave = nullptr;
+	USoundWaveProcedural* StreamWave = nullptr;
 
 	EVAStreamFormat StreamFormat = EVAStreamFormat::Mono16;
 
 	bool bStreamOpen = false;
 
-	// Latched once this source is first ready to play, so a bRaytraceOnce stream keeps accepting data after its emitter leaves the world
+	// Latched once this source is first ready to play, so the stream keeps accepting data if the listener goes away
 	bool bStreamReady = false;
 
 	int64 AcceptedByteCount = 0;

@@ -1,6 +1,7 @@
 #include "VAInputStreamSource.h"
 #include "Modules/ModuleManager.h"
 
+#include "VAEngineCompat.h"
 #include "VALog.h"
 
 static const TCHAR* DefaultDeviceLabel = TEXT("System Default");
@@ -92,8 +93,10 @@ bool AVAInputStreamSource::OpenCapture(const FString& InDeviceName, EVAStreamFor
 	TUniquePtr<Audio::FAudioCapture> capture = MakeUnique<Audio::FAudioCapture>();
 
 	Audio::FAudioCaptureDeviceParams params;
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	params.SampleRate = InSampleRate > 0 ? InSampleRate : Audio::InvalidDeviceSampleRate;
 	params.PCMAudioEncoding = Audio::EPCMAudioEncoding::FLOATING_POINT_32;
+#endif
 
 	if (!InDeviceName.IsEmpty() && InDeviceName != DefaultDeviceLabel)
 	{
@@ -112,12 +115,22 @@ bool AVAInputStreamSource::OpenCapture(const FString& InDeviceName, EVAStreamFor
 	// Set before the callback can run, as the capture thread reads it
 	CaptureFormat = InFormat;
 
+	int32 bufferSizeFrames = FMath::Max(1, InBufferSizeFrames);
+
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	// 4.27 always captures float at the device's own rate, so a requested rate just falls back to it below
+	Audio::FOnCaptureFunction onCapture = [this](const float* InAudio, int32 NumFrames, int32 NumChannels, int32 InCaptureSampleRate, double StreamTime, bool bOverflow)
+	{
+		ReceiveCapturedAudio(InAudio, NumFrames, NumChannels);
+	};
+
+	bool opened = capture->OpenCaptureStream(params, MoveTemp(onCapture), bufferSizeFrames);
+#else
 	Audio::FOnAudioCaptureFunction onCapture = [this](const void* InAudio, int32 NumFrames, int32 NumChannels, int32 InCaptureSampleRate, double StreamTime, bool bOverflow)
 	{
 		ReceiveCapturedAudio((const float*)InAudio, NumFrames, NumChannels);
 	};
 
-	int32 bufferSizeFrames = FMath::Max(1, InBufferSizeFrames);
 	bool opened = capture->OpenAudioCaptureStream(params, onCapture, bufferSizeFrames);
 
 	// WASAPI in shared mode rejects any rate but the device's own
@@ -126,6 +139,7 @@ bool AVAInputStreamSource::OpenCapture(const FString& InDeviceName, EVAStreamFor
 		params.SampleRate = Audio::InvalidDeviceSampleRate;
 		opened = capture->OpenAudioCaptureStream(params, MoveTemp(onCapture), bufferSizeFrames);
 	}
+#endif
 
 	if (!opened)
 	{

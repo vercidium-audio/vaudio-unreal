@@ -1,4 +1,5 @@
 #include "VAStreamSource.h"
+#include "VAEngineCompat.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundWaveProcedural.h"
@@ -123,7 +124,11 @@ void AVAStreamSource::PushAudioData(const uint8* Data, int32 NumBytes)
 		return;
 	}
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	ConvertedSamples.SetNumUninitialized(NumBytes, false);
+#else
 	ConvertedSamples.SetNumUninitialized(NumBytes, EAllowShrinking::No);
+#endif
 
 	for (int32 i = 0; i < NumBytes; i++)
 		ConvertedSamples[i] = (int16)(((int32)Data[i] - 128) << 8);
@@ -154,11 +159,3 @@ void AVAStreamSource::DeinitializeTypeSpecific()
 	Super::DeinitializeTypeSpecific();
 }
 
-void AVAStreamSource::TickTypeSpecific(float DeltaTime)
-{
-	Super::TickTypeSpecific(DeltaTime);
-
-	// Latched here too, since a bRaytraceOnce emitter leaves the world at the end of this tick
-	if (bStreamOpen && !bStreamReady && IsReadyToPlay())
-		bStreamReady = true;
-}

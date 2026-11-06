@@ -5,7 +5,7 @@ Unreal Engine plugin for Vercidium Audio — raytraced audio simulation with rea
 > [!WARNING]
 > This plugin is experimental and requires much testing and feedback
 
-This repository requires Vercidium Audio v1.11.0 to run. Windows, Linux and macOS (Apple Silicon) are supported, and sound plays through Unreal's own audio engine.
+This repository requires Vercidium Audio v1.11.1 to run. Unreal Engine 4.27, 5.7 and 5.8 are supported on Windows, Linux and macOS (Apple Silicon and Intel), and sound plays through Unreal's own audio engine.
 - Download the Vercidium Audio SDK from [vercidium.com](https://vercidium.com)
 
 > Please note that the Vercidium Audio SDK is not free for commercial use. See [vercidium.com/eula](https://vercidium.com/eula)
@@ -20,7 +20,7 @@ This repository requires Vercidium Audio v1.11.0 to run. Windows, Linux and macO
 
 ## Requirements
 
-- Unreal Engine 5, C++ project (this plugin is a C++ module, so your project needs a `Source` folder — if you have a Blueprint-only project, Unreal will offer to create one the first time you add a C++ plugin)
+- Unreal Engine 5.7 or 5.8, or [4.27](#unreal-engine-427), C++ project (this plugin is a C++ module, so your project needs a `Source` folder — if you have a Blueprint-only project, Unreal will offer to create one the first time you add a C++ plugin)
 - Visual Studio (or another C++ toolchain) installed and set up for Unreal development
 - [Vercidium Audio SDK](https://vercidium.com)
 
@@ -28,7 +28,7 @@ This repository requires Vercidium Audio v1.11.0 to run. Windows, Linux and macO
 
 ### 1. Add the plugin
 
-Download `vaudio-unreal.zip` from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases) and extract it into your project's `Plugins` folder. It contains the plugin source plus prebuilt binaries for Win64, Linux and Mac (arm64). You can also clone this repository instead, which builds the plugin from source. Either way, the `.uplugin` file must exist at:
+Download the zip for your engine version from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases) (`vaudio-unreal-4.27.zip`, `vaudio-unreal-5.7.zip` or `vaudio-unreal-5.8.zip`) and extract it into your project's `Plugins` folder. It contains the plugin source plus prebuilt binaries for Win64, Linux and Mac (arm64 and x86_64 on 5.x, x86_64 on 4.27). On 5.x you can also clone this repository instead, which builds the plugin from source. On 4.27 you must use the zip, as the repository's source only builds on 5.x. Either way, the `.uplugin` file must exist at:
 
 ```
 YourProject/Plugins/vaudio-unreal/vaudio-unreal.uplugin
@@ -54,9 +54,9 @@ YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Linux/libvaudiona
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Mac/libvaudionative.dylib
 ```
 
-Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. The plugin only works with the double precision SDK: Unreal positions are doubles, and it keeps them that way, so raytracing stays accurate any distance from the origin. The single precision SDK (`3d/native`) fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`, or `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`.
+Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. The plugin only works with the double precision SDK, on every engine version: Unreal 5 positions are doubles, and it keeps them that way, so raytracing stays accurate any distance from the origin. The single precision SDK (`3d/native`) fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`, or `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`.
 
-The Mac SDK is Apple Silicon (arm64) only, so Mac builds must target Apple Silicon rather than Universal. Unreal builds for the host Mac by default, but distribution builds use the project's supported architectures, so set **Project Settings → Platforms → Mac → Supported Architecture(s) for non-Editor builds** to **Apple Silicon**. Building for x64 fails with a message saying so.
+The Mac SDK is universal (arm64 and x86_64), so Mac builds can target Apple Silicon, Intel or Universal. Intel builds have been tested under Rosetta, not on Intel hardware. The debug window is Apple Silicon only, so it can't open on an Intel Mac.
 
 When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platform>` and loads them from there. If the SDK is missing, the build fails with a message saying where to put it. A Blueprint-only project never builds, so the prebuilt plugin from the release zip loads the SDK straight from `Source/ThirdParty/vaudio/lib/<platform>` instead. Packaging a game always builds, so it stages the SDK as usual.
 
@@ -65,6 +65,27 @@ When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platfo
 - Regenerate your project files (right-click your `.uproject` → **Generate Visual Studio project files**), then build the project in Visual Studio (or open the `.uproject` and let Unreal prompt you to rebuild missing modules).
 - Open the project in the Unreal Editor, go to **Edit → Plugins**, search for **Vercidium Audio**, and make sure it's enabled.
 - Restart the editor if prompted.
+
+## Unreal Engine 4.27
+
+Use `vaudio-unreal-4.27.zip` from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases). Cloning this repository doesn't work on 4.27. The SDK setup is the same as on 5.x, including the double precision SDK.
+
+Some features don't exist in 4.27, so the plugin doesn't have them there:
+- World Partition isn't available, so the World Partition notes in this README don't apply, and **Bake Geometry For Shipping** covers the level's loaded actors.
+- Level Instances aren't available, so a `VAMaterialComponent` can't reach into one.
+
+Other differences on 4.27:
+- Unreal's positions are floats, so geometry and sources far from the origin are less precise than on 5.x.
+- Landscapes and convex hulls are read from PhysX collision rather than Chaos. Landscape holes follow that collision, which may be one quad away from where they were painted.
+
+Platform requirements:
+- **Windows:** build with Visual Studio 2019.
+- **Linux:** 4.27 has to be built from source, and prebuilt modules only load in the exact engine build that made them. A Blueprint-only project fails at startup with `Plugin 'vaudio-unreal' failed to load because module 'VaudioUnreal' could not be found`, so use a C++ project, which rebuilds the plugin for your engine.
+- **Mac:** the 4.27 editor is x86_64 only, so on Apple Silicon it runs under Rosetta. To build a C++ project with Xcode 27, set this environment variable first, as Xcode 27 can't build the 4.27 engine headers or load the result without it:
+
+```
+export CCC_OVERRIDE_OPTIONS="# +-Wno-error +-Wno-deprecated-builtins +-fno-access-control +-Wl,-rpath,/usr/lib/swift"
+```
 
 ## Usage
 
@@ -92,6 +113,8 @@ Every source is muffled relative to the current listener automatically. Sounds s
 - **VASource** (`AVASource`) is a raytraced 3D sound. It only plays once it has been raytraced (`IsReadyToPlay()`), so it never starts unmuffled. `Play()` can be called repeatedly and the sounds overlap. Looping comes from the sound asset.
 - **VASourceLeech** (`AVASourceLeech`) is a 3D sound that reuses the muffling and reverb of the `VAEmitter` it's attached to (or its `Emitter` property) instead of casting rays, e.g. gunshots and footsteps on one character.
 - **VASourceRelative** (`AVASourceRelative`) is a 2D sound for the player's own sounds. It isn't muffled, and uses the listener's reverb.
+
+These three sources have `bAutoDestroy`, on by default, so a source can be spawned, played and forgotten. Once it has played and nothing is playing any more, including after `Stop()`, its actor is destroyed. A `VASource` first leaves the world and waits for its reverb tail to finish, and can't play again during that wait. A leech or relative source is destroyed straight away, as its reverb belongs to the emitter or listener. A source that has never played isn't destroyed, and the Output Log warns if that's because it can't play, or because `Play()` was called before `IsReadyToPlay()` (use `bAutoPlay`, or `AVAWorld::PlaySoundAtLocation`). Disable `bAutoDestroy` on a source that plays more than once, e.g. a `VASourceLeech` for a character's footsteps.
 - **VASourceAmbient** (`AVASourceAmbient`) is a 2D sound for rain, wind or room tone, filtered by how enclosed the listener is. The listener needs ambient rays (`AmbientOcclusionRayCount` or `AmbientPermeationRayCount`).
 - **VAStreamSource** (`AVAStreamSource`) is a raytraced sound that plays raw PCM pushed at runtime: `OpenStream`, `PushAudioData`, `CloseStream`.
 - **VAInputStreamSource** (`AVAInputStreamSource`) is a stream fed by a microphone, with an `OnAudioCaptured` event for sending it elsewhere. Microphone capture doesn't work on Linux: Unreal has no capture backend there, so `OpenCapture` logs a warning and returns false, and with `bAutoCapture` the source stays silent.
@@ -100,17 +123,76 @@ Every source is muffled relative to the current listener automatically. Sounds s
 
 Useful emitter properties, shared by the listener and the raytraced sources:
 - `bAffectsGroupedEAX`: this emitter's reverb is blended into the world's grouped reverbs (on by default for sources). When off, `bUseListenerReverb` chooses between the listener's reverb and none.
-- `bRaytraceOnce`: stop casting rays after the first result, for one-shot sounds that don't move.
+- `bRaytraceOnce`: stop casting rays once the first results are in, for short sounds that don't move. The emitter keeps its reverb and ambience, and its muffling keeps updating as the listener moves.
+- `SetSuspended`: stop casting rays on demand, and start again later with all of its rays re-cast, e.g. for a sound that's paused or too far away to matter. Its reverb and ambience don't update while suspended, even if it moves. `IsSuspended` returns the current state.
 - `bKeepReverbTailAlive`: keep contributing to the reverb after the actor is destroyed, until its tail has faded.
 - `GetMufflingFilterResult`, `GetReverbResult` and `GetAmbientFilterResult` expose the raytraced results to Blueprint.
 
 Reverb is sent before distance attenuation, and the send level is divided by the muffled volume so the reverb hears the unmuffled sound. Unreal caps submix send levels at 1, so a heavily muffled source (its volume below its reverb send level) has quieter reverb than the raytraced result says. `GetReverbSendLevel` on a source returns the level actually sent.
 
-To convert an existing level, select its **Ambient Sound** actors, right-click and choose **Vercidium Audio → Convert to VASource**. Each one is replaced by a `VASource` with the same sound, transform, label, folder, tags and attachments, and its Auto Activate, Volume Multiplier and Pitch Multiplier become `bAutoPlay`, `VolumeMultiplier` and `PitchMultiplier`. A `VASource` uses the Sound Attenuation on its sound, so attenuation set on the ambient sound's audio component isn't kept, and neither are its low and high pass filters. The Output Log lists anything that wasn't kept. The conversion can be undone, and the new sources still need reverb rays.
+To convert an existing level, select its **Ambient Sound** actors, right-click and choose **Vercidium Audio → Convert to VASource**. Each one is replaced by a `VASource` with the same sound, transform, label, folder, tags and attachments, and its Auto Activate, Volume Multiplier and Pitch Multiplier become `bAutoPlay`, `VolumeMultiplier` and `PitchMultiplier`. `bAutoDestroy` is disabled, as an Ambient Sound outlives its sound. A `VASource` uses the Sound Attenuation on its sound, so attenuation set on the ambient sound's audio component isn't kept, and neither are its low and high pass filters. The Output Log lists anything that wasn't kept. The conversion can be undone, and the new sources still need reverb rays.
+
+### One-shot sounds
+
+`AVAWorld` has static functions that replace the `UGameplayStatics` sound functions, and they're also available in Blueprints under **Vercidium Audio**. As in Unreal, the `Play*` functions are fire-and-forget and return nothing, and the `Spawn*` functions return something that can be controlled:
+
+| Function | Replaces | Returns | Raytracing |
+|---|---|---|---|
+| `PlaySoundAtLocation` | `UGameplayStatics::PlaySoundAtLocation` | nothing | Its own rays, cast once |
+| `PlaySoundLeech` | | nothing | Reuses a `VAEmitter`'s rays |
+| `PlaySoundRelative` | `UGameplayStatics::PlaySound2D` | nothing | None |
+| `SpawnSoundAtLocation` | `UGameplayStatics::SpawnSoundAtLocation` | `AVASource*` | Its own rays, cast once |
+| `SpawnSoundAttached` | `UGameplayStatics::SpawnSoundAttached` | `AVASource*` | Its own rays, every frame |
+
+The `Play*` functions don't spawn an actor: the `VAWorld` keeps each sound's filter and reverb send up to date until it finishes, so they cost about the same as the `UGameplayStatics` functions plus their rays. The `Spawn*` functions spawn a `VASource`, which plays the sound once it has been raytraced and then destroys itself when the sound finishes. Use them to read the source's results (e.g. `GetReverbResult`) or to stop it with `Stop()`, which also destroys it.
+
+`PlaySoundAtLocation`, `SpawnSoundAtLocation` and `SpawnSoundAttached` take an `FVAOneShotSettings`, which sets the sound's volume and pitch multipliers, an optional `AttenuationSettings` override, `MaxPlayDelay`, and its reverb, muffling and clustering properties. It defaults to 64 reverb rays with 64 bounces.
+
+```cpp
+FVAOneShotSettings settings;
+settings.VolumeMultiplier = Volume;
+settings.PitchMultiplier = Pitch;
+settings.AttenuationSettings = AttenuationSettings;
+
+// Fire and forget, e.g. an explosion or an impact
+AVAWorld::PlaySoundAtLocation(this, Sound, SoundLocation, settings);
+
+// A VASource that can be read or stopped
+AVASource* source = AVAWorld::SpawnSoundAtLocation(this, Sound, SoundLocation, settings);
+AVASource* attached = AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, bStopWhenAttachedToDestroyed, settings);
+```
+
+- A sound at a location raytraces once (`bRaytraceOnce`), and its reverb tail starts when the sound finishes. An attached sound keeps raytracing every frame as it moves, so `SpawnSoundAttached` is the expensive choice for frequent sounds.
+- The sound starts after the first raytracing result, not straight away, so it's never heard unmuffled. If it hasn't started after `MaxPlayDelay` seconds (e.g. there's no listener), it's dropped without playing.
+- `PlaySoundAtLocation` needs a `VAWorld` that has begun play in the world context object's level, and does nothing otherwise. The `Spawn*` functions return null if the sound, world or component is missing.
+
+For frequent sounds on a character, like an enemy's footsteps or gunshots, put one `VAEmitter` on each enemy and play all of its sounds through it with `AVAWorld::PlaySoundLeech`. Like a `VASourceLeech`, the sound is attached to the `VAEmitter` and uses its muffling and reverb instead of rays of its own, so hundreds of sounds a second cost no more rays than the one emitter:
+
+```cpp
+AVAWorld::PlaySoundLeech(GunshotSound, EnemyEmitter, Volume, Pitch, AttenuationSettings);
+```
+
+It plays immediately, as the emitter should already be raytraced. A sound started before then waits, and is dropped without playing after `MaxPlayDelay` seconds (default 1), or if the emitter is destroyed first. It follows the emitter, and if the emitter is destroyed mid-sound it finishes playing where it was. A listener can't be leeched, so use `PlaySoundRelative` for the player's own sounds.
+
+For the player's own sounds, `AVAWorld::PlaySoundRelative` replaces `UGameplayStatics::PlaySound2D`. Like a `VASourceRelative` it isn't raytraced, so it plays straight away, unmuffled and with the current listener's reverb:
+
+```cpp
+AVAWorld::PlaySoundRelative(this, FootstepSound, Volume, Pitch);
+```
+
+`PlaySoundLeech` and `PlaySoundRelative` do nothing if there's no audio device. `PlaySoundAtLocation` is still raytraced without one, but isn't heard.
+
+The `Play*` functions release a sound when it finishes, so a looping sound would play forever. The Output Log warns once per sound and still plays it. Use `SpawnSoundAtLocation`, a `VASourceLeech` or a `VASourceRelative` for looping sounds instead, as they can be stopped. `StopOneShots()` on the `VAWorld` stops every sound started by the `Play*` functions at once.
+
+The `Play*` functions reuse their audio components: once a sound finishes, its component is kept by the `VAWorld` and reset for the next sound, so playing many sounds doesn't create a new component each time. `MaxPooledAudioComponents` on the `VAWorld` (default 64) is how many idle components are kept, and any finished beyond it are destroyed. Raise it if more sounds than that overlap regularly. The pooled components are owned by the `VAWorld`.
+
+`AttenuationSettings` can also be set on a placed `VASource`.
 
 ### Geometry and materials
 
 A **VAMaterialComponent** (`UVAMaterialComponent`) makes its actor part of the raytraced scene, along with any attached child actors that don't have their own. Shape components and simple collision are used where they exist, and render triangles otherwise.
+
+**Planes**: a mesh whose box collision has no thickness, like `/Engine/BasicShapes/Plane`, is an open sheet that always uses flat transmission (`bUseFlatTransmission` is ignored). It reflects rays from both sides, but if the listener casts permeation rays, flat transmission on the built-in materials is too low to muffle sound crossing it. Give it a `VACustomMaterial` with `FlatTransmissionLF`/`HF` near 1 to muffle that sound.
 
 On a **Level Instance** actor, it also covers the actors in the instance's level that don't have their own, added once that level has loaded. In World Partition maps, level instances with the default "Partitioned" Level Behavior are embedded into the map's cells when played, so for those put the `VAMaterialComponent` on actors inside the instance's level instead.
 
@@ -120,6 +202,8 @@ On a **Level Instance** actor, it also covers the actors in the instance's level
 - `CollisionObjectTypes` on the `VAWorld` limits colliders to certain object types.
 
 Geometry is added and removed as actors spawn, are destroyed or stream in and out, and follows them when they move. Hidden actors and actors with collision disabled still block sound. Call `SyncPrimitive(Actor)` on the `VAWorld` after attaching an actor to one that has a material component, changing an actor's meshes, or adding instances to an instanced static mesh.
+
+Geometry and sources in an unloaded streaming level don't affect sound, as their actors don't exist yet. Stream levels in before they're within earshot, e.g. with a larger streaming volume, or keep walls that matter for sound in the persistent level. Otherwise the muffling changes the moment the level loads.
 
 **Landscapes** work the same way: add a `VAMaterialComponent` to the landscape actor (and to each streaming proxy, which is its own actor). Every landscape component becomes one heightmap built from its collision, so it works in cooked builds without baking, and it needs collision to be enabled on the landscape. A landscape with a negative or zero scale on any axis is skipped with a warning. Each component is an open surface that always uses flat transmission (`bUseFlatTransmission` is ignored), so it muffles sound crossing it from either side, however deep the source is (e.g. a cave far below). Flat transmission uses the material's `FlatTransmissionLF`/`HF`, which are low on the built-in materials, so give landscapes a `VACustomMaterial` that has them near 1. Holes painted with the visibility layer are left open. `LandscapeLOD` on the `VAWorld` simplifies every landscape for raytracing without changing its collision: LOD N gives each component 1/2^N as many rows and columns of evenly spaced points (rounded up), so 1 m quads become roughly 2 m at LOD 1, 4 m at LOD 2 and so on. Heights are taken from the collision's surface and components still meet without gaps. It defaults to 3 (roughly 8 m quads), which keeps the memory used by large landscapes down. Lower it for terrain with sharp features smaller than that, such as narrow ridges or trenches. Call `SyncPrimitive` on the landscape actor after sculpting it during play.
 
@@ -198,7 +282,7 @@ Sources that are loaded but outside the box aren't raytraced. `bEmittersOutsideT
 
 **When the VAWorld ends play**
 
-If the `VAWorld` is destroyed or streams out while other actors stay loaded, they stop raytracing and wait. When another `VAWorld` begins play they join it, and their geometry is added again. Their sounds stop when the `VAWorld` ends: a `VASource` with `bAutoPlay` plays again once it rejoins, but a stream source's stream is closed, so call `OpenStream` again (and `OpenCapture` + `StartCapture` on a `VAInputStreamSource`).
+If the `VAWorld` is destroyed or streams out while other actors stay loaded, they stop raytracing and wait. When another `VAWorld` begins play they join it, and their geometry is added again. Their sounds stop when the `VAWorld` ends: a `VASource` with `bAutoPlay` plays again once it rejoins (with `bAutoDestroy`, only if its sound loops, otherwise it's destroyed), but a stream source's stream is closed, so call `OpenStream` again (and `OpenCapture` + `StartCapture` on a `VAInputStreamSource`).
 
 ## References
 - [Vercidium Audio documentation](https://vercidium.com/docs)

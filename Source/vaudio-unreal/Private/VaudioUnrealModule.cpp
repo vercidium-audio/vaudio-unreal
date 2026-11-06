@@ -1,10 +1,10 @@
 #include "VaudioUnrealModule.h"
+#include "VAEngineCompat.h"
 #include "VALog.h"
 
 #include "Engine/Engine.h"
 #include "HAL/PlatformProcess.h"
 #include "Interfaces/IPluginManager.h"
-#include "Misc/CoreDelegates.h"
 #include "Misc/Paths.h"
 
 #include "vaudio.h"
@@ -22,7 +22,7 @@ void FVaudioUnrealModule::StartupModule()
 	LoadSdk();
 
 	// GEngine is not guaranteed to be valid yet at module startup, so defer until the engine has finished initialising
-	PostEngineInitHandle = FCoreDelegates::OnPostEngineInit.AddRaw(this, &FVaudioUnrealModule::OnPostEngineInit);
+	PostEngineInitHandle = VAOnPostEngineInit().AddRaw(this, &FVaudioUnrealModule::OnPostEngineInit);
 }
 
 void FVaudioUnrealModule::LoadSdk()
@@ -109,7 +109,7 @@ void FVaudioUnrealModule::ShutdownModule()
 {
 	VA_LOG(TEXT("Shutdown"));
 
-	FCoreDelegates::OnPostEngineInit.Remove(PostEngineInitHandle);
+	VAOnPostEngineInit().Remove(PostEngineInitHandle);
 
 	if (GEngine)
 	{

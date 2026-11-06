@@ -5,9 +5,10 @@
 
 void FVASourcePlayback::Play(UAudioComponent* Component)
 {
-	Component->bAutoDestroy = true;
-	Component->SetLowPassFilterEnabled(true);
-	Component->SetLowPassFilterFrequency(Filter.GetCutoffFrequency());
+	Component->bAutoDestroy = bAutoDestroy;
+	// Set on the component, which Play() copies to the new active sound. SetLowPassFilter*() only reaches active sounds, so before Play() they did nothing
+	Component->bEnableLowPassFilter = true;
+	Component->LowPassFilterFrequency = Filter.GetCutoffFrequency();
 	Component->SetVolumeMultiplier(GetVolume());
 	Component->SetPitchMultiplier(PitchMultiplier);
 	Component->Play();
@@ -43,7 +44,7 @@ bool FVASourcePlayback::IsPlaying() const
 void FVASourcePlayback::RemoveFinished()
 {
 	// bAutoDestroy destroys a component once its sound finishes
-	Components.RemoveAll([](const TObjectPtr<UAudioComponent>& component) { return !IsValid(component) || !component->IsPlaying(); });
+	Components.RemoveAll([](UAudioComponent* component) { return !IsValid(component) || !component->IsPlaying(); });
 }
 
 void FVASourcePlayback::SetFilter(float GainLF, float GainHF)

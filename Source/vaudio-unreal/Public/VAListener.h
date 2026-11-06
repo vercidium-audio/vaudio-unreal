@@ -103,6 +103,9 @@ public:
 	// Called by AVAWorld for every non-listener emitter, so this listener calculates how muffled it is
 	void AddTarget(AVAEmitter* target);
 
+	// For a handle with no actor. name is only used in errors
+	void AddTarget(VAEmitter* target, const FString& name);
+
 	// Called by AVAWorld from the SDK's OnReverbUpdated callback while this listener is current
 	void ApplyListenerReverb();
 

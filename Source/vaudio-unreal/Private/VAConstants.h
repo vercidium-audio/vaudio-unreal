@@ -1,5 +1,7 @@
 #pragma once
 
+#include "VAEngineCompat.h"
+
 extern "C" {
 #include "vaudio.h"
 }
@@ -30,9 +32,14 @@ static inline FColor VAColorToFColor(const VAColor& color)
 	return FColor(color.r, color.g, color.b, color.a);
 }
 
+// 4.27's FVector is float, so this is the one place SDK doubles narrow on 4.27. 5.x never narrows
 static inline FVector VAVectorToFVector(const VAVector& vector)
 {
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	return FVector((float)vector.x, (float)vector.y, (float)vector.z);
+#else
 	return FVector(vector.x, vector.y, vector.z);
+#endif
 }
 
 static inline void vaSpherePrimitiveSetCenterUnreal(VASpherePrimitive* sphere, const FVector& center)
@@ -90,6 +97,29 @@ static inline void vaPrismPrimitiveSetTransformUnreal(VAPrismPrimitive* prism, c
 {
 	VAMatrix matrix = MakeRotTransMatrix(transform);
 	vaPrismPrimitiveSetTransform(prism, &matrix);
+}
+
+// A plane's normal is its local Y, with its width along local X and its height along local Z. Cycling those axes puts the normal on the box's flat axis, and is a rotation rather than a mirror, so it can go in the transform. Scale goes in the plane's width and height instead
+static inline void vaPlanePrimitiveSetFromBoxUnreal(VAPlanePrimitive* plane, const FVector& boxSize, const FVector& scale, const FTransform& transform)
+{
+	int32 normalAxis = boxSize.X <= boxSize.Y && boxSize.X <= boxSize.Z ? 0 : (boxSize.Y <= boxSize.Z ? 1 : 2);
+	int32 heightAxis = (normalAxis + 1) % 3;
+	int32 widthAxis = (normalAxis + 2) % 3;
+
+	FVector size = boxSize * scale;
+	vaPlanePrimitiveSetWidth(plane, (VAFloat)size[widthAxis]);
+	vaPlanePrimitiveSetHeight(plane, (VAFloat)size[heightAxis]);
+
+	VAMatrix axes = vaMatrixCreate(
+		widthAxis == 0, widthAxis == 1, widthAxis == 2, 0,
+		normalAxis == 0, normalAxis == 1, normalAxis == 2, 0,
+		heightAxis == 0, heightAxis == 1, heightAxis == 2, 0,
+		0, 0, 0, 1
+	);
+
+	VAMatrix rotTrans = MakeRotTransMatrix(transform);
+	VAMatrix matrix = vaMatrixMultiply(&axes, &rotTrans);
+	vaPlanePrimitiveSetTransform(plane, &matrix);
 }
 
 // A heightmap is Y-up with its grid along local X and Z. Swapping the axes around (local X to Unreal Y, Y to Z, Z to X) stands it up in Unreal's Z-up space, and is a rotation rather than a mirror, so it can go in the transform. Scale goes in the heightmap's own scale instead

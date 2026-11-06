@@ -18,7 +18,7 @@ public:
 	UVAVisualisation();
 
 	UPROPERTY(EditAnywhere, Category = "Vercidium Audio|Visualisation")
-	TObjectPtr<UMaterialInterface> DiamondMaterial = nullptr;
+	UMaterialInterface* DiamondMaterial = nullptr;
 
 	// Number of visualisation rays cast
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0"))
@@ -92,16 +92,16 @@ protected:
 
 private:
 	UPROPERTY(Transient)
-	TObjectPtr<UInstancedStaticMeshComponent> InstancedMesh = nullptr;
+	UInstancedStaticMeshComponent* InstancedMesh = nullptr;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UStaticMesh> DiamondMesh = nullptr;
+	UStaticMesh* DiamondMesh = nullptr;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> DiamondMaterialInstance = nullptr;
+	UMaterialInstanceDynamic* DiamondMaterialInstance = nullptr;
 
 	UPROPERTY(Transient)
-	TObjectPtr<AVAEmitter> OwnerEmitter = nullptr;
+	AVAEmitter* OwnerEmitter = nullptr;
 
 	int32 NextInstance = 0;
 

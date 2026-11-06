@@ -7,6 +7,20 @@
 #include "AudioMixerBlueprintLibrary.h"
 #include "AudioThread.h"
 #include "Engine/World.h"
+#include "VAEngineCompat.h"
+
+static void VASendToActiveSounds(FAudioDevice* AudioDevice, uint64 AudioComponentID, TFunction<void(FActiveSound&)> Command)
+{
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	FAudioThread::RunCommandOnAudioThread([AudioDevice, AudioComponentID, Command = MoveTemp(Command)]()
+	{
+		if (FActiveSound* ActiveSound = AudioDevice->FindActiveSound(AudioComponentID))
+			Command(*ActiveSound);
+	});
+#else
+	AudioDevice->SendCommandToActiveSounds(AudioComponentID, MoveTemp(Command));
+#endif
+}
 
 void VASetReverbSend(UAudioComponent* Component, USoundSubmix* Submix, float SendLevel)
 {
@@ -25,7 +39,7 @@ void VASetReverbSend(UAudioComponent* Component, USoundSubmix* Submix, float Sen
 	SubmixSendInfo.SendLevelControlMethod = ESendLevelControlMethod::Manual;
 	SubmixSendInfo.SendStage = ESubmixSendStage::PreDistanceAttenuation;
 
-	AudioDevice->SendCommandToActiveSounds(Component->GetAudioComponentID(), [SubmixSendInfo](FActiveSound& ActiveSound)
+	VASendToActiveSounds(AudioDevice, Component->GetAudioComponentID(), [SubmixSendInfo](FActiveSound& ActiveSound)
 	{
 		ActiveSound.SetSubmixSend(SubmixSendInfo);
 	});
@@ -39,7 +53,7 @@ void VASetDryOutputEnabled(UAudioComponent* Component, bool bEnabled)
 	if (!AudioDevice)
 		return;
 
-	AudioDevice->SendCommandToActiveSounds(Component->GetAudioComponentID(), [bEnabled](FActiveSound& ActiveSound)
+	VASendToActiveSounds(AudioDevice, Component->GetAudioComponentID(), [bEnabled](FActiveSound& ActiveSound)
 	{
 		ActiveSound.bHasActiveMainSubmixOutputOverride = true;
 		ActiveSound.bEnableMainSubmixOutputOverride = bEnabled;
