@@ -291,7 +291,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
 	EVABoundsFollow BoundsFollow = EVABoundsFollow::None;
 
-	// How far the actor (or the current listener, with BoundsFollow Listener) must move during play, in world units, before the bounds follow it. Every move of the bounds re-checks all raytraced trails, so moving bounds should update in steps. The default is 100 m at the default MetersPerUnit. 0 follows every move
+	// How far the actor (or the current listener, with BoundsFollow Listener) must move during play, in world units, before the bounds follow it. Every move of the bounds re-checks all raytraced trails, so moving bounds should update in steps. With BoundsFollow Listener, BoundsSize is clamped to at least twice this on every axis, so the listener can't walk out of the bounds before they recentre. The default is 100 m at the default MetersPerUnit. 0 follows every move
 #if 0 // VA_UE4
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World", meta = (ClampMin = "0.0"))
 	float BoundsUpdateDistance = 10000.0f;
@@ -311,6 +311,13 @@ public:
 	// Changes BoundsFollow during play, moving the bounds straight away
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetBoundsFollow(EVABoundsFollow follow);
+
+	// Changes BoundsUpdateDistance during play, growing BoundsSize if it's now under twice this with BoundsFollow Listener
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
+	void SetBoundsUpdateDistance(float distance);
+
+	// With BoundsFollow Listener, the listener can move just under BoundsUpdateDistance along one axis before the bounds recentre, so each half of the box must be at least that wide
+	FVector ClampBoundsSize(const FVector& size) const;
 
 	UPROPERTY(VisibleInstanceOnly, Category = "Vercidium Audio|World", meta = (AllowPrivateAccess = "true"))
 	UVAWorldBoundsComponent* WorldBounds;
@@ -687,8 +694,7 @@ private:
 	// PlaceBounds once the target is BoundsUpdateDistance from the bounds
 	void FollowBounds();
 
-	// With BoundsFollow Listener, warns when the listener can walk out of the bounds before they recentre
-	void WarnIfBoundsTooSmall();
+	void ReclampBoundsSize();
 
 	// Transient: populated in BeginPlay from NewObject() and must never be saved into the level —
 	// saving these as real exports corrupts the package (they don't round-trip through a reload).

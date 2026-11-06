@@ -140,25 +140,24 @@ void AVAWorld::FollowBounds()
 		PlaceBounds();
 }
 
-void AVAWorld::WarnIfBoundsTooSmall()
+FVector AVAWorld::ClampBoundsSize(const FVector& size) const
 {
-	if (BoundsFollow != EVABoundsFollow::Listener || BoundsUpdateDistance <= 0.0)
-		return;
+	if (BoundsFollow != EVABoundsFollow::Listener)
+		return size;
 
-	// The listener can move just under BoundsUpdateDistance along one axis before the bounds recentre, so each half of the box must be wider than that
-	double smallest = BoundsSize.GetMin();
+	return size.ComponentMax(FVector(BoundsUpdateDistance * 2.0f));
+}
 
-	if (smallest <= BoundsUpdateDistance * 2.0)
-	{
-		VA_WARN_NAMED(TEXT("BoundsSize's smallest side (%.0f) is not more than twice BoundsUpdateDistance (%.0f), so the listener can walk out of the bounds before they follow it. Make BoundsSize well over %.0f on every axis, or lower BoundsUpdateDistance."), smallest, BoundsUpdateDistance, BoundsUpdateDistance * 2.0);
-	}
+void AVAWorld::ReclampBoundsSize()
+{
+	if (ClampBoundsSize(BoundsSize) != BoundsSize)
+		SetBoundsSize(BoundsSize);
 }
 
 void AVAWorld::SetBoundsSize(const FVector& size)
 {
-	BoundsSize = size;
+	BoundsSize = ClampBoundsSize(size);
 	RefreshWorldBounds();
-	WarnIfBoundsTooSmall();
 
 	if (!World)
 		return;
@@ -173,10 +172,16 @@ void AVAWorld::SetBoundsSize(const FVector& size)
 void AVAWorld::SetBoundsFollow(EVABoundsFollow follow)
 {
 	BoundsFollow = follow;
-	WarnIfBoundsTooSmall();
+	ReclampBoundsSize();
 
 	if (World)
 		PlaceBounds();
+}
+
+void AVAWorld::SetBoundsUpdateDistance(float distance)
+{
+	BoundsUpdateDistance = FMath::Max(0.0f, distance);
+	ReclampBoundsSize();
 }
 
 void AVAWorld::UpdateVAWorld()
@@ -188,10 +193,10 @@ void AVAWorld::UpdateVAWorld()
 	vaWorldSetCameraSpeed(World, CameraSpeed);
 	vaWorldSetVisualisationScale(World, VisualisationScale);
 
-	// World bounds
+	// World bounds. BoundsUpdateDistance can be written directly from Blueprint, so clamp again here
+	BoundsSize = ClampBoundsSize(BoundsSize);
 	vaWorldSetSizeUnreal(World, BoundsSize);
 	PlaceBounds();
-	WarnIfBoundsTooSmall();
 
 	// World config
 	vaWorldSetInverseSpeedOfSound(World, 1.0f / FMath::Max(0.0001f, SpeedOfSound));
@@ -238,19 +243,17 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
+	FName memberName = VAMemberPropertyName(PropertyChangedEvent);
+
+	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsSize) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsFollow) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsUpdateDistance))
+		BoundsSize = ClampBoundsSize(BoundsSize);
+
 	// Unlike the vaWorldSet* calls below, the box should reflect BoundsSize even before BeginPlay (or after EndPlay), since World is null until then
 	RefreshWorldBounds();
 
-	FName memberName = VAMemberPropertyName(PropertyChangedEvent);
-
-	// Ignore edits before pressing Play, apart from warning about the bounds straight away
+	// Ignore edits before pressing Play
 	if (!World)
-	{
-		if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsSize) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsFollow) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, BoundsUpdateDistance))
-			WarnIfBoundsTooSmall();
-
 		return;
-	}
 
 	UpdateVAWorld();
 
