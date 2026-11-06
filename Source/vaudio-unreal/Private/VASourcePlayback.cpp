@@ -6,7 +6,7 @@
 void FVASourcePlayback::Play(UAudioComponent* Component)
 {
 	Component->bAutoDestroy = bAutoDestroy;
-	// Set on the component, which Play() copies to the new active sound. SetLowPassFilter*() only reach active sounds, so before Play() they did nothing
+	// Set on the component, which Play() copies to the new active sound. SetLowPassFilter*() only reaches active sounds, so before Play() they did nothing
 	Component->bEnableLowPassFilter = true;
 	Component->LowPassFilterFrequency = Filter.GetCutoffFrequency();
 	Component->SetVolumeMultiplier(GetVolume());

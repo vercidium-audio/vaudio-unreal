@@ -9,7 +9,6 @@
 #include "Engine/World.h"
 #include "VAEngineCompat.h"
 
-// 4.27 has no FAudioDevice::SendCommandToActiveSounds, so do what its UAudioComponent::SetSubmixSend does: find the component's active sound on the audio thread
 static void VASendToActiveSounds(FAudioDevice* AudioDevice, uint64 AudioComponentID, TFunction<void(FActiveSound&)> Command)
 {
 #if UE_VERSION_OLDER_THAN(5, 0, 0)
