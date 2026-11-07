@@ -79,12 +79,13 @@ void FVaudioUnrealModule::LoadSdk()
 		return;
 	}
 
-	// The single precision SDK's library has the same name, and every position, size and transform has a different layout in it
+	// Both precisions' libraries have the same name, and every position, size and transform has a different layout in each
 	int floatSize = vaGetFloatSize();
 
 	if (floatSize != VA_FLOAT_SIZE)
 	{
-		VA_ERROR(TEXT("The Vercidium Audio SDK library at '%s' is the single precision build, but the plugin needs the double precision one (3d/native-double). Copy its header and libraries into the plugin's Source/ThirdParty/vaudio folder."), *libraryPath);
+		const TCHAR* libraryPrecision = floatSize == 8 ? TEXT("double") : TEXT("single");
+		VA_ERROR(TEXT("The Vercidium Audio SDK library at '%s' is the %s precision build, but the plugin needs the %s precision one (%s) on this engine version. Copy its header and libraries into the plugin's Source/ThirdParty/vaudio folder."), *libraryPath, libraryPrecision, TEXT(VA_SDK_PRECISION_NAME), TEXT(VA_SDK_FOLDER_NAME));
 		return;
 	}
 

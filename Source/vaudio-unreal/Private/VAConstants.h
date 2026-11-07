@@ -6,8 +6,8 @@ extern "C" {
 #include "vaudio.h"
 }
 
-// The plugin only supports the double precision SDK, so FVector's doubles go into the SDK without narrowing
-static_assert(VA_FLOAT_SIZE == 8, "vaudio-unreal needs the double precision Vercidium Audio SDK (3d/native-double), but Source/ThirdParty/vaudio/include/vaudio.h is the single precision one");
+// VAFloat matches FVector's precision on each engine, so positions go into the SDK without narrowing
+static_assert(VA_FLOAT_SIZE == VA_EXPECTED_FLOAT_SIZE, "vaudio-unreal needs the " VA_SDK_PRECISION_NAME " precision Vercidium Audio SDK (" VA_SDK_FOLDER_NAME ") on this engine version, but Source/ThirdParty/vaudio/include/vaudio.h is the other precision");
 
 static inline VAVector FVectorToVAVector(const FVector& vector)
 {
@@ -32,14 +32,9 @@ static inline FColor VAColorToFColor(const VAColor& color)
 	return FColor(color.r, color.g, color.b, color.a);
 }
 
-// 4.27's FVector is float, so this is the one place SDK doubles narrow on 4.27. 5.x never narrows
 static inline FVector VAVectorToFVector(const VAVector& vector)
 {
-#if UE_VERSION_OLDER_THAN(5, 0, 0)
-	return FVector((float)vector.x, (float)vector.y, (float)vector.z);
-#else
 	return FVector(vector.x, vector.y, vector.z);
-#endif
 }
 
 static inline void vaSpherePrimitiveSetCenterUnreal(VASpherePrimitive* sphere, const FVector& center)

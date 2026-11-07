@@ -54,9 +54,9 @@ YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Linux/libvaudiona
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Mac/libvaudionative.dylib
 ```
 
-Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. The plugin only works with the double precision SDK, on every engine version: Unreal 5 positions are doubles, and it keeps them that way, so raytracing stays accurate any distance from the origin. The single precision SDK (`3d/native`) fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`, or `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`.
+Download the SDK from [vercidium.com](https://vercidium.com) and copy the files of the 3D double precision native SDK (`3d/native-double`) into the above locations. Unreal 5 positions are doubles, and the plugin keeps them that way, so raytracing stays accurate any distance from the origin. Unreal Engine 4.27 positions are floats, so it uses the single precision SDK (`3d/native`) instead (see below). The other precision fails the build. You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`, or `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`, or `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`.
 
-The Mac SDK is universal (arm64 and x86_64), so Mac builds can target Apple Silicon, Intel or Universal. Intel builds have been tested under Rosetta, not on Intel hardware. The debug window is Apple Silicon only, so it can't open on an Intel Mac.
+The Mac SDK is universal (arm64 and x86_64), so Mac builds can target Apple Silicon, Intel or Universal. The debug window is universal too, so it opens on Apple Silicon and Intel. Intel builds and the debug window have been tested under Rosetta, not on Intel hardware.
 
 When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platform>` and loads them from there. If the SDK is missing, the build fails with a message saying where to put it. A Blueprint-only project never builds, so the prebuilt plugin from the release zip loads the SDK straight from `Source/ThirdParty/vaudio/lib/<platform>` instead. Packaging a game always builds, so it stages the SDK as usual.
 
@@ -68,7 +68,7 @@ When you build, the plugin copies these into `Binaries/ThirdParty/vaudio/<platfo
 
 ## Unreal Engine 4.27
 
-Use `vaudio-unreal-4.27.zip` from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases). Cloning this repository doesn't work on 4.27. The SDK setup is the same as on 5.x, including the double precision SDK.
+Use `vaudio-unreal-4.27.zip` from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases). Cloning this repository doesn't work on 4.27. The SDK setup is the same as on 5.x, except it uses the single precision SDK (`3d/native`) rather than `3d/native-double`, as 4.27 positions are floats.
 
 Some features don't exist in 4.27, so the plugin doesn't have them there:
 - World Partition isn't available, so the World Partition notes in this README don't apply, and **Bake Geometry For Shipping** covers the level's loaded actors.

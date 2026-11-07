@@ -21,6 +21,17 @@ using VABlueprintReal = float;
 using VABlueprintReal = double;
 #endif
 
+// 4.27's FVector is float, so it uses the single precision SDK, and 5.x the double precision one
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+#define VA_EXPECTED_FLOAT_SIZE 4
+#define VA_SDK_PRECISION_NAME "single"
+#define VA_SDK_FOLDER_NAME "3d/native"
+#else
+#define VA_EXPECTED_FLOAT_SIZE 8
+#define VA_SDK_PRECISION_NAME "double"
+#define VA_SDK_FOLDER_NAME "3d/native-double"
+#endif
+
 // 5.8 deprecated the FCoreDelegates::OnPostEngineInit field in favour of GetOnPostEngineInit(), which 5.7 doesn't have
 inline FSimpleMulticastDelegate& VAOnPostEngineInit()
 {

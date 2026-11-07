@@ -857,7 +857,7 @@ void AVAWorld::OnReverbUpdated()
 				// Listener space is X+ right. Magnitude is strength (OpenAL Soft EAX style), so it isn't normalised
 				VAVector panVector = {};
 				vaWorldCalculateListenerRelativePan(World, *Direction, FMath::DegreesToRadians(ListenerRotation.Pitch), FMath::DegreesToRadians(ListenerRotation.Yaw), &panVector);
-				float pan = FMath::Clamp(panVector.x, -1.0, 1.0);
+				float pan = FMath::Clamp((float)panVector.x, -1.0f, 1.0f);
 
 				if (UVASubmixEffectDirectionalPanPreset* PanPreset = GroupedEAXPanPresets.IsValidIndex(i) ? GroupedEAXPanPresets[i] : nullptr)
 					PanPreset->SetPan(pan);
