@@ -129,6 +129,9 @@ void AVASourceLeech::Tick(float DeltaTime)
 
 	UpdatePlayback(emitter);
 
+	if (VAApplyBoundsRules(Playback, emitter->IsSilencedByBounds(), IsLooping(), bAutoPlayPending, bPlayAttempted))
+		return;
+
 	// Waits for the emitter's reverb results too, so the sound never starts without reverb
 	if (bAutoPlayPending && emitter->IsReadyToPlay())
 		Play();
@@ -145,6 +148,11 @@ void AVASourceLeech::UpdatePlayback(AVAEmitter* emitter)
 bool AVASourceLeech::Play()
 {
 	if (!bValidConfig)
+		return false;
+
+	AVAEmitter* emitter = GetLeechedEmitter();
+
+	if (VAApplyBoundsRulesOnPlay(this, Playback, emitter && emitter->IsSilencedByBounds(), IsLooping(), bAutoPlayPending, bPlayAttempted))
 		return false;
 
 	// Wait for the emitter's muffling and reverb results, so the sound never starts unmuffled or without reverb
@@ -164,7 +172,7 @@ bool AVASourceLeech::Play()
 	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update
-	UpdatePlayback(GetLeechedEmitter());
+	UpdatePlayback(emitter);
 
 	// Raytracing doesn't need the sound, so having no audio device (e.g. -nosound) isn't worth a warning
 	if (!GetWorld()->GetAudioDeviceRaw())
@@ -195,5 +203,15 @@ bool AVASourceLeech::Play()
 
 void AVASourceLeech::Stop()
 {
+	VACancelPendingPlay(bAutoPlayPending, bPlayAttempted);
 	Playback.Stop();
+}
+
+bool AVASourceLeech::IsLooping() const
+{
+	for (USoundBase* sound : SourceSounds)
+		if (sound && sound->IsLooping())
+			return true;
+
+	return false;
 }

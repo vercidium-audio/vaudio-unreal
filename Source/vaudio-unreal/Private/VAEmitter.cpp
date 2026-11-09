@@ -396,8 +396,8 @@ void AVAEmitter::Tick(float DeltaTime)
 
 	TickTypeSpecific(DeltaTime);
 
-	// Waits for IsReadyToPlay, as an emitter suspended before its first results has no reverb to keep
-	if ((bRaytraceOnce || suspendRequested) && IsReadyToPlay())
+	// Waits for its results, as an emitter suspended before them has no reverb to keep. Unlike IsReadyToPlay, that includes its own EAX outside the bounds
+	if ((bRaytraceOnce || suspendRequested) && VAHasHandleResults(Emitter, AudioWorld))
 		vaEmitterSetSuspended(Emitter, true);
 }
 
@@ -459,6 +459,13 @@ int32 AVAEmitter::GetGroupedEAXIndex() const
 bool AVAEmitter::GetWithinWorldBounds() const
 {
 	return Emitter && vaEmitterGetWithinWorldBounds(Emitter);
+}
+
+bool AVAEmitter::IsSilencedByBounds() const
+{
+	// It may not have joined its VAWorld yet
+	const AVAWorld* audioWorld = AudioWorld ? AudioWorld : AVAWorld::Find(this);
+	return audioWorld && audioWorld->IsSilencedByBounds(GetActorLocation(), bClampPosition);
 }
 
 FVector AVAEmitter::GetVAPosition() const

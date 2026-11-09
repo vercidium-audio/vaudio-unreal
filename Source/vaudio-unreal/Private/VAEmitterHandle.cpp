@@ -83,16 +83,26 @@ VALowPassFilter* VAGetMufflingResult(VAEmitter* handle, const AVAWorld* world)
 	return filter;
 }
 
+bool VAIsHandleOutsideBounds(VAEmitter* handle, const AVAWorld* world)
+{
+	return world && handle && world->IsOutsideBounds(VAVectorToFVector(vaEmitterGetPosition(handle)), vaEmitterGetClampPosition(handle));
+}
+
+// Its grouped EAX slot, and so its reverb send, isn't known until it casts its own reverb rays
+static bool VAIsWaitingForOwnEAX(VAEmitter* handle)
+{
+	return vaEmitterGetAffectsGroupedEAX(handle) && vaEmitterGetReverbEnabled(handle) && !vaEmitterGetEAX(handle);
+}
+
+bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world)
+{
+	return VAGetMufflingResult(handle, world) && !VAIsWaitingForOwnEAX(handle);
+}
+
 bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world)
 {
-	if (!VAGetMufflingResult(handle, world))
-		return false;
-
-	// Its grouped EAX slot, and so its reverb send, isn't known until it casts its own reverb rays
-	if (vaEmitterGetAffectsGroupedEAX(handle) && vaEmitterGetReverbEnabled(handle))
-		return vaEmitterGetEAX(handle) != nullptr;
-
-	return true;
+	// Outside the bounds it isn't raytraced, so it would never get its own EAX. It plays with no reverb until it's back inside
+	return VAGetMufflingResult(handle, world) && (!VAIsWaitingForOwnEAX(handle) || VAIsHandleOutsideBounds(handle, world));
 }
 
 bool VAResolveReverbSend(VAEmitter* handle, const AVAWorld* world, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext, USoundSubmix*& outSubmix, float& outSendLevel)
@@ -110,6 +120,10 @@ bool VAResolveReverbSend(VAEmitter* handle, const AVAWorld* world, int32 grouped
 	// The listener ended play
 	if (!vaWorld || !listener || !listener->GetVAEmitter())
 		return false;
+
+	// Not raytraced outside the bounds, so its grouped EAX would be stale and the listener's reverb isn't where it is
+	if (VAIsHandleOutsideBounds(handle, world))
+		return true;
 
 	if (groupedEAXIndex >= 0)
 	{

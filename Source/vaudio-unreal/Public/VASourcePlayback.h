@@ -63,3 +63,12 @@ private:
 	float PitchMultiplier = 1.0f;
 	bool bDryEnabled = true;
 };
+
+// Ends a play that's waiting (bAutoPlay, or a loop waiting for the bounds) as if it had played, so bAutoDestroy destroys its source. For Stop()
+void VACancelPendingPlay(bool& bAutoPlayPending, bool& bPlayAttempted);
+
+// The bounds rules for a source's Play() state, shared by VASource and VASourceLeech. While bSilenced (see AVAEmitter::IsSilencedByBounds) it stops Playback: a loop that was playing waits to play again from the start (bAutoPlayPending), and anything else that was waiting to play ends as if it had played, so bAutoDestroy destroys its source. Returns bSilenced, when nothing should start
+bool VAApplyBoundsRules(FVASourcePlayback& Playback, bool bSilenced, bool bLooping, bool& bAutoPlayPending, bool& bPlayAttempted);
+
+// For Play() while bSilenced: a loop waits to play once back inside, anything else is warned about and ends as if it had played. Returns bSilenced, when Play() should return false
+bool VAApplyBoundsRulesOnPlay(const UObject* Source, FVASourcePlayback& Playback, bool bSilenced, bool bLooping, bool& bAutoPlayPending, bool& bPlayAttempted);

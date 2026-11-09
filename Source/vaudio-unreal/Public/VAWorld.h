@@ -152,10 +152,6 @@ struct VAUDIOUNREAL_API FVAOneShotSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	USoundAttenuation* AttenuationSettings = nullptr;
 
-	// The sound waits until it has been raytraced, so it never starts unmuffled. If it still hasn't started after this many seconds, e.g. there's no listener, it's dropped without playing. 0 waits forever
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0"))
-	float MaxPlayDelay = 1.0f;
-
 	// Stops casting rays after the first result. Only used by PlaySoundAtLocation and SpawnSoundAtLocation, as an attached sound moves and keeps raytracing
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bRaytraceOnce = true;
@@ -233,6 +229,9 @@ struct FVAOneShot
 	// A location sound's own SDK emitter, owned by the world and released to its orphans when the sound ends
 	VAEmitter* Handle = nullptr;
 
+	// A location sound's position, checked against the bounds every tick
+	FVector Location = FVector::ZeroVector;
+
 	// Names the handle in errors and the debug window
 	FString Name;
 
@@ -245,9 +244,6 @@ struct FVAOneShot
 	bool bAffectsGroupedEAX = false;
 	bool bUseListenerReverb = false;
 	bool bRaytraceOnce = true;
-
-	// World time after which a pending sound is dropped, or 0 to wait forever
-	double PlayDeadline = 0.0;
 };
 
 UCLASS(DisplayName = "VAWorld", HideCategories = (Shape, Collision, Rendering, Physics, HLOD, Navigation, VirtualTexture, Tags, Cooking, LOD, AssetUserData, Mobile, RayTracing))
@@ -303,6 +299,16 @@ public:
 	// The bounds' minimum corner: the position last pushed to the SDK during play, otherwise the actor's location
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	FVector GetBoundsPosition() const { return World ? BoundsPosition : GetActorLocation(); }
+
+	// Whether Position is inside the bounds, edges included like the SDK's own test
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	bool IsWithinBounds(const FVector& Position) const;
+
+	// Whether an emitter at position isn't raytraced, as it's outside the bounds and unclamped. It has no reverb there, and plays clear (or is silenced, see IsSilencedByBounds)
+	bool IsOutsideBounds(const FVector& position, bool bClampPosition) const;
+
+	// Whether a raytraced sound at position is silenced by the bounds: it's outside them, unclamped, and bEmittersOutsideTheWorldAreMuffled is on. Such a sound isn't started, and stops when it leaves
+	bool IsSilencedByBounds(const FVector& position, bool bClampPosition) const;
 
 	// Changes BoundsSize during play
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
@@ -381,7 +387,7 @@ public:
 
 	// --- Emitters ---
 
-	// Whether emitters outside the world have 0 occlusion/permeation energy (true) or maximum energy (false).
+	// Whether emitters outside the world have 0 occlusion/permeation energy (true) or maximum energy (false). While true, raytraced sounds outside the bounds (unless bClampPosition is on) are also stopped, see IsSilencedByBounds. While false they play clear with no reverb until they're back inside
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Emitters")
 	bool bEmittersOutsideTheWorldAreMuffled = true;
 
@@ -578,15 +584,15 @@ public:
 
 	// --- One-shot sounds ---
 
-	// Like UGameplayStatics::PlaySoundAtLocation: no actor is spawned, the VAWorld raytraces the sound from the location and plays it once it has been, then releases it when it finishes, keeping its reverb tail alive if bKeepReverbTailAlive is set. It's dropped without playing if it hasn't started after MaxPlayDelay. Needs a VAWorld that has begun play in the world context object's level. Use SpawnSoundAtLocation to read its results, stop it, or for looping sounds
+	// Like UGameplayStatics::PlaySoundAtLocation: no actor is spawned, the VAWorld raytraces the sound from the location and plays it once it has been, then releases it when it finishes, keeping its reverb tail alive if bKeepReverbTailAlive is set. It's dropped with a warning if no VAListener has begun play, rather than waiting for one, or if IsSilencedByBounds says it's outside the bounds, and cut off if the bounds move away from it. Needs a VAWorld that has begun play in the world context object's level. Use SpawnSoundAtLocation to read its results, stop it, or for looping sounds
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject", AutoCreateRefTerm = "Settings"))
 	static void PlaySoundAtLocation(const UObject* WorldContextObject, USoundBase* Sound, FVector Location, const FVAOneShotSettings& Settings);
 
-	// Like UGameplayStatics::SpawnSoundAtLocation: spawns a VASource that plays the sound once it has been raytraced, then destroys itself when it finishes, or after MaxPlayDelay if it never plays. Returns the source, for reading its results or stopping it, or null if the sound or world is missing
+	// Like UGameplayStatics::SpawnSoundAtLocation: spawns a VASource that plays the sound once it has been raytraced, then destroys itself when it finishes, or is stopped by leaving the bounds (a looping one waits outside them and plays again from the start once back inside). It's destroyed without playing if the last listener leaves while it waits. Returns the source, for reading its results or stopping it, or null if the sound or world is missing, no VAListener has begun play, or the sound doesn't loop and IsSilencedByBounds says the location is outside the bounds
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject", AutoCreateRefTerm = "Settings"))
 	static AVASource* SpawnSoundAtLocation(const UObject* WorldContextObject, USoundBase* Sound, FVector Location, const FVAOneShotSettings& Settings);
 
-	// Like UGameplayStatics::SpawnSoundAttached: a VASource attached to the component (and socket) that keeps raytracing as it moves, and destroys itself when the sound finishes. Location is an offset from the socket with KeepRelativeOffset, a world position with KeepWorldPosition, and ignored with the snap options. Returns null if the sound or component is missing
+	// Like UGameplayStatics::SpawnSoundAttached: a VASource attached to the component (and socket) that keeps raytracing as it moves, and destroys itself when the sound finishes. It follows the same bounds and listener rules as SpawnSoundAtLocation. Location is an offset from the socket with KeepRelativeOffset, a world position with KeepWorldPosition, and ignored with the snap options. Returns null if the sound or component is missing, no VAListener has begun play, or the sound doesn't loop and IsSilencedByBounds says its location is outside the bounds
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (AutoCreateRefTerm = "Settings"))
 	static AVASource* SpawnSoundAttached(USoundBase* Sound, USceneComponent* AttachComponent, FName AttachPointName, FVector Location, EAttachLocation::Type LocationType, bool bStopWhenAttachedToDestroyed, const FVAOneShotSettings& Settings);
 
@@ -594,9 +600,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject"))
 	static void PlaySoundRelative(const UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f);
 
-	// Like a VASourceLeech: plays the sound at the emitter with its muffling and reverb, instead of casting rays of its own, e.g. an enemy's footsteps and gunshots all reusing the VAEmitter on that enemy. No actor is spawned, the VAWorld updates the sound until it finishes. Plays straight away if the emitter has been raytraced, otherwise as soon as it is, or is dropped without playing after MaxPlayDelay seconds (0 waits forever) or if the emitter is destroyed first. AttenuationSettings is used instead of the sound's own when set. If the emitter is destroyed mid-sound, the sound finishes where it was. Does nothing if the sound or emitter is missing, the emitter is a listener, or there's no audio device. Use a VASourceLeech to stop it or for looping sounds
+	// Like a VASourceLeech: plays the sound at the emitter with its muffling and reverb, instead of casting rays of its own, e.g. an enemy's footsteps and gunshots all reusing the VAEmitter on that enemy. No actor is spawned, the VAWorld updates the sound until it finishes. Plays straight away if the emitter has been raytraced, otherwise as soon as it is, or is dropped without playing if the emitter is destroyed first. AttenuationSettings is used instead of the sound's own when set. If the emitter is destroyed mid-sound, the sound finishes where it was, and it's cut off if the emitter's IsSilencedByBounds becomes true. Does nothing if the sound or emitter is missing, the emitter is a listener, no VAListener has begun play, the emitter's IsSilencedByBounds is true, or there's no audio device. Use a VASourceLeech to stop it or for looping sounds
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
-	static void PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f, USoundAttenuation* AttenuationSettings = nullptr, float MaxPlayDelay = 1.0f);
+	static void PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f, USoundAttenuation* AttenuationSettings = nullptr);
 
 	// Sounds started by PlaySoundAtLocation, PlaySoundRelative and PlaySoundLeech that are waiting or playing
 	int32 GetOneShotCount() const { return OneShots.Num(); }
@@ -758,16 +764,17 @@ private:
 	void ReleaseOneShotComponent(UAudioComponent* component);
 
 	void StartRelativeOneShot(USoundBase* sound, float volumeMultiplier, float pitchMultiplier);
-	void StartLeechOneShot(USoundBase* sound, AVAEmitter* emitter, float volumeMultiplier, float pitchMultiplier, USoundAttenuation* attenuation, float maxPlayDelay);
+	void StartLeechOneShot(USoundBase* sound, AVAEmitter* emitter, float volumeMultiplier, float pitchMultiplier, USoundAttenuation* attenuation);
 	void StartLocationOneShot(USoundBase* sound, const FVector& location, const FVAOneShotSettings& settings);
 
 	// A new one-shot with the world's dry output state
 	FVAOneShot& AddOneShot(float volumeMultiplier, float pitchMultiplier);
 
 	// Parks the component until the results are ready, or plays it straight away if they already are
-	void WaitToPlayOneShot(FVAOneShot& oneShot, UAudioComponent* component, float maxPlayDelay);
+	void WaitToPlayOneShot(FVAOneShot& oneShot, UAudioComponent* component);
 
 	bool IsOneShotReady(const FVAOneShot& oneShot) const;
+	bool IsOneShotSilencedByBounds(const FVAOneShot& oneShot) const;
 	void ApplyOneShotResults(FVAOneShot& oneShot);
 	void PlayPendingOneShot(FVAOneShot& oneShot);
 

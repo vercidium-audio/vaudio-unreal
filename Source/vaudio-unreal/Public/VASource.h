@@ -36,17 +36,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bAutoDestroy = true;
 
-	// Set by AVAWorld::SpawnSoundAtLocation and SpawnSoundAttached, whose life span is their MaxPlayDelay, so the first Play() cancels it
-	bool bCancelLifeSpanOnPlay = false;
-
-	// Plays SourceSound. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, or if the sound couldn't be created (e.g. there's no audio device)
+	// Plays SourceSound. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while IsSilencedByBounds is true, where a looping sound plays once back inside the bounds and any other is dropped with a warning (as if it had played, for bAutoDestroy). Sounds are stopped when they leave the bounds, and a looping one plays again from the start once back inside
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	bool Play();
+
+	// Also cancels a play that's waiting (bAutoPlay, or a loop waiting for the bounds), as if it had played
+	virtual void Stop() override;
 
 	// Destroys this actor once the component is destroyed, or its actor is. Unreal detaches attached actors rather than destroying them, so AVAWorld::SpawnSoundAttached uses this for bStopWhenAttachedToDestroyed
 	void DestroyWithComponent(USceneComponent* component);
 
+	// Set by AVAWorld's Spawn* functions. Such a source is destroyed without playing if the last listener leaves while it waits, where a user's source waits for one
+	void MarkSpawnedAsOneShot() { bSpawnedAsOneShot = true; }
+
 private:
+	bool bSpawnedAsOneShot = false;
+
 	// Cleared by the first Play(), whether bAutoPlay or the user called it
 	bool bAutoPlayPending = false;
 

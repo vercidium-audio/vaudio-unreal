@@ -79,10 +79,16 @@ void VAPushEmitterProperties(VAEmitter* handle, const TSource& source)
 // The main listener's muffling filter for this handle, or null until the listener has raytraced it
 VALowPassFilter* VAGetMufflingResult(VAEmitter* handle, const AVAWorld* world);
 
+// AVAWorld::IsOutsideBounds at the handle's position and bClampPosition
+bool VAIsHandleOutsideBounds(VAEmitter* handle, const AVAWorld* world);
+
 // Muffled by the listener and, if it affects grouped EAX with reverb rays, has its own EAX
+bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world);
+
+// VAHasHandleResults, except a handle outside the bounds doesn't wait for its own EAX, as it isn't raytraced there
 bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world);
 
-// See AVAEmitter::ResolveReverbSend. groupedEAXIndex is -1 when the handle doesn't affect grouped EAX. Warnings are prefixed with logContext's name
+// See AVAEmitter::ResolveReverbSend. groupedEAXIndex is -1 when the handle doesn't affect grouped EAX. Outside the bounds there's no send. Warnings are prefixed with logContext's name
 bool VAResolveReverbSend(VAEmitter* handle, const AVAWorld* world, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext, USoundSubmix*& outSubmix, float& outSendLevel);
 
 // Pushes the muffling filter, then the reverb send, to playback. The last result is kept while either is unavailable

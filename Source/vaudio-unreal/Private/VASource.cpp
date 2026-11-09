@@ -6,6 +6,7 @@
 #include "Sound/SoundAttenuation.h"
 
 #include "VALog.h"
+#include "VAWorld.h"
 
 bool AVASource::ValidateConfig()
 {
@@ -84,6 +85,16 @@ void AVASource::TickTypeSpecific(float DeltaTime)
 {
 	Super::TickTypeSpecific(DeltaTime);
 
+	// Like the actor-free one-shots, a spawned source doesn't wait for a listener. A user's source does
+	if (bSpawnedAsOneShot && bAutoPlayPending && !GetAudioWorld()->GetMainListener())
+	{
+		bAutoPlayPending = false;
+		bPlayAttempted = true;
+	}
+
+	if (VAApplyBoundsRules(Playback, IsSilencedByBounds(), SourceSound && SourceSound->IsLooping(), bAutoPlayPending, bPlayAttempted))
+		return;
+
 	if (bAutoPlayPending && IsReadyToPlay())
 		Play();
 }
@@ -94,9 +105,18 @@ void AVASource::DestroyWithComponent(USceneComponent* component)
 	DestroyWithComponentTarget = component;
 }
 
+void AVASource::Stop()
+{
+	VACancelPendingPlay(bAutoPlayPending, bPlayAttempted);
+	Super::Stop();
+}
+
 bool AVASource::Play()
 {
 	if (!SourceSound)
+		return false;
+
+	if (VAApplyBoundsRulesOnPlay(this, Playback, IsSilencedByBounds(), SourceSound->IsLooping(), bAutoPlayPending, bPlayAttempted))
 		return false;
 
 	// Wait for the muffling and reverb results, so the sound never starts unmuffled or without reverb
@@ -113,13 +133,6 @@ bool AVASource::Play()
 	}
 
 	bAutoPlayPending = false;
-
-	if (bCancelLifeSpanOnPlay)
-	{
-		bCancelLifeSpanOnPlay = false;
-		SetLifeSpan(0.0f);
-	}
-
 	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update

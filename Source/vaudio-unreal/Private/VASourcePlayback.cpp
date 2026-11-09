@@ -2,6 +2,47 @@
 #include "Components/AudioComponent.h"
 
 #include "VASubmixSend.h"
+#include "VALog.h"
+
+void VACancelPendingPlay(bool& bAutoPlayPending, bool& bPlayAttempted)
+{
+	if (!bAutoPlayPending)
+		return;
+
+	bAutoPlayPending = false;
+	bPlayAttempted = true;
+}
+
+bool VAApplyBoundsRules(FVASourcePlayback& Playback, bool bSilenced, bool bLooping, bool& bAutoPlayPending, bool& bPlayAttempted)
+{
+	if (!bSilenced)
+		return false;
+
+	if (!bLooping)
+	{
+		VACancelPendingPlay(bAutoPlayPending, bPlayAttempted);
+	}
+	else if (Playback.IsPlaying())
+	{
+		bAutoPlayPending = true;
+		bPlayAttempted = false;
+	}
+
+	Playback.Stop();
+	return true;
+}
+
+bool VAApplyBoundsRulesOnPlay(const UObject* Source, FVASourcePlayback& Playback, bool bSilenced, bool bLooping, bool& bAutoPlayPending, bool& bPlayAttempted)
+{
+	if (!bSilenced)
+		return false;
+
+	if (!bLooping)
+		VAReport(ELogVerbosity::Warning, Source, VA_CALL_SITE_KEY(Source), TEXT("Play() was called outside the VAWorld's bounds, so nothing played. A sound that doesn't loop isn't started outside them, and doesn't play once back inside"));
+
+	bAutoPlayPending = true;
+	return VAApplyBoundsRules(Playback, bSilenced, bLooping, bAutoPlayPending, bPlayAttempted);
+}
 
 void FVASourcePlayback::Play(UAudioComponent* Component)
 {

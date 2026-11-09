@@ -68,6 +68,8 @@ SDK callbacks run inside `vaWorldUpdate`. They only set flags or queue (`QueueRa
 
 A source only plays once `AVAEmitter::IsReadyToPlay()` is true: the listener has raytraced it and, if it casts reverb rays and affects grouped EAX, its own reverb result exists.
 
+The world bounds are final while `bEmittersOutsideTheWorldAreMuffled` is on. `AVAWorld::IsSilencedByBounds` (game thread, false for a clamped emitter or with the setting off) is the one check: `VACanStartOneShot` drops a one-shot that doesn't loop, `UpdateOneShots` removes a `Play*` one-shot, and `VAApplyBoundsRules`/`VAApplyBoundsRulesOnPlay` (`VASourcePlayback.h`) stop a source and re-arm autoplay for a loop (`Stop()` cancels it with `VACancelPendingPlay`). A stream only restarts if the bounds stopped it (`bStoppedByBounds`). `AVAWorld::IsOutsideBounds` is the same test without the setting: an emitter outside isn't raytraced, so `VAIsHandleReadyToPlay` doesn't wait for its own EAX there and `VAResolveReverbSend` gives it no send, so with the setting off it plays clear with no reverb. Suspension (`bRaytraceOnce`, one-shots) waits for `VAHasHandleResults` instead, which still needs that EAX, so a sound that started outside is raytraced inside before it's suspended. Don't use `vaEmitterGetWithinWorldBounds` for this, it's false until the emitter is first processed. A one-shot also needs a listener that has begun play, and never waits for one.
+
 ## Listeners
 
 Every listener in a world shares one SDK emitter, held by the current listener (`bCurrent`, `MakeCurrent()`). `AVAWorld::SetCurrentListener` hands the handle over, so targets stay connected. A listener that isn't current has no handle and doesn't tick. When the current listener leaves, the first remaining one is promoted.

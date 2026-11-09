@@ -172,11 +172,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsRaytraced() const;
 
-	// True once the listener has raytraced this emitter and, if it casts reverb rays and affects grouped EAX, it has cast its own reverb rays too. Sources don't play until then
+	// True once the listener has raytraced this emitter and, if it casts reverb rays and affects grouped EAX, it has cast its own reverb rays too, unless it's outside the bounds, where it isn't raytraced and plays with no reverb. Sources don't play until then
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsReadyToPlay() const;
 
-	// Stops this emitter casting rays, from the first tick where it's ready to play, as it keeps the reverb and ambient results it has then. The listener still raytraces it, so its muffling stays up to date. Passing false re-casts all of its rays and clears bRaytraceOnce, so it keeps casting them. Does nothing on a listener, or once this emitter is being removed
+	// Stops this emitter casting rays, from the first tick where it has its results (as IsReadyToPlay, but outside the bounds it also waits for its own EAX), as it keeps the reverb and ambient results it has then. The listener still raytraces it, so its muffling stays up to date. Passing false re-casts all of its rays and clears bRaytraceOnce, so it keeps casting them. Does nothing on a listener, or once this emitter is being removed
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetSuspended(bool bSuspended);
 
@@ -191,6 +191,10 @@ public:
 	// False while this emitter is outside the world's bounds
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool GetWithinWorldBounds() const;
+
+	// AVAWorld::IsSilencedByBounds at the actor's location: true while it's outside the bounds with bClampPosition off and the VAWorld's bEmittersOutsideTheWorldAreMuffled on. Unlike GetWithinWorldBounds, it's checked on the game thread, so it's correct before this emitter is raytraced
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
+	bool IsSilencedByBounds() const;
 
 	// The position last given to the SDK, or the actor location before this emitter has joined a world. It is not clamped: bClampPosition only clamps the copy the SDK raytraces from, which it doesn't expose
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")

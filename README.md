@@ -146,7 +146,7 @@ To convert an existing level, select its **Ambient Sound** actors, right-click a
 
 The `Play*` functions don't spawn an actor: the `VAWorld` keeps each sound's filter and reverb send up to date until it finishes, so they cost about the same as the `UGameplayStatics` functions plus their rays. The `Spawn*` functions spawn a `VASource`, which plays the sound once it has been raytraced and then destroys itself when the sound finishes. Use them to read the source's results (e.g. `GetReverbResult`) or to stop it with `Stop()`, which also destroys it.
 
-`PlaySoundAtLocation`, `SpawnSoundAtLocation` and `SpawnSoundAttached` take an `FVAOneShotSettings`, which sets the sound's volume and pitch multipliers, an optional `AttenuationSettings` override, `MaxPlayDelay`, and its reverb, muffling and clustering properties. It defaults to 64 reverb rays with 64 bounces.
+`PlaySoundAtLocation`, `SpawnSoundAtLocation` and `SpawnSoundAttached` take an `FVAOneShotSettings`, which sets the sound's volume and pitch multipliers, an optional `AttenuationSettings` override, and its reverb, muffling and clustering properties. It defaults to 64 reverb rays with 64 bounces.
 
 ```cpp
 FVAOneShotSettings settings;
@@ -163,7 +163,8 @@ AVASource* attached = AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone
 ```
 
 - A sound at a location raytraces once (`bRaytraceOnce`), and its reverb tail starts when the sound finishes. An attached sound keeps raytracing every frame as it moves, so `SpawnSoundAttached` is the expensive choice for frequent sounds.
-- The sound starts after the first raytracing result, not straight away, so it's never heard unmuffled. If it hasn't started after `MaxPlayDelay` seconds (e.g. there's no listener), it's dropped without playing.
+- The sound starts after the first raytracing result, not straight away, so it's never heard unmuffled.
+- A one-shot needs a `VAListener` that has begun play. Without one, `PlaySoundAtLocation`, `PlaySoundLeech` and the `Spawn*` functions log a warning and play nothing, rather than waiting for a listener. This includes sounds played from a `BeginPlay` that runs before the listener's.
 - `PlaySoundAtLocation` needs a `VAWorld` that has begun play in the world context object's level, and does nothing otherwise. The `Spawn*` functions return null if the sound, world or component is missing.
 
 For frequent sounds on a character, like an enemy's footsteps or gunshots, put one `VAEmitter` on each enemy and play all of its sounds through it with `AVAWorld::PlaySoundLeech`. Like a `VASourceLeech`, the sound is attached to the `VAEmitter` and uses its muffling and reverb instead of rays of its own, so hundreds of sounds a second cost no more rays than the one emitter:
@@ -172,7 +173,7 @@ For frequent sounds on a character, like an enemy's footsteps or gunshots, put o
 AVAWorld::PlaySoundLeech(GunshotSound, EnemyEmitter, Volume, Pitch, AttenuationSettings);
 ```
 
-It plays immediately, as the emitter should already be raytraced. A sound started before then waits, and is dropped without playing after `MaxPlayDelay` seconds (default 1), or if the emitter is destroyed first. It follows the emitter, and if the emitter is destroyed mid-sound it finishes playing where it was. A listener can't be leeched, so use `PlaySoundRelative` for the player's own sounds.
+It plays immediately, as the emitter should already be raytraced. A sound started before then waits, and is dropped without playing if the emitter is destroyed first. It follows the emitter, and if the emitter is destroyed mid-sound it finishes playing where it was. A listener can't be leeched, so use `PlaySoundRelative` for the player's own sounds.
 
 For the player's own sounds, `AVAWorld::PlaySoundRelative` replaces `UGameplayStatics::PlaySound2D`. Like a `VASourceRelative` it isn't raytraced, so it plays straight away, unmuffled and with the current listener's reverb:
 
@@ -278,7 +279,11 @@ Only the box at the `VAWorld`'s location (its minimum corner) with size `BoundsS
 
 Moving the bounds makes the SDK re-check every raytraced trail, so they move in steps instead of every frame: the box only follows once the listener (or the `VAWorld` actor) is `BoundsUpdateDistance` away, 100 m by default. With `BoundsFollow = Listener`, `BoundsSize` is clamped to at least twice `BoundsUpdateDistance` on every axis, so the listener can't walk out of the box before it recentres. `SetBoundsFollow`, `SetBoundsSize` and `SetBoundsUpdateDistance` change these during play.
 
-Sources that are loaded but outside the box aren't raytraced. `bEmittersOutsideTheWorldAreMuffled` on the `VAWorld` decides whether they're fully muffled (default) or not muffled at all.
+Sources that are loaded but outside the box aren't raytraced. `bEmittersOutsideTheWorldAreMuffled` on the `VAWorld` decides what happens to them. When it's off, they aren't muffled at all and play clearly with no reverb (they don't wait for their own reverb, which they can't get outside), and get their reverb back once they're inside again. When it's on (default), they're fully muffled, and the bounds are final for raytraced sounds:
+- A sound that doesn't loop isn't started outside the box. `PlaySoundAtLocation`, `PlaySoundLeech` and the `Spawn*` functions log a warning and create nothing (`Spawn*` return null), and a looping `Play*` is dropped the same way. A `VASource` or `VASourceLeech` that doesn't loop returns false from `Play()` with a warning, and isn't retried once it's inside (with `bAutoDestroy`, it's destroyed).
+- A sound that leaves the box, or that the box moves away from, is stopped that tick, cut off mid-sound. One-shots and sources that don't loop are then finished, and destroyed with `bAutoDestroy`.
+- A looping `VASource` (including a looping `Spawn*` one-shot) or `VASourceLeech`, and an open stream source, wait outside the box and play again from the start once they're back inside. `Stop()` cancels that wait, and a stream whose sound stopped for any other reason isn't restarted.
+- `IsSilencedByBounds` on an emitter or the `VAWorld` returns whether this applies. An emitter with `bClampPosition` on (the default for `VAEmitter`, but not for sources) is raytraced from the nearest point inside the box, so it's never silenced, and neither are leeches of it.
 
 **When the VAWorld ends play**
 

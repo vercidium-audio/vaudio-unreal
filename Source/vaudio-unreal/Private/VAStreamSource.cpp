@@ -53,6 +53,39 @@ bool AVAStreamSource::OpenStream(EVAStreamFormat Format, int32 SampleRate)
 		return true;
 	}
 
+	// TickTypeSpecific starts the sound once it's inside the bounds
+	if (IsSilencedByBounds())
+	{
+		bStoppedByBounds = true;
+		return true;
+	}
+
+	return StartSound();
+}
+
+void AVAStreamSource::TickTypeSpecific(float DeltaTime)
+{
+	Super::TickTypeSpecific(DeltaTime);
+
+	// A stream is continuous, so like a loop it plays again once back inside the bounds, but not if it stopped for another reason
+	if (IsSilencedByBounds())
+	{
+		bStoppedByBounds |= IsPlaying();
+		Playback.Stop();
+		return;
+	}
+
+	if (!bStoppedByBounds)
+		return;
+
+	// Audio queued before it left is dropped
+	bStoppedByBounds = false;
+	StreamWave->ResetAudio();
+	StartSound();
+}
+
+bool AVAStreamSource::StartSound()
+{
 	UpdatePlayback();
 
 	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
@@ -62,7 +95,7 @@ bool AVAStreamSource::OpenStream(EVAStreamFormat Format, int32 SampleRate)
 
 	if (!component)
 	{
-		VA_WARN_NAMED(TEXT("OpenStream failed to create its sound. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
+		VA_WARN_NAMED(TEXT("The stream failed to create its sound, so it was closed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
 		CloseStream();
 		return false;
 	}
@@ -145,6 +178,7 @@ void AVAStreamSource::CloseStream()
 	StreamWave = nullptr;
 	bStreamOpen = false;
 	bStreamReady = false;
+	bStoppedByBounds = false;
 }
 
 void AVAStreamSource::Stop()

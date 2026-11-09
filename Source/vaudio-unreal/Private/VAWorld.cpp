@@ -125,6 +125,25 @@ FVector AVAWorld::GetBoundsTarget() const
 	return MainListener ? MainListener->GetActorLocation() - BoundsSize * 0.5 : BoundsPosition;
 }
 
+bool AVAWorld::IsWithinBounds(const FVector& Position) const
+{
+	const FVector min = GetBoundsPosition();
+	const FVector max = min + BoundsSize;
+	return Position.X >= min.X && Position.Y >= min.Y && Position.Z >= min.Z && Position.X <= max.X && Position.Y <= max.Y && Position.Z <= max.Z;
+}
+
+bool AVAWorld::IsOutsideBounds(const FVector& position, bool bClampPosition) const
+{
+	// A clamped emitter is raytraced from inside the bounds
+	return !bClampPosition && !IsWithinBounds(position);
+}
+
+bool AVAWorld::IsSilencedByBounds(const FVector& position, bool bClampPosition) const
+{
+	// With the setting off the SDK hears an outside emitter clearly
+	return bEmittersOutsideTheWorldAreMuffled && IsOutsideBounds(position, bClampPosition);
+}
+
 void AVAWorld::PlaceBounds()
 {
 	BoundsPosition = GetBoundsTarget();
@@ -305,8 +324,29 @@ AVAWorld* AVAWorld::Find(const UObject* WorldContextObject)
 	return subsystem ? subsystem->GetVAWorld() : nullptr;
 }
 
-static AVASource* VASpawnOneShot(UWorld* world, USoundBase* sound, const FVector& location, const FVAOneShotSettings& settings, bool raytraceOnce)
+// Without a listener a raytraced one-shot never becomes ready, and one may never begin play, so it's dropped rather than left waiting. One silenced by the bounds would never be heard, so it isn't created either, unless it's a looping VASource, which waits for the bounds (an actor-free one-shot is removed when it's silenced)
+static bool VACanStartOneShot(const AVAWorld* audioWorld, const TCHAR* function, USoundBase* sound, const FVector& position, bool bClampPosition, bool bWaitsForBounds)
 {
+	if (!audioWorld || !audioWorld->GetMainListener())
+	{
+		VA_WARN(TEXT("%s was dropped, as there's no VAListener that has begun play. One-shots don't wait for a listener"), function);
+		return false;
+	}
+
+	if (!bWaitsForBounds && audioWorld->IsSilencedByBounds(position, bClampPosition))
+	{
+		VA_WARN(TEXT("%s of '%s' was dropped, as it's outside the VAWorld's bounds. Only a looping VASource waits for them"), function, *sound->GetName());
+		return false;
+	}
+
+	return true;
+}
+
+static AVASource* VASpawnOneShot(const TCHAR* function, UWorld* world, USoundBase* sound, const FVector& location, const FVAOneShotSettings& settings, bool raytraceOnce)
+{
+	if (!VACanStartOneShot(AVAWorld::Find(world), function, sound, location, GetDefault<AVASource>()->bClampPosition, sound->IsLooping()))
+		return nullptr;
+
 	FActorSpawnParameters spawnParameters;
 	spawnParameters.bDeferConstruction = true;
 	spawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -323,10 +363,7 @@ static AVASource* VASpawnOneShot(UWorld* world, USoundBase* sound, const FVector
 	source->SourceSound = sound;
 	source->bAutoPlay = true;
 	source->bRaytraceOnce = raytraceOnce;
-
-	// Applied in BeginPlay, and cancelled by the first Play()
-	source->InitialLifeSpan = settings.MaxPlayDelay;
-	source->bCancelLifeSpanOnPlay = true;
+	source->MarkSpawnedAsOneShot();
 
 	source->VolumeMultiplier = settings.VolumeMultiplier;
 	source->PitchMultiplier = settings.PitchMultiplier;
@@ -392,7 +429,7 @@ AVASource* AVAWorld::SpawnSoundAtLocation(const UObject* WorldContextObject, USo
 		return nullptr;
 	}
 
-	return VASpawnOneShot(world, Sound, Location, Settings, Settings.bRaytraceOnce);
+	return VASpawnOneShot(TEXT("SpawnSoundAtLocation"), world, Sound, Location, Settings, Settings.bRaytraceOnce);
 }
 
 AVASource* AVAWorld::SpawnSoundAttached(USoundBase* Sound, USceneComponent* AttachComponent, FName AttachPointName, FVector Location, EAttachLocation::Type LocationType, bool bStopWhenAttachedToDestroyed, const FVAOneShotSettings& Settings)
@@ -424,7 +461,7 @@ AVASource* AVAWorld::SpawnSoundAttached(USoundBase* Sound, USceneComponent* Atta
 	}
 
 	// An attached sound moves, so it keeps raytracing
-	AVASource* source = VASpawnOneShot(world, Sound, worldLocation, Settings, false);
+	AVASource* source = VASpawnOneShot(TEXT("SpawnSoundAttached"), world, Sound, worldLocation, Settings, false);
 
 	if (!source)
 		return nullptr;
@@ -451,7 +488,7 @@ void AVAWorld::PlaySoundRelative(const UObject* WorldContextObject, USoundBase* 
 	audioWorld->StartRelativeOneShot(Sound, VolumeMultiplier, PitchMultiplier);
 }
 
-void AVAWorld::PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter, float VolumeMultiplier, float PitchMultiplier, USoundAttenuation* AttenuationSettings, float MaxPlayDelay)
+void AVAWorld::PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter, float VolumeMultiplier, float PitchMultiplier, USoundAttenuation* AttenuationSettings)
 {
 	if (!Sound || !IsValid(Emitter))
 	{
@@ -475,7 +512,7 @@ void AVAWorld::PlaySoundLeech(USoundBase* Sound, AVAEmitter* Emitter, float Volu
 	}
 
 	audioWorld->WarnIfLooping(TEXT("PlaySoundLeech"), Sound, TEXT("a VASourceLeech"));
-	audioWorld->StartLeechOneShot(Sound, Emitter, VolumeMultiplier, PitchMultiplier, AttenuationSettings, MaxPlayDelay);
+	audioWorld->StartLeechOneShot(Sound, Emitter, VolumeMultiplier, PitchMultiplier, AttenuationSettings);
 }
 
 // Mirrors FAudioDevice::CreateComponent, which doesn't create short sounds that start out of range of every listener
@@ -578,9 +615,13 @@ void AVAWorld::StartRelativeOneShot(USoundBase* sound, float volumeMultiplier, f
 	oneShot.Playback.Play(component);
 }
 
-void AVAWorld::StartLeechOneShot(USoundBase* sound, AVAEmitter* emitter, float volumeMultiplier, float pitchMultiplier, USoundAttenuation* attenuation, float maxPlayDelay)
+void AVAWorld::StartLeechOneShot(USoundBase* sound, AVAEmitter* emitter, float volumeMultiplier, float pitchMultiplier, USoundAttenuation* attenuation)
 {
 	const FVector location = emitter->GetActorLocation();
+
+	if (!VACanStartOneShot(this, TEXT("PlaySoundLeech"), sound, location, emitter->bClampPosition, false))
+		return;
+
 	UAudioComponent* component = AcquireOneShotComponent(sound, attenuation, &location, emitter->GetRootComponent());
 
 	if (!component)
@@ -589,11 +630,15 @@ void AVAWorld::StartLeechOneShot(USoundBase* sound, AVAEmitter* emitter, float v
 	FVAOneShot& oneShot = AddOneShot(volumeMultiplier, pitchMultiplier);
 	oneShot.Emitter = emitter;
 
-	WaitToPlayOneShot(oneShot, component, maxPlayDelay);
+	WaitToPlayOneShot(oneShot, component);
 }
 
 void AVAWorld::StartLocationOneShot(USoundBase* sound, const FVector& location, const FVAOneShotSettings& settings)
 {
+	// Raytraced with AVASource's defaults, so its bClampPosition too
+	if (!VACanStartOneShot(this, TEXT("PlaySoundAtLocation"), sound, location, GetDefault<AVASource>()->bClampPosition, false))
+		return;
+
 	const FString name = FString::Printf(TEXT("PlaySoundAtLocation '%s'"), *sound->GetName());
 
 	VAEmitter* handle = VACreateEmitterHandle();
@@ -611,21 +656,20 @@ void AVAWorld::StartLocationOneShot(USoundBase* sound, const FVector& location, 
 		return;
 	}
 
-	// Otherwise WirePendingTargets adds it when a listener begins play
-	if (MainListener)
-		MainListener->AddTarget(handle, name);
+	MainListener->AddTarget(handle, name);
 
 	// Raytracing doesn't need the sound, so with no audio device (e.g. -nosound) it's raytraced but not heard
 	UAudioComponent* component = AcquireOneShotComponent(sound, settings.AttenuationSettings, &location);
 
 	FVAOneShot& oneShot = AddOneShot(settings.VolumeMultiplier, settings.PitchMultiplier);
 	oneShot.Handle = handle;
+	oneShot.Location = location;
 	oneShot.Name = name;
 	oneShot.bAffectsGroupedEAX = settings.bAffectsGroupedEAX;
 	oneShot.bUseListenerReverb = settings.bUseListenerReverb;
 	oneShot.bRaytraceOnce = settings.bRaytraceOnce;
 
-	WaitToPlayOneShot(oneShot, component, settings.MaxPlayDelay);
+	WaitToPlayOneShot(oneShot, component);
 }
 
 FVAOneShot& AVAWorld::AddOneShot(float volumeMultiplier, float pitchMultiplier)
@@ -638,11 +682,10 @@ FVAOneShot& AVAWorld::AddOneShot(float volumeMultiplier, float pitchMultiplier)
 	return oneShot;
 }
 
-void AVAWorld::WaitToPlayOneShot(FVAOneShot& oneShot, UAudioComponent* component, float maxPlayDelay)
+void AVAWorld::WaitToPlayOneShot(FVAOneShot& oneShot, UAudioComponent* component)
 {
 	oneShot.bPending = true;
 	oneShot.PendingComponent = component;
-	oneShot.PlayDeadline = maxPlayDelay > 0.0f ? GetWorld()->GetTimeSeconds() + maxPlayDelay : 0.0;
 
 	// Waits for the muffling and reverb, so the sound never starts unmuffled or without reverb
 	if (IsOneShotReady(oneShot))
@@ -659,6 +702,16 @@ bool AVAWorld::IsOneShotReady(const FVAOneShot& oneShot) const
 
 	AVAEmitter* emitter = oneShot.Emitter.Get();
 	return emitter && emitter->IsReadyToPlay();
+}
+
+bool AVAWorld::IsOneShotSilencedByBounds(const FVAOneShot& oneShot) const
+{
+	if (oneShot.Handle)
+		return IsSilencedByBounds(oneShot.Location, GetDefault<AVASource>()->bClampPosition);
+
+	// A leech whose emitter was destroyed finishes where it was
+	const AVAEmitter* emitter = oneShot.Emitter.Get();
+	return emitter && emitter->IsSilencedByBounds();
 }
 
 void AVAWorld::ApplyOneShotResults(FVAOneShot& oneShot)
@@ -679,13 +732,17 @@ void AVAWorld::ApplyOneShotResults(FVAOneShot& oneShot)
 	}
 }
 
+// Its results stay once suspended, and its reverb tail keeps feeding grouped EAX. One playing outside the bounds has no EAX yet, so it waits to be raytraced inside first
+static void VASuspendIfRaytracedOnce(const FVAOneShot& oneShot, const AVAWorld* world)
+{
+	if (oneShot.Handle && oneShot.bRaytraceOnce && !vaEmitterGetSuspended(oneShot.Handle) && VAHasHandleResults(oneShot.Handle, world))
+		vaEmitterSetSuspended(oneShot.Handle, true);
+}
+
 void AVAWorld::PlayPendingOneShot(FVAOneShot& oneShot)
 {
 	oneShot.bPending = false;
-
-	// Its results stay once suspended, and its reverb tail keeps feeding grouped EAX
-	if (oneShot.Handle && oneShot.bRaytraceOnce)
-		vaEmitterSetSuspended(oneShot.Handle, true);
+	VASuspendIfRaytracedOnce(oneShot, this);
 
 	if (UAudioComponent* component = oneShot.PendingComponent)
 	{
@@ -713,11 +770,17 @@ void AVAWorld::RemoveOneShot(int32 index)
 
 void AVAWorld::UpdateOneShots()
 {
-	const double now = GetWorld()->GetTimeSeconds();
-
 	for (int32 i = OneShots.Num() - 1; i >= 0; i--)
 	{
 		FVAOneShot& oneShot = OneShots[i];
+
+		// It left the bounds or they moved away from it, so it's cut off, or never plays if it's pending
+		if (IsOneShotSilencedByBounds(oneShot))
+		{
+			RemoveOneShot(i);
+			continue;
+		}
+
 		ApplyOneShotResults(oneShot);
 
 		if (oneShot.bPending)
@@ -731,15 +794,18 @@ void AVAWorld::UpdateOneShots()
 
 			if (!IsOneShotReady(oneShot))
 			{
-				const bool lostEmitter = !oneShot.Handle && !oneShot.Emitter.IsValid();
-
-				if (lostEmitter || (oneShot.PlayDeadline > 0.0 && now > oneShot.PlayDeadline))
+				// The last listener left, or the leeched emitter was destroyed, before it was ready. Like a new one-shot, it doesn't wait for a listener
+				if (!MainListener || (!oneShot.Handle && !oneShot.Emitter.IsValid()))
 					RemoveOneShot(i);
 
 				continue;
 			}
 
 			PlayPendingOneShot(oneShot);
+		}
+		else
+		{
+			VASuspendIfRaytracedOnce(oneShot, this);
 		}
 
 		// With no audio device nothing plays, so it's released as soon as it's ready
