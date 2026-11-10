@@ -2,12 +2,54 @@
 #include "Components/AudioComponent.h"
 
 #include "VASubmixSend.h"
+#include "VALog.h"
+
+void VACancelPendingPlay(bool& bAutoPlayPending, bool& bPlayAttempted)
+{
+	if (!bAutoPlayPending)
+		return;
+
+	bAutoPlayPending = false;
+	bPlayAttempted = true;
+}
+
+bool VAApplyBoundsRules(FVASourcePlayback& Playback, bool bSilenced, bool bLooping, bool& bAutoPlayPending, bool& bPlayAttempted)
+{
+	if (!bSilenced)
+		return false;
+
+	if (!bLooping)
+	{
+		VACancelPendingPlay(bAutoPlayPending, bPlayAttempted);
+	}
+	else if (Playback.IsPlaying())
+	{
+		bAutoPlayPending = true;
+		bPlayAttempted = false;
+	}
+
+	Playback.Stop();
+	return true;
+}
+
+bool VAApplyBoundsRulesOnPlay(const UObject* Source, FVASourcePlayback& Playback, bool bSilenced, bool bLooping, bool& bAutoPlayPending, bool& bPlayAttempted)
+{
+	if (!bSilenced)
+		return false;
+
+	if (!bLooping)
+		VAReport(ELogVerbosity::Warning, Source, VA_CALL_SITE_KEY(Source), TEXT("Play() was called outside the VAWorld's bounds, so nothing played. A sound that doesn't loop isn't started outside them, and doesn't play once back inside"));
+
+	bAutoPlayPending = true;
+	return VAApplyBoundsRules(Playback, bSilenced, bLooping, bAutoPlayPending, bPlayAttempted);
+}
 
 void FVASourcePlayback::Play(UAudioComponent* Component)
 {
-	Component->bAutoDestroy = true;
-	Component->SetLowPassFilterEnabled(true);
-	Component->SetLowPassFilterFrequency(Filter.GetCutoffFrequency());
+	Component->bAutoDestroy = bAutoDestroy;
+	// Set on the component, which Play() copies to the new active sound. SetLowPassFilter*() only reaches active sounds, so before Play() they did nothing
+	Component->bEnableLowPassFilter = true;
+	Component->LowPassFilterFrequency = Filter.GetCutoffFrequency();
 	Component->SetVolumeMultiplier(GetVolume());
 	Component->SetPitchMultiplier(PitchMultiplier);
 	Component->Play();
@@ -43,7 +85,7 @@ bool FVASourcePlayback::IsPlaying() const
 void FVASourcePlayback::RemoveFinished()
 {
 	// bAutoDestroy destroys a component once its sound finishes
-	Components.RemoveAll([](const TObjectPtr<UAudioComponent>& component) { return !IsValid(component) || !component->IsPlaying(); });
+	Components.RemoveAll([](UAudioComponent* component) { return !IsValid(component) || !component->IsPlaying(); });
 }
 
 void FVASourcePlayback::SetFilter(float GainLF, float GainHF)

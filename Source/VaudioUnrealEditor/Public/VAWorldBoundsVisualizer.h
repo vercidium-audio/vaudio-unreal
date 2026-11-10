@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ComponentVisualizer.h"
+#include "Misc/EngineVersionComparison.h"
 
 class AVAWorld;
 class UVAWorldBoundsComponent;
@@ -38,7 +39,10 @@ public:
 	virtual void EndEditing() override;
 	virtual bool GetWidgetLocation(const FEditorViewportClient* ViewportClient, FVector& OutLocation) const override;
 	virtual bool HandleInputDelta(FEditorViewportClient* ViewportClient, FViewport* Viewport, FVector& DeltaTranslate, FRotator& DeltaRotate, FVector& DeltaScale) override;
+	// 4.27's FComponentVisualizer doesn't have this, but its level viewport calls PostEditMove(true) on the selected actors when the drag ends
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	virtual void TrackingStopped(FEditorViewportClient* InViewportClient, bool bInDidMove) override;
+#endif
 	virtual UActorComponent* GetEditedComponent() const override;
 
 	// Selects a face's handle, as clicking it does

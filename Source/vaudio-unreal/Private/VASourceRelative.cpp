@@ -1,4 +1,5 @@
 #include "VASourceRelative.h"
+#include "VAEngineCompat.h"
 #include "VAListener.h"
 #include "VAWorld.h"
 
@@ -19,7 +20,7 @@ void AVASourceRelative::BeginPlay()
 
 	if (SourceSounds.Num() == 0)
 	{
-		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound"));
+		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound%s"), VANeverDestroyedSuffix(bAutoDestroy));
 		SetActorTickEnabled(false);
 		return;
 	}
@@ -28,7 +29,7 @@ void AVASourceRelative::BeginPlay()
 	{
 		if (!SourceSounds[i])
 		{
-			VA_WARN_NAMED(TEXT("Will not play as it has a null sound assigned to index %d"), i);
+			VA_WARN_NAMED(TEXT("Will not play as it has a null sound assigned to index %d%s"), i, VANeverDestroyedSuffix(bAutoDestroy));
 			SetActorTickEnabled(false);
 			return;
 		}
@@ -50,6 +51,13 @@ void AVASourceRelative::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	Playback.RemoveFinished();
+
+	if (bAutoDestroy && bPlayAttempted && !IsPlaying())
+	{
+		Destroy();
+		return;
+	}
+
 	UpdatePlayback();
 
 	if (bAutoPlayPending)
@@ -62,6 +70,7 @@ bool AVASourceRelative::Play()
 		return false;
 
 	bAutoPlayPending = false;
+	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update
 	UpdatePlayback();
@@ -99,20 +108,24 @@ void AVASourceRelative::UpdatePlayback()
 	Playback.SetPitchMultiplier(PitchMultiplier);
 
 	// Found every tick, as the VAWorld may begin play after this actor
-	AVAWorld* audioWorld = AVAWorld::Find(this);
+	ApplyListenerReverbSend(Playback, AVAWorld::Find(this), this, WarnedListener);
+}
+
+void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener)
+{
 	AVAListener* listener = audioWorld ? audioWorld->GetMainListener() : nullptr;
 
 	// Keep the current send while there's no current listener, e.g. while the listener is switching
 	if (!listener)
 		return;
 
-	if (!listener->ListenerReverbSubmix && WarnedListener != listener)
+	if (!listener->ListenerReverbSubmix && warnedListener.Get() != listener)
 	{
-		WarnedListener = listener;
-		VA_WARN_NAMED(TEXT("Will have no reverb as the listener '%s' has no ListenerReverbSubmix"), *listener->GetActorNameOrLabel());
+		warnedListener = listener;
+		VAReport(ELogVerbosity::Warning, reporter, VA_CALL_SITE_KEY(reporter), FString::Printf(TEXT("Will have no reverb as the listener '%s' has no ListenerReverbSubmix"), *VAActorName(listener)));
 	}
 
 	// Not muffled, so the send level isn't compensated
 	USoundSubmix* submix = listener->ListenerReverbSubmix;
-	Playback.SetReverbSend(submix, submix ? 1.0f : 0.0f);
+	playback.SetReverbSend(submix, submix ? 1.0f : 0.0f);
 }

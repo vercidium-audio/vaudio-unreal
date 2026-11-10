@@ -33,11 +33,14 @@ void FVAWorldBoundsVisualizer::MoveFace(AVAWorld* world, EVABoundsFace face, dou
 	const int32 axis = GetFaceAxis(face);
 	FVector size = world->BoundsSize;
 
+	// BoundsFollow Listener raises the minimum, which also stops a min face drag from moving the actor further than the face
+	const double minimum = world->ClampBoundsSize(FVector((float)MinimumBoundsSize))[axis];
+
 	world->Modify();
 
 	if (IsMinFace(face))
 	{
-		delta = FMath::Min(delta, size[axis] - MinimumBoundsSize);
+		delta = FMath::Min(delta, size[axis] - minimum);
 		size[axis] -= delta;
 
 		FVector location = world->GetActorLocation();
@@ -48,7 +51,7 @@ void FVAWorldBoundsVisualizer::MoveFace(AVAWorld* world, EVABoundsFace face, dou
 	}
 	else
 	{
-		size[axis] = FMath::Max(size[axis] + delta, MinimumBoundsSize);
+		size[axis] = FMath::Max(size[axis] + delta, minimum);
 	}
 
 	world->SetBoundsSize(size);
@@ -149,6 +152,7 @@ bool FVAWorldBoundsVisualizer::HandleInputDelta(FEditorViewportClient* ViewportC
 	return true;
 }
 
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 void FVAWorldBoundsVisualizer::TrackingStopped(FEditorViewportClient* InViewportClient, bool bInDidMove)
 {
 	if (!bInDidMove)
@@ -157,3 +161,4 @@ void FVAWorldBoundsVisualizer::TrackingStopped(FEditorViewportClient* InViewport
 	if (AVAWorld* world = GetEditedWorld())
 		world->PostEditMove(true);
 }
+#endif

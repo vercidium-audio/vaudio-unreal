@@ -14,6 +14,7 @@ extern "C" {
 }
 
 #include "VAConstants.h"
+#include "VAEngineCompat.h"
 #include "VALog.h"
 
 #if WITH_EDITOR
@@ -23,6 +24,9 @@ extern "C" {
 #include "Materials/MaterialExpressionPerInstanceCustomData.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+#include "Materials/MaterialExpressionVertexInterpolator.h"
+#endif
 #endif
 
 enum EVAVisualisationMaterialWarningOffset : uint32
@@ -211,32 +215,32 @@ UStaticMesh* UVAVisualisation::BuildDiamondMesh()
 	FStaticMeshAttributes attributes(meshDescription);
 	attributes.Register();
 
-	TVertexAttributesRef<FVector3f> vertexPositions = attributes.GetVertexPositions();
-	TVertexInstanceAttributesRef<FVector3f> vertexNormals = attributes.GetVertexInstanceNormals();
-	TVertexInstanceAttributesRef<FVector2f> vertexUVs = attributes.GetVertexInstanceUVs();
+	TVertexAttributesRef<FVAVector3f> vertexPositions = attributes.GetVertexPositions();
+	TVertexInstanceAttributesRef<FVAVector3f> vertexNormals = attributes.GetVertexInstanceNormals();
+	TVertexInstanceAttributesRef<FVAVector2f> vertexUVs = attributes.GetVertexInstanceUVs();
 
 	FVertexID topVertex = meshDescription.CreateVertex();
 	FVertexID rightVertex = meshDescription.CreateVertex();
 	FVertexID bottomVertex = meshDescription.CreateVertex();
 	FVertexID leftVertex = meshDescription.CreateVertex();
 
-	vertexPositions[topVertex] = FVector3f(0.0f, 1.0f, 0.0f);
-	vertexPositions[rightVertex] = FVector3f(1.0f, 0.0f, 0.0f);
-	vertexPositions[bottomVertex] = FVector3f(0.0f, -1.0f, 0.0f);
-	vertexPositions[leftVertex] = FVector3f(-1.0f, 0.0f, 0.0f);
+	vertexPositions[topVertex] = FVAVector3f(0.0f, 1.0f, 0.0f);
+	vertexPositions[rightVertex] = FVAVector3f(1.0f, 0.0f, 0.0f);
+	vertexPositions[bottomVertex] = FVAVector3f(0.0f, -1.0f, 0.0f);
+	vertexPositions[leftVertex] = FVAVector3f(-1.0f, 0.0f, 0.0f);
 
 	FPolygonGroupID polygonGroup = meshDescription.CreatePolygonGroup();
 	attributes.GetPolygonGroupMaterialSlotNames()[polygonGroup] = FName("Diamond");
 
-	auto addTriangle = [&](FVertexID first, FVertexID second, FVertexID third, const FVector2f& firstUV, const FVector2f& secondUV, const FVector2f& thirdUV)
+	auto addTriangle = [&](FVertexID first, FVertexID second, FVertexID third, const FVAVector2f& firstUV, const FVAVector2f& secondUV, const FVAVector2f& thirdUV)
 	{
 		FVertexInstanceID firstInstance = meshDescription.CreateVertexInstance(first);
 		FVertexInstanceID secondInstance = meshDescription.CreateVertexInstance(second);
 		FVertexInstanceID thirdInstance = meshDescription.CreateVertexInstance(third);
 
-		vertexNormals[firstInstance] = FVector3f(0.0f, 0.0f, 1.0f);
-		vertexNormals[secondInstance] = FVector3f(0.0f, 0.0f, 1.0f);
-		vertexNormals[thirdInstance] = FVector3f(0.0f, 0.0f, 1.0f);
+		vertexNormals[firstInstance] = FVAVector3f(0.0f, 0.0f, 1.0f);
+		vertexNormals[secondInstance] = FVAVector3f(0.0f, 0.0f, 1.0f);
+		vertexNormals[thirdInstance] = FVAVector3f(0.0f, 0.0f, 1.0f);
 
 		vertexUVs[firstInstance] = firstUV;
 		vertexUVs[secondInstance] = secondUV;
@@ -245,14 +249,16 @@ UStaticMesh* UVAVisualisation::BuildDiamondMesh()
 		meshDescription.CreateTriangle(polygonGroup, { firstInstance, secondInstance, thirdInstance });
 	};
 
-	addTriangle(topVertex, rightVertex, bottomVertex, FVector2f(0.5f, 0.0f), FVector2f(1.0f, 0.5f), FVector2f(0.5f, 1.0f));
-	addTriangle(topVertex, bottomVertex, leftVertex, FVector2f(0.5f, 0.0f), FVector2f(0.5f, 1.0f), FVector2f(0.0f, 0.5f));
+	addTriangle(topVertex, rightVertex, bottomVertex, FVAVector2f(0.5f, 0.0f), FVAVector2f(1.0f, 0.5f), FVAVector2f(0.5f, 1.0f));
+	addTriangle(topVertex, bottomVertex, leftVertex, FVAVector2f(0.5f, 0.0f), FVAVector2f(0.5f, 1.0f), FVAVector2f(0.0f, 0.5f));
 
 	UStaticMesh* staticMesh = NewObject<UStaticMesh>(GetTransientPackage(), NAME_None, RF_Transient);
 	staticMesh->SetStaticMaterials({ FStaticMaterial() });
 
 	UStaticMesh::FBuildMeshDescriptionsParams buildParams;
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	buildParams.bFastBuild = true;
+#endif
 
 	TArray<const FMeshDescription*> meshDescriptionPtrs{ &meshDescription };
 	staticMesh->BuildFromMeshDescriptions(meshDescriptionPtrs, buildParams);
@@ -287,7 +293,7 @@ void UVAVisualisation::CreateInstancedMesh()
 	FTransform identity = FTransform::Identity;
 
 	for (int32 i = 0; i < requiredCount; i++)
-		InstancedMesh->AddInstance(identity, /*bWorldSpace=*/false);
+		InstancedMesh->AddInstance(identity);
 
 	NextInstance = 0;
 }
@@ -339,7 +345,7 @@ void UVAVisualisation::OnVisualisationData(VAVisualisationData* data, int32 coun
 		FTransform identity = FTransform::Identity;
 
 		for (int32 i = capacity; i < needed; i++)
-			InstancedMesh->AddInstance(identity, /*bWorldSpace=*/false);
+			InstancedMesh->AddInstance(identity);
 
 		capacity = needed;
 		NextInstance = 0;
@@ -395,9 +401,13 @@ void UVAVisualisation::GenerateFadeNodes()
 
 	// Remove only nodes this function created on a previous press, leaving anything else the user
 	// added by hand alone.
-	TArray<TObjectPtr<UMaterialExpression>> existingExpressions(material->GetExpressions());
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	TArray<UMaterialExpression*> existingExpressions(material->Expressions);
+#else
+	TArray<UMaterialExpression*> existingExpressions(material->GetExpressions());
+#endif
 
-	for (const TObjectPtr<UMaterialExpression>& expression : existingExpressions)
+	for (UMaterialExpression* expression : existingExpressions)
 		if (expression && expression->Desc == VAGeneratedNodeTag)
 			UMaterialEditingLibrary::DeleteMaterialExpression(material, expression);
 
@@ -415,7 +425,13 @@ void UVAVisualisation::GenerateFadeNodes()
 		return expression;
 	};
 
+	// 4.27's engine doesn't export this class, so its StaticClass can't link. Find it by name instead
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	UClass* spawnTimeClass = FindObjectChecked<UClass>(ANY_PACKAGE, TEXT("MaterialExpressionPerInstanceCustomData"));
+	UMaterialExpressionPerInstanceCustomData* spawnTimeExpression = static_cast<UMaterialExpressionPerInstanceCustomData*>(createExpression(spawnTimeClass, -600, 0));
+#else
 	UMaterialExpressionPerInstanceCustomData* spawnTimeExpression = Cast<UMaterialExpressionPerInstanceCustomData>(createExpression(UMaterialExpressionPerInstanceCustomData::StaticClass(), -600, 0));
+#endif
 	spawnTimeExpression->DataIndex = 0;
 
 	UMaterialExpressionScalarParameter* currentTimeExpression = Cast<UMaterialExpressionScalarParameter>(createExpression(UMaterialExpressionScalarParameter::StaticClass(), -600, 100));
@@ -451,9 +467,18 @@ void UVAVisualisation::GenerateFadeNodes()
 	fadeExpression->Inputs[3].InputName = TEXT("FadeOutMs");
 	fadeExpression->Inputs[4].InputName = TEXT("DurationMs");
 	fadeExpression->Inputs[5].InputName = TEXT("MaxOpacity");
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	fadeExpression->RebuildOutputs(); // populates Outputs - CreateMaterialExpression doesn't call PostEditChangeProperty, so this never runs implicitly
+#endif // on 4.27 it isn't exported, but the UMaterialExpression constructor already adds the one unnamed output it would build
 
+	// 4.27 only compiles per-instance custom data in the vertex shader, so it reaches the pixel shader's opacity through an interpolator
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	UMaterialExpression* spawnTimeInterpolator = createExpression(UMaterialExpressionVertexInterpolator::StaticClass(), -400, 0);
+	UMaterialEditingLibrary::ConnectMaterialExpressions(spawnTimeExpression, TEXT(""), spawnTimeInterpolator, TEXT("VS"));
+	UMaterialEditingLibrary::ConnectMaterialExpressions(spawnTimeInterpolator, TEXT("PS"), fadeExpression, TEXT("SpawnTime"));
+#else
 	UMaterialEditingLibrary::ConnectMaterialExpressions(spawnTimeExpression, TEXT(""), fadeExpression, TEXT("SpawnTime"));
+#endif
 	UMaterialEditingLibrary::ConnectMaterialExpressions(currentTimeExpression, TEXT(""), fadeExpression, TEXT("CurrentTime"));
 	UMaterialEditingLibrary::ConnectMaterialExpressions(fadeInExpression, TEXT(""), fadeExpression, TEXT("FadeInMs"));
 	UMaterialEditingLibrary::ConnectMaterialExpressions(fadeOutExpression, TEXT(""), fadeExpression, TEXT("FadeOutMs"));

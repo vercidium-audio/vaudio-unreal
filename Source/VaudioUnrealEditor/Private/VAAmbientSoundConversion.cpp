@@ -4,6 +4,7 @@
 #include "Engine/Selection.h"
 #include "Engine/World.h"
 #include "Framework/Notifications/NotificationManager.h"
+#include "Misc/EngineVersionComparison.h"
 #include "ScopedTransaction.h"
 #include "Sound/AmbientSound.h"
 #include "Sound/SoundBase.h"
@@ -36,6 +37,9 @@ AVASource* VAAmbientSoundConversion::Convert(AAmbientSound* ambientSound, TArray
 	if (!source)
 		return nullptr;
 
+	// An Ambient Sound outlives its sound, and a level may play it again
+	source->bAutoDestroy = false;
+
 	if (UAudioComponent* component = ambientSound->GetAudioComponent())
 	{
 		source->SourceSound = component->Sound;
@@ -52,8 +56,13 @@ AVASource* VAAmbientSoundConversion::Convert(AAmbientSound* ambientSound, TArray
 		if (!component->bAllowSpatialization)
 			outWarnings.Add(FString::Printf(TEXT("'%s' isn't spatialised. A VASource always is, use a VASourceRelative or VASourceAmbient for a 2D sound"), *label));
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+		if (component->bEnableLowPassFilter)
+			outWarnings.Add(FString::Printf(TEXT("'%s' has a low pass filter on its audio component. A VASource's low pass filter is its muffling, so it wasn't kept"), *label));
+#else
 		if (component->bEnableLowPassFilter || component->bEnableHighPassFilter)
 			outWarnings.Add(FString::Printf(TEXT("'%s' has a low or high pass filter on its audio component. A VASource's low pass filter is its muffling, so these weren't kept"), *label));
+#endif
 	}
 
 	if (!source->SourceSound)

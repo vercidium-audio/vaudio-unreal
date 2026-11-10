@@ -1,11 +1,13 @@
 #pragma once
 
+#include "VAEngineCompat.h"
+
 extern "C" {
 #include "vaudio.h"
 }
 
-// The plugin only supports the double precision SDK, so FVector's doubles go into the SDK without narrowing
-static_assert(VA_FLOAT_SIZE == 8, "vaudio-unreal needs the double precision Vercidium Audio SDK (3d/native-double), but Source/ThirdParty/vaudio/include/vaudio.h is the single precision one");
+// VAFloat matches FVector's precision on each engine, so positions go into the SDK without narrowing
+static_assert(VA_FLOAT_SIZE == VA_EXPECTED_FLOAT_SIZE, "vaudio-unreal needs the " VA_SDK_PRECISION_NAME " precision Vercidium Audio SDK (" VA_SDK_FOLDER_NAME ") on this engine version, but Source/ThirdParty/vaudio/include/vaudio.h is the other precision");
 
 static inline VAVector FVectorToVAVector(const FVector& vector)
 {
@@ -90,6 +92,29 @@ static inline void vaPrismPrimitiveSetTransformUnreal(VAPrismPrimitive* prism, c
 {
 	VAMatrix matrix = MakeRotTransMatrix(transform);
 	vaPrismPrimitiveSetTransform(prism, &matrix);
+}
+
+// A plane's normal is its local Y, with its width along local X and its height along local Z. Cycling those axes puts the normal on the box's flat axis, and is a rotation rather than a mirror, so it can go in the transform. Scale goes in the plane's width and height instead
+static inline void vaPlanePrimitiveSetFromBoxUnreal(VAPlanePrimitive* plane, const FVector& boxSize, const FVector& scale, const FTransform& transform)
+{
+	int32 normalAxis = boxSize.X <= boxSize.Y && boxSize.X <= boxSize.Z ? 0 : (boxSize.Y <= boxSize.Z ? 1 : 2);
+	int32 heightAxis = (normalAxis + 1) % 3;
+	int32 widthAxis = (normalAxis + 2) % 3;
+
+	FVector size = boxSize * scale;
+	vaPlanePrimitiveSetWidth(plane, (VAFloat)size[widthAxis]);
+	vaPlanePrimitiveSetHeight(plane, (VAFloat)size[heightAxis]);
+
+	VAMatrix axes = vaMatrixCreate(
+		widthAxis == 0, widthAxis == 1, widthAxis == 2, 0,
+		normalAxis == 0, normalAxis == 1, normalAxis == 2, 0,
+		heightAxis == 0, heightAxis == 1, heightAxis == 2, 0,
+		0, 0, 0, 1
+	);
+
+	VAMatrix rotTrans = MakeRotTransMatrix(transform);
+	VAMatrix matrix = vaMatrixMultiply(&axes, &rotTrans);
+	vaPlanePrimitiveSetTransform(plane, &matrix);
 }
 
 // A heightmap is Y-up with its grid along local X and Z. Swapping the axes around (local X to Unreal Y, Y to Z, Z to X) stands it up in Unreal's Z-up space, and is a rotation rather than a mirror, so it can go in the transform. Scale goes in the heightmap's own scale instead

@@ -1,6 +1,7 @@
 #include "VAEditorStyle.h"
 #include "Brushes/SlateImageBrush.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Misc/Paths.h"
 #include "Styling/SlateStyle.h"
 #include "Styling/SlateStyleRegistry.h"
@@ -11,6 +12,16 @@
 #include "VAWorld.h"
 
 static TSharedPtr<FSlateStyleSet> StyleSet;
+
+// 4.27 has no SVG brushes, so it uses PNGs rendered from VALogo.svg. They're not in Icons, as every PNG in there is imported as a billboard sprite
+static FSlateBrush* CreateLogoBrush(int32 size)
+{
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	return new FSlateImageBrush(StyleSet->RootToContentDir(FString::Printf(TEXT("VALogo%d"), size), TEXT(".png")), FVector2D(size, size));
+#else
+	return new FSlateVectorImageBrush(StyleSet->RootToContentDir(TEXT("Icons/VALogo"), TEXT(".svg")), FVector2D(size, size));
+#endif
+}
 
 void VAEditorStyle::Register()
 {
@@ -32,8 +43,8 @@ void VAEditorStyle::Register()
 
 	for (const UClass* type : classes)
 	{
-		StyleSet->Set(*(TEXT("ClassIcon.") + type->GetName()), new FSlateVectorImageBrush(StyleSet->RootToContentDir(TEXT("Icons/VALogo"), TEXT(".svg")), FVector2D(16.0, 16.0)));
-		StyleSet->Set(*(TEXT("ClassThumbnail.") + type->GetName()), new FSlateVectorImageBrush(StyleSet->RootToContentDir(TEXT("Icons/VALogo"), TEXT(".svg")), FVector2D(64.0, 64.0)));
+		StyleSet->Set(*(TEXT("ClassIcon.") + type->GetName()), CreateLogoBrush(16));
+		StyleSet->Set(*(TEXT("ClassThumbnail.") + type->GetName()), CreateLogoBrush(64));
 	}
 
 	FSlateStyleRegistry::RegisterSlateStyle(*StyleSet);

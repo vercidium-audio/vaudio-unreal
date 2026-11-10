@@ -36,6 +36,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
 	bool bAutoPlay = false;
 
+	// Destroys this actor once it has played and nothing is playing any more. The reverb tail belongs to the leeched emitter, so it isn't waited for. Disable this to call Play() repeatedly. A source that never plays isn't destroyed
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ExposeOnSpawn = "true"))
+	bool bAutoDestroy = true;
+
 	// Multiplies the volume set by muffling. The reverb send is scaled by it too
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0", UIMax = "1.0"))
 	float VolumeMultiplier = 1.0f;
@@ -43,11 +47,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
 	float PitchMultiplier = 1.0f;
 
-	// Plays a random sound from SourceSounds. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, or if the sound couldn't be created (e.g. there's no audio device)
+	// Plays a random sound from SourceSounds. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while the leeched emitter's IsSilencedByBounds is true, like AVASource::Play (any looping SourceSound counts as looping)
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	bool Play();
 
-	// Stops every sound started by Play()
+	// Stops every sound started by Play(), and cancels a play that's waiting (bAutoPlay, or a loop waiting for the bounds), as if it had played
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	void Stop();
 
@@ -84,8 +88,16 @@ private:
 	// Cleared by the first Play(), whether bAutoPlay or the user called it
 	bool bAutoPlayPending = false;
 
+	// Set by the first Play() once this source is ready, whether or not a sound could be created
+	bool bPlayAttempted = false;
+
 	bool bWarnedNoEmitter = false;
+
+	bool bWarnedPlayBeforeReady = false;
 
 	// Pushes the multipliers, and the emitter's muffling and reverb send, to Playback
 	void UpdatePlayback(AVAEmitter* emitter);
+
+	// Whether any of SourceSounds loops, for the bounds rules
+	bool IsLooping() const;
 };

@@ -1,4 +1,5 @@
 #include "VAStreamSource.h"
+#include "VAEngineCompat.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
 #include "Sound/SoundWaveProcedural.h"
@@ -52,6 +53,39 @@ bool AVAStreamSource::OpenStream(EVAStreamFormat Format, int32 SampleRate)
 		return true;
 	}
 
+	// TickTypeSpecific starts the sound once it's inside the bounds
+	if (IsSilencedByBounds())
+	{
+		bStoppedByBounds = true;
+		return true;
+	}
+
+	return StartSound();
+}
+
+void AVAStreamSource::TickTypeSpecific(float DeltaTime)
+{
+	Super::TickTypeSpecific(DeltaTime);
+
+	// A stream is continuous, so like a loop it plays again once back inside the bounds, but not if it stopped for another reason
+	if (IsSilencedByBounds())
+	{
+		bStoppedByBounds |= IsPlaying();
+		Playback.Stop();
+		return;
+	}
+
+	if (!bStoppedByBounds)
+		return;
+
+	// Audio queued before it left is dropped
+	bStoppedByBounds = false;
+	StreamWave->ResetAudio();
+	StartSound();
+}
+
+bool AVAStreamSource::StartSound()
+{
 	UpdatePlayback();
 
 	FAudioDevice::FCreateComponentParams Params(GetWorld(), this);
@@ -61,7 +95,7 @@ bool AVAStreamSource::OpenStream(EVAStreamFormat Format, int32 SampleRate)
 
 	if (!component)
 	{
-		VA_WARN_NAMED(TEXT("OpenStream failed to create its sound. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
+		VA_WARN_NAMED(TEXT("The stream failed to create its sound, so it was closed. Check if this actor was correctly spawned, or if the Unreal World allows audio playback"));
 		CloseStream();
 		return false;
 	}
@@ -123,7 +157,11 @@ void AVAStreamSource::PushAudioData(const uint8* Data, int32 NumBytes)
 		return;
 	}
 
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	ConvertedSamples.SetNumUninitialized(NumBytes, false);
+#else
 	ConvertedSamples.SetNumUninitialized(NumBytes, EAllowShrinking::No);
+#endif
 
 	for (int32 i = 0; i < NumBytes; i++)
 		ConvertedSamples[i] = (int16)(((int32)Data[i] - 128) << 8);
@@ -140,6 +178,7 @@ void AVAStreamSource::CloseStream()
 	StreamWave = nullptr;
 	bStreamOpen = false;
 	bStreamReady = false;
+	bStoppedByBounds = false;
 }
 
 void AVAStreamSource::Stop()
@@ -154,11 +193,3 @@ void AVAStreamSource::DeinitializeTypeSpecific()
 	Super::DeinitializeTypeSpecific();
 }
 
-void AVAStreamSource::TickTypeSpecific(float DeltaTime)
-{
-	Super::TickTypeSpecific(DeltaTime);
-
-	// Latched here too, since a bRaytraceOnce emitter leaves the world at the end of this tick
-	if (bStreamOpen && !bStreamReady && IsReadyToPlay())
-		bStreamReady = true;
-}

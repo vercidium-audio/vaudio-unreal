@@ -1,9 +1,12 @@
 #include "VASource.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
+#include "Components/SceneComponent.h"
 #include "Engine/World.h"
+#include "Sound/SoundAttenuation.h"
 
 #include "VALog.h"
+#include "VAWorld.h"
 
 bool AVASource::ValidateConfig()
 {
@@ -11,7 +14,7 @@ bool AVASource::ValidateConfig()
 
 	if (!SourceSound)
 	{
-		VA_WARN_NAMED(TEXT("Will not play as it has no SourceSound assigned"));
+		VA_WARN_NAMED(TEXT("Will not play as it has no SourceSound assigned%s"), VANeverDestroyedSuffix(bAutoDestroy));
 		return false;
 	}
 
@@ -30,7 +33,7 @@ void AVASource::InitializeTypeSpecific()
 		VA_WARN_NAMED(TEXT("SourceSound '%s' must have Virtualization Mode = 'Play When Silent', else it may stop playing when fully muffled"), *SourceSound->GetName());
 	}
 
-	if (!SourceSound->AttenuationSettings)
+	if (!SourceSound->AttenuationSettings && !AttenuationSettings)
 	{
 		VA_WARN_NAMED(TEXT("SourceSound '%s' has no Sound Attenuation - it will not fall off with distance"), *SourceSound->GetName());
 	}
@@ -38,21 +41,99 @@ void AVASource::InitializeTypeSpecific()
 	bAutoPlayPending = bAutoPlay;
 }
 
+void AVASource::DeinitializeTypeSpecific()
+{
+	// A loop stopped by its VAWorld ending hasn't finished, so this source waits for the next VAWorld rather than being destroyed
+	if (IsPlaying() && SourceSound && SourceSound->IsLooping())
+		bPlayAttempted = false;
+
+	Super::DeinitializeTypeSpecific();
+}
+
+void AVASource::Tick(float DeltaTime)
+{
+	// Checked before the emitter's own tick, which returns early until this source has joined a VAWorld
+	if (bDestroyWithComponent)
+	{
+		USceneComponent* component = DestroyWithComponentTarget.Get();
+		AActor* owner = component ? component->GetOwner() : nullptr;
+
+		if (!IsValid(component) || component->IsBeingDestroyed() || (owner && owner->IsActorBeingDestroyed()))
+		{
+			Destroy();
+			return;
+		}
+	}
+
+	Super::Tick(DeltaTime);
+
+	// Finished sounds were dropped in TickTypeSpecific
+	if (!IsFinalRemovalStarted())
+	{
+		if (!bAutoDestroy || !bPlayAttempted || IsPlaying())
+			return;
+
+		BeginFinalRemoval();
+	}
+
+	// OnRemoved clears the handle during vaWorldUpdate, where this actor can't be destroyed, so it's checked here
+	if (!Emitter)
+		Destroy();
+}
+
 void AVASource::TickTypeSpecific(float DeltaTime)
 {
 	Super::TickTypeSpecific(DeltaTime);
+
+	// Like the actor-free one-shots, a spawned source doesn't wait for a listener. A user's source does
+	if (bSpawnedAsOneShot && bAutoPlayPending && !GetAudioWorld()->GetMainListener())
+	{
+		bAutoPlayPending = false;
+		bPlayAttempted = true;
+	}
+
+	if (VAApplyBoundsRules(Playback, IsSilencedByBounds(), SourceSound && SourceSound->IsLooping(), bAutoPlayPending, bPlayAttempted))
+		return;
 
 	if (bAutoPlayPending && IsReadyToPlay())
 		Play();
 }
 
+void AVASource::DestroyWithComponent(USceneComponent* component)
+{
+	bDestroyWithComponent = true;
+	DestroyWithComponentTarget = component;
+}
+
+void AVASource::Stop()
+{
+	VACancelPendingPlay(bAutoPlayPending, bPlayAttempted);
+	Super::Stop();
+}
+
 bool AVASource::Play()
 {
-	// Wait for the muffling and reverb results, so the sound never starts unmuffled or without reverb
-	if (!SourceSound || !IsReadyToPlay())
+	if (!SourceSound)
 		return false;
 
+	if (VAApplyBoundsRulesOnPlay(this, Playback, IsSilencedByBounds(), SourceSound->IsLooping(), bAutoPlayPending, bPlayAttempted))
+		return false;
+
+	// Wait for the muffling and reverb results, so the sound never starts unmuffled or without reverb
+	if (!IsReadyToPlay())
+	{
+		// bAutoPlay plays it once it's ready, and a source that has played or is leaving will still be destroyed
+		if (bAutoDestroy && !bAutoPlayPending && !bPlayAttempted && !IsFinalRemovalStarted() && !bWarnedPlayBeforeReady)
+		{
+			bWarnedPlayBeforeReady = true;
+			VA_WARN_PLAY_BEFORE_READY();
+		}
+
+		return false;
+	}
+
 	bAutoPlayPending = false;
+	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update
 	UpdatePlayback();
@@ -78,6 +159,9 @@ bool AVASource::Play()
 	component->SetWorldLocationAndRotation(GetActorLocation(), FRotator::ZeroRotator);
 	component->bAllowSpatialization = true;
 	component->bStopWhenOwnerDestroyed = false;
+
+	if (AttenuationSettings)
+		component->AttenuationSettings = AttenuationSettings;
 
 	Playback.Play(component);
 	return true;

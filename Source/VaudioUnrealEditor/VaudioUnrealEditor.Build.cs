@@ -8,5 +8,9 @@ public class VaudioUnrealEditor : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "VaudioUnreal" });
 		PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "AssetRegistry", "PropertyEditor", "Slate", "SlateCore", "ToolMenus", "Projects" });
+
+#if !UE_5_0_OR_LATER
+		CppStandard = CppStandardVersion.Cpp17;
+#endif
 	}
 }
