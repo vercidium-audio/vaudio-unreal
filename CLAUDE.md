@@ -1,25 +1,25 @@
 # Overview
 
-This is a public repo for the Vercidium Audio Unreal Engine plugin. It wraps the Vercidium Audio 3D C SDK (`vaudionative`) and plays sound through Unreal's own audio mixer: muffling is a low-pass filter and volume on each audio component, and reverb is `USubmixEffectReverbPreset`s on submixes. It doesn't use OpenAL.
+This is a public repo for the Vercidium Audio Unreal Engine plugin. It wraps the Vercidium Audio 3D C SDK (`vaudionative`), and plays sound through Unreal's own audio mixer rather than OpenAL: muffling is a low-pass filter and volume on each audio component, and reverb uses `USubmixEffectReverbPreset`.
 
-Windows (Win64), Linux (x86_64) and Mac (arm64 and x86_64, x86_64 only on 4.27) are supported, tested with Unreal Engine 4.27, 5.7 and 5.8. Use `UE_VERSION_OLDER_THAN` (from `Misc/EngineVersionComparison.h`) where the engine APIs differ, e.g. `VAEngineCompat.h`, so one source tree builds on all of them. See "Unreal Engine 4.27" below for the rules that keep it building there.
+Supported on Windows (Win64), Linux (x86_64) and Mac (x86_64 for 4.27, universal for 5.7 onwards), with Unreal Engine 4.27, 5.7 and 5.8. Use `UE_VERSION_OLDER_THAN` (e.g. in `VAEngineCompat.h`) where engine APIs differ, so one source tree builds on all of them, and see "Unreal Engine 4.27" below.
 
-The SDK is vendored in `Source/ThirdParty/vaudio/{include,lib/Win64,lib/Linux,lib/Mac}` and is git-ignored, never commit it. `Source/ThirdParty/vaudio/include/vaudio.h` is its public header. `VAudioUnreal.Build.cs` links the library for the target platform and stages it into `Binaries/ThirdParty/vaudio/<platform>`, along with the debug window and GLFW when the dev SDK is used. Linux packaged games stage it into `$(TargetOutputDir)` instead, beside the executable, as UBT makes the `PublicRuntimeLibraryPaths` rpath relative through the building machine's engine folder. A Blueprint-only project never builds, so nothing is staged: Windows' `LoadSdk` falls back to `Source/ThirdParty/vaudio/lib/Win64`, Mac's modules already have an `@loader_path` rpath to `Source/ThirdParty/vaudio/lib/Mac`, and the released Linux modules' RPATH is rewritten to `${ORIGIN}/../ThirdParty/vaudio/Linux:${ORIGIN}/../../Source/ThirdParty/vaudio/lib/Linux` after BuildPlugin. The Mac SDK and its debug window are both universal (arm64 and x86_64). The x86_64 debug window has been tested under Rosetta, not on Intel hardware. `FVaudioUnrealModule::StartupModule` loads it and checks its version and precision (`vaGetFloatSize()` against the header's `VA_FLOAT_SIZE`), and `FVaudioUnrealModule::IsSdkLoaded()` gates every entry point that doesn't go through a world.
+The SDK is vendored in `Source/ThirdParty/vaudio/{include,lib/Win64,lib/Linux,lib/Mac}` and is git-ignored, never commit it. `VAudioUnreal.Build.cs` links and stages it (plus the debug window and GLFW for the dev SDK). A Blueprint-only project never builds, so nothing is staged and each platform falls back to loading it from `Source/ThirdParty/vaudio/lib/<platform>`. `FVaudioUnrealModule::StartupModule` checks the SDK's version and precision, and `FVaudioUnrealModule::IsSdkLoaded()` gates every entry point that doesn't go through a world.
 
-The SDK's precision matches `FVector`'s on each engine: 5.x uses the double precision SDK (`3d/native-double`), where `VAFloat` is `double`, and 4.27 uses the single precision SDK (`3d/native`), where `VAFloat` is `float`. `VA_EXPECTED_FLOAT_SIZE`, `VA_SDK_PRECISION_NAME` and `VA_SDK_FOLDER_NAME` in `VAEngineCompat.h` pick it once per engine, and drive both guards: the `static_assert` on `VA_FLOAT_SIZE` in `VAConstants.h`, and `StartupModule`'s check that refuses a library of the other precision, which has the same name. Geometry (positions, sizes, radii, transforms, epsilon) is `VAFloat` in `vaudio.h`, so Unreal's positions pass straight through (`FVectorToVAVector`, `VAVectorToFVector`) with no narrowing, and never cast them with `(float)`. Acoustic values (gains, EAX, materials) are `float`.
+The SDK's precision matches `FVector`'s: 5.x uses the double precision SDK and 4.27 the single precision one, picked in `VAEngineCompat.h` and guarded by a `static_assert` in `VAConstants.h` and the `StartupModule` check. Geometry is `VAFloat` in `vaudio.h`, so Unreal positions pass straight through (`FVectorToVAVector`, `VAVectorToFVector`), never cast them with `(float)`. Acoustic values (gains, EAX, materials) are `float`.
 
-The Godot plugins are the reference implementation. `vaudio-godot-native-openal-3d` is the closest match (C++ wrapping the same C SDK), and this plugin's classes, properties and behaviour are named after and ported from it. When changing behaviour here, check how the Godot plugin does it, and keep the two in sync unless the difference is listed under "Intentional differences" below.
+The Godot plugins are the reference implementation. `vaudio-godot-native-openal-3d` is the closest match (C++ wrapping the same C SDK), and this plugin's classes, properties and behaviour are ported from it. Keep the two in sync unless the difference is listed under "Intentional differences" below.
 
 # Modules and layout
 
 - `Source/vaudio-unreal` is the `VaudioUnreal` runtime module. `Public/` has one header per class, `Private/` has the implementations plus internal helpers (`VALog.h`, `VASubmixSend.h`, `VAReverbConversion.h`, `VAMaterialConversion.h`, `VAConstants.h`, `VAEditorSprite.h`)
-- `Content/Icons` holds the billboard sprite textures (`T_<class>`, e.g. `T_VAListener`), the plugin's only content. `VASetEditorSprite` picks the one for the actor's class, or its nearest native parent's, in the constructor: on the emitters' root billboard, and on an editor-only child billboard for `AVAWorld` and `AVASourceLeech`. It's `WITH_EDITORONLY_DATA` and skipped in commandlets, like the engine's sprites. The textures are generated from `Resources/Icons/*.png`, so change the PNGs and re-import them rather than editing the textures in the editor
-- `Source/VaudioUnrealEditor` is the `VaudioUnrealEditor` editor module: the material asset factories, the "Convert to VASource" actor context menu action for `AAmbientSound` (`VAAmbientSoundConversion`, its `Convert` is exported for the tests), the `VAListener` and `VARaytracedSource` details customisations that hide inherited `AVAEmitter` properties a listener or a source doesn't use (they stay reachable from Blueprint and C++), the `VAWorld` details customisation that swaps the engine's Transform section for a Location-only one (rotation and scale are ignored, and the rotate/scale gizmos are already no-ops), `VAEditorStyle` (the `VaudioUnrealStyle` Slate style, `ClassIcon.<class>`/`ClassThumbnail.<class>` brushes of `Resources/Icons/VALogo.svg` for `AVAWorld`, `AVAEmitter`, `AVASourceLeech`, `AVASourceRelative` and `AVASourceAmbient`, which subclasses inherit through the icon finder's class walk), `FVAWorldBoundsVisualizer` (a component visualizer on `UVAWorldBoundsComponent`, registered once `GUnrealEd` exists, with a hit-proxy handle per face that drives the translate widget along that face's axis, editor worlds only, exported with `MoveFace`/`GetFaceCentre` for the tests), and `UVABakeCommandlet` (`-run=VABake`)
+- `Source/VaudioUnrealEditor` is the editor module: material asset factories, "Convert to VASource" for `AAmbientSound`, details customisations, `VAEditorStyle`, `FVAWorldBoundsVisualizer` and `UVABakeCommandlet` (`-run=VABake`)
+- `Content/Icons` holds the billboard sprite textures, generated from `Resources/Icons/*.png`. Change the PNGs and re-import them rather than editing the textures in the editor
 - `AVAWorld` is split across `VAWorld.cpp` (lifecycle, bounds, emitters, listeners, reverb, materials), `VAWorldPrimitives.cpp` (building geometry) and `VAWorldPrimitiveTracking.cpp` (transforms and removal)
 
 # Classes
 
-Reflected names (what the editor and Blueprint show) are exactly the Godot node names. There is no backward compatibility with the pre-1.11 `AVAudio*` names: no CoreRedirects, and none should be added.
+Reflected names are exactly the Godot node names. There is no backward compatibility with the pre-1.11 `AVAudio*` names, and no CoreRedirects should be added.
 
 | Class | Godot equivalent | What it is |
 |---|---|---|
@@ -46,67 +46,58 @@ Property names are the Godot names in PascalCase (`b` prefix for bools), in the 
 
 ## Finding the world
 
-Nothing holds a reference to the `AVAWorld`. `AVAWorld::BeginPlay` creates the SDK world and registers with the map's `UVAWorldSubsystem`, and everything else calls `AVAWorld::Find`. BeginPlay order isn't guaranteed, so an emitter or material component that begins play first binds `OnWorldRegistered` and joins when the world arrives. A second `AVAWorld` in the same map logs an error and is ignored.
+Nothing holds a reference to the `AVAWorld`. It registers with the map's `UVAWorldSubsystem` on BeginPlay, and everything else calls `AVAWorld::Find`. An emitter or material component that begins play first binds `OnWorldRegistered` and joins when the world arrives. A second `AVAWorld` in the same map logs an error and is ignored.
 
-When the `AVAWorld` ends play it broadcasts `OnWorldUnregistered` last, after `vaWorldDestroy`. Emitters and material components let go and wait again, so they join the next `AVAWorld`. Both keep the subsystem they bound to in `BoundSubsystem` and rebind when it changes: seamless travel moves a kept actor into the new map with no EndPlay or BeginPlay, which `AVAEmitter::PostRename` and `UVAMaterialComponent::OnRegister` detect.
+`OnWorldUnregistered` is broadcast last, after `vaWorldDestroy`, and emitters and material components wait for the next `AVAWorld`. Seamless travel moves kept actors with no EndPlay or BeginPlay, so both rebind through `BoundSubsystem` (`AVAEmitter::PostRename`, `UVAMaterialComponent::OnRegister`).
 
 ## Emitter lifecycle
 
-1. `TryInitializeEmitter` resolves the world, runs `ValidateConfig`, then `AttachToWorld`: `CreateEmitter` (handle + callbacks), `InitializeTypeSpecific` (pushes properties) and `AVAWorld::RegisterEmitter`. Properties are pushed before the handle joins the world
-2. Every non-listener emitter is automatically a target of the current listener, whichever of the two registers first. There is no target list to configure
-3. `LeaveWorld` (from EndPlay or `OnWorldUnregistered`) runs `DeinitializeTypeSpecific`, detaches and calls `ReleaseEmitter`, which calls `vaWorldRemoveEmitter`
-4. The SDK calls `OnRemoved` once its raytracing threads no longer read the emitter, which can be straight away, after the in-flight pass, or after the reverb tail (`VA_PENDING_REMOVAL`). The handle goes to `AVAWorld::DeferEmitterDestroy`, or to the static `OrphanedEmitters` map if the actor is already gone, and is destroyed after the next `vaWorldUpdate` returns. Never call `vaEmitterDestroy` before `OnRemoved` has fired, it returns `VA_ERROR_IN_USE`
-5. `AVAWorld::EndPlay` runs `vaWorldWait`, destroys primitives, `vaWorldDestroy`, then destroys every handle it still owns
+1. `TryInitializeEmitter` resolves the world, runs `ValidateConfig`, then `AttachToWorld`: `CreateEmitter`, `InitializeTypeSpecific` (pushes properties) and `AVAWorld::RegisterEmitter`. Properties are pushed before the handle joins the world
+2. Every non-listener emitter is automatically a target of the current listener. There is no target list to configure
+3. `LeaveWorld` runs `DeinitializeTypeSpecific`, detaches and calls `ReleaseEmitter`, which calls `vaWorldRemoveEmitter`
+4. The SDK calls `OnRemoved` once no raytracing thread reads the emitter (possibly after the reverb tail). The handle goes to `AVAWorld::DeferEmitterDestroy`, or `OrphanedEmitters` if the actor is gone, and is destroyed after the next `vaWorldUpdate`. Never call `vaEmitterDestroy` before `OnRemoved` has fired, it returns `VA_ERROR_IN_USE`
+5. `AVAWorld::EndPlay` runs `vaWorldWait`, destroys primitives, `vaWorldDestroy`, then every handle it still owns
 
-`bAutoDestroy` on `AVASource` takes a different path out of step 3: `BeginFinalRemoval` calls `vaWorldRemoveEmitter` but keeps the handle and user data, so `OnRemoved` reaches the actor and clears `Emitter`, and the source destroys itself on its next tick. If the actor ends play during that wait, `ReleaseEmitter` hands the handle to `OrphanedEmitters` without calling `vaWorldRemoveEmitter` again, as it would return `VA_NOT_FOUND` for a handle whose `OnRemoved` hasn't fired yet. `AVASourceLeech` and `AVASourceRelative` have no handle, so they're destroyed as soon as nothing is playing.
+`bAutoDestroy` on `AVASource` uses `BeginFinalRemoval`, which keeps the handle so `OnRemoved` reaches the actor, which then destroys itself. If it ends play during that wait, `ReleaseEmitter` must not call `vaWorldRemoveEmitter` again (it returns `VA_NOT_FOUND`).
 
-`bRaytraceOnce` doesn't leave the world. `AVAEmitter::Tick` calls `vaEmitterSetSuspended` on the first tick where `IsReadyToPlay()` is true, after subclasses have played. It must not suspend any earlier: an emitter suspended before its first results has no reverb to keep, even though `vaEmitterGetInitialising` goes false. The handle stays until the actor ends play or `BeginFinalRemoval`, so the reverb tail starts when the sound finishes, not when it starts.
+`bRaytraceOnce` and `SetSuspended(true)` are applied in `AVAEmitter::Tick` on the first tick where `IsReadyToPlay()` is true, never earlier, or the emitter has no reverb to keep. `SetSuspended(false)` also clears `bRaytraceOnce`.
 
-`SetSuspended(true)` goes through the same check in `Tick`, so it's safe to call before the first results or before joining a VAWorld, and it's reapplied if the emitter joins another VAWorld. `SetSuspended(false)` also clears `bRaytraceOnce`, or `Tick` would suspend the emitter again straight away.
+SDK callbacks run inside `vaWorldUpdate`. They only set flags or queue, and `AVAWorld::Tick` broadcasts the Blueprint delegates after `vaWorldUpdate` returns, so a handler can't re-enter the SDK.
 
-SDK callbacks run inside `vaWorldUpdate`. They only set flags or queue (`QueueRaytracingComplete`, `QueueRaytracedByListener`), and `AVAWorld::Tick` broadcasts the Blueprint delegates after `vaWorldUpdate` returns, so a handler that spawns or destroys emitters can't re-enter the SDK.
-
-A source only plays once `AVAEmitter::IsReadyToPlay()` is true: the listener has raytraced it and, if it casts reverb rays and affects grouped EAX, its own reverb result exists.
-
-The world bounds are final while `bEmittersOutsideTheWorldAreMuffled` is on. `AVAWorld::IsSilencedByBounds` (game thread, false for a clamped emitter or with the setting off) is the one check: `VACanStartOneShot` drops a one-shot that doesn't loop, `UpdateOneShots` removes a `Play*` one-shot, and `VAApplyBoundsRules`/`VAApplyBoundsRulesOnPlay` (`VASourcePlayback.h`) stop a source and re-arm autoplay for a loop (`Stop()` cancels it with `VACancelPendingPlay`). A stream only restarts if the bounds stopped it (`bStoppedByBounds`). `AVAWorld::IsOutsideBounds` is the same test without the setting: an emitter outside isn't raytraced, so `VAIsHandleReadyToPlay` doesn't wait for its own EAX there and `VAResolveReverbSend` gives it no send, so with the setting off it plays clear with no reverb. Suspension (`bRaytraceOnce`, one-shots) waits for `VAHasHandleResults` instead, which still needs that EAX, so a sound that started outside is raytraced inside before it's suspended. Don't use `vaEmitterGetWithinWorldBounds` for this, it's false until the emitter is first processed. A one-shot also needs a listener that has begun play, and never waits for one.
+With `bEmittersOutsideTheWorldAreMuffled` on, `AVAWorld::IsSilencedByBounds` is the one check for silencing sounds outside the world bounds (`VACanStartOneShot`, `UpdateOneShots`, `VAApplyBoundsRules`). `AVAWorld::IsOutsideBounds` is the same test without the setting. Don't use `vaEmitterGetWithinWorldBounds` for this, it's false until the emitter is first processed.
 
 ## Listeners
 
-Every listener in a world shares one SDK emitter, held by the current listener (`bCurrent`, `MakeCurrent()`). `AVAWorld::SetCurrentListener` hands the handle over, so targets stay connected. A listener that isn't current has no handle and doesn't tick. When the current listener leaves, the first remaining one is promoted.
-
-A `UVAVisualisation` on a listener follows the handle: `AVAListener::Deactivate` tears it down (callback and visualisation ray count cleared, so a listener without one doesn't inherit the rays) and `Activate` starts the new current listener's. The Godot plugin doesn't do this yet.
+Every listener in a world shares one SDK emitter, held by the current listener (`bCurrent`, `MakeCurrent()`). `AVAWorld::SetCurrentListener` hands the handle over, so targets stay connected. When the current listener leaves, the first remaining one is promoted. A `UVAVisualisation` on a listener follows the handle (the Godot plugin doesn't do this yet).
 
 ## Geometry
 
-`UVAMaterialComponent` is the registration point. On BeginPlay it calls `AVAWorld::AddMaterialPrimitives`, which adds its actor and every attached child actor that has no material component of its own, and on EndPlay it removes them. That covers spawned actors, streamed levels, World Partition cells and level instances with no extra code. A level instance's actors aren't attached to its `ALevelInstance` (they're in their own `ULevelStreamingLevelInstance` level), so a material component on the `ALevelInstance` reaches them through `ULevelInstanceSubsystem`: `AddActorTree` calls `AddLevelInstanceContents`, which adds the unattached actors of the instance's level once it's visible, and `AVAWorld::OnLevelAddedToWorld` (bound to `FWorldDelegates::LevelAddedToWorld`) adds them when it becomes visible later or reloads. `LevelInstanceSources` tracks those instances. Only add the contents of a visible level, as `AddBinding` doesn't dedupe and the level is registered as loaded before it's added to the world. `FindMaterialInChain` and `SyncPrimitive` also step from an unattached actor in an instance's level to its `ALevelInstance`.
+`UVAMaterialComponent` is the registration point: `AVAWorld::AddMaterialPrimitives` adds its actor and every attached child actor without its own material component, which covers spawned actors, streamed levels, World Partition cells and level instances. A level instance's actors aren't attached to its `ALevelInstance`, so they're reached through `ULevelInstanceSubsystem` (`AddLevelInstanceContents`, `OnLevelAddedToWorld`). Only add the contents of a visible level, as `AddBinding` doesn't dedupe.
 
-- Shape components and static mesh simple collision become SDK prisms, spheres and capsules. Convex hulls and render triangles become mesh primitives
-- A static mesh's simple collision box with no thickness, e.g. `/Engine/BasicShapes/Plane`'s 100 x 100 x 0 box, becomes an SDK plane (`EVAPrimitiveKind::PlaneFromMesh`), because a prism that thin leaks bouncing rays (measured LF 0.32, HF 0.10 through a sealing brick one with permeation off, against 0 for a plane or a 5 cm box) and has no length inside it for transmission. Planes always use flat transmission, so `bUseFlatTransmission` is ignored. The default gain formula clamps at `PermeationEnergyCap` (15%), and the built-in materials' flat transmission leaves far more energy than that, so permeation through a plane only muffles with a `VACustomMaterial` that has `FlatTransmissionLF`/`HF` near 1. `geometry_flat_box` covers it
-- `PropagateMode`, `MeshLOD`, `MaterialOverrides` and the world's `CollisionObjectTypes` decide what is added
-- Mesh primitives share triangle data through `AVAWorld::SharedMeshes`, keyed by static mesh, LOD and convex hull index
-- The SDK's mesh triangle test is one-sided. Unreal render triangles already have the winding it expects. Chaos convex hull `IndexData` is saved with the asset and its winding depends on what generated it, so each hull triangle is faced away from the hull's centre (`geometry_convex` covers a reversed hull)
-- Unreal has no global attach event, so a child attached after its parent began play, instances added to an ISM at runtime and a swapped mesh are only picked up by `AVAWorld::SyncPrimitive`
-- A landscape (`ALandscapeProxy`) adds one SDK heightmap primitive (`EVAPrimitiveKind::Heightmap`) per `ULandscapeHeightfieldCollisionComponent`, read from its Chaos heightfield (which exists in cooked builds), with holes from the visibility layer. Heightmaps are open surfaces that always use flat transmission, so `bUseFlatTransmission` is ignored (crossed from either side, one loss per crossing). The SDK heightmap is Y-up, so `vaHeightmapPrimitiveSetTransformUnreal` swaps the axes around (a rotation, not a mirror), and the component's scale goes into the heightmap's per-axis scale on each transform refresh (`LocalExtent` holds the unscaled sample spacing in X and Y, and 1 for heights). Components with a negative or zero scale on any axis are skipped with a warning. `AVAWorld::LandscapeLOD` splits each side into `ceil(quads / 2^N)` equal cells, as a component's 2^k - 1 quads never divide by a power of two, and samples the collision's own triangles between heightfield points, so heights are exact at LOD 0 and component edges still match. It replaced `MeshLOD` picking Unreal's simple collision heightfield, which only exists when `Simple Collision Mip Level` is set. `geometry_landscape` covers it, with a custom ground material
+- Shape components and simple collision become SDK prisms, spheres and capsules. Convex hulls and render triangles become mesh primitives, sharing triangle data through `AVAWorld::SharedMeshes`
+- A zero-thickness simple collision box (e.g. `/Engine/BasicShapes/Plane`) becomes an SDK plane, as a thin prism leaks bouncing rays. Planes always use flat transmission
+- The SDK's mesh triangle test is one-sided. Render triangles already have the right winding, but convex hull winding varies, so each hull triangle is faced away from the hull's centre
+- Unreal has no global attach event, so late-attached children, runtime ISM instances and swapped meshes are only picked up by `AVAWorld::SyncPrimitive`
+- Landscapes add one SDK heightmap per `ULandscapeHeightfieldCollisionComponent`, read from its collision heightfield, with `AVAWorld::LandscapeLOD`. Heightmaps always use flat transmission
 - Skeletal meshes, spline meshes and BSP brushes aren't supported
 
 ## Audio seams
 
-An FMOD backend is planned, so audio-mixer calls stay behind three seams, and raytracing, lifecycle and geometry code must not touch `UAudioComponent` or submixes directly:
-- `FVASourcePlayback` owns each source's audio components, filter, multipliers, dry toggle and reverb send
-- `VAFilterConversion.h` converts a muffling result to a volume and a cutoff frequency
-- `AVAWorld::OnReverbUpdated` and `AVAListener::ApplyListenerReverb` push reverb and pan, from the SDK's reverb-updated callback rather than every tick
+An FMOD backend is planned, so raytracing, lifecycle and geometry code must not touch `UAudioComponent` or submixes directly. Audio-mixer calls stay behind:
+- `FVASourcePlayback` (audio components, filter, multipliers, dry toggle, reverb send)
+- `VAFilterConversion.h` (muffling result to volume and cutoff)
+- `AVAWorld::OnReverbUpdated` and `AVAListener::ApplyListenerReverb` (reverb and pan, from the SDK's reverb-updated callback)
 
-Reverb sends always go through `VASetReverbSend` (`Private/VASubmixSend.h`), which sends pre distance attenuation. Never call `UAudioComponent::SetSubmixSend` directly, it defaults to post attenuation. Muffling uses the component low-pass filter, which only affects the dry path, and the send is compensated by gainLF so the reverb isn't muffled.
+Reverb sends always go through `VASetReverbSend` (pre distance attenuation), never `UAudioComponent::SetSubmixSend` (post attenuation). Submix effects always go through `VAAddSubmixEffect`, never `UAudioMixerBlueprintLibrary::AddSubmixEffect`, since in a cooked game the submix may not be registered yet at BeginPlay.
 
 # Intentional differences from the Godot plugins
 
 Don't "fix" these:
-- Unreal's audio mixer instead of OpenAL Soft, so there is no `ALManager`, distance model, master volume or EFX. Distance falloff comes from `USoundAttenuation`, and Sound Cues cover Godot's `streams`, `pitch_randomness`, `volume_randomness_db` and `playback_no_repeat`
-- Grouped EAX reverbs map to `GroupedEAXSubmixes`. `FSubmixEffectReverbSettings` has no echo, modulation, LF decay ratio or reference frequency fields, so those are dropped, and reverb can only be panned left/right
-- Reverb sends are pre distance attenuation, and clamped to [0, 1] by the engine
-- Submix effects are added with `VAAddSubmixEffect` (`VASubmixSend`), never `UAudioMixerBlueprintLibrary::AddSubmixEffect` directly. In a cooked game a loaded submix's registration is still queued on the audio thread at BeginPlay, so a direct add logs "Submix instance X not found" and the reverb is never added. The submix then passes the full-volume pre-attenuation send straight through, so sources sound unattenuated at any distance (PIE is fine, as the editor registers submixes up front). The helper flushes audio commands first, and only registers the submix itself if it's still missing, since registering an already-registered submix re-initialises it and clears runtime-added effects
+- Unreal's audio mixer instead of OpenAL Soft, so no `ALManager`, distance model, master volume or EFX. Distance falloff comes from `USoundAttenuation`, and Sound Cues cover Godot's `streams`, `pitch_randomness`, `volume_randomness_db` and `playback_no_repeat`
+- Grouped EAX reverbs map to `GroupedEAXSubmixes`. `FSubmixEffectReverbSettings` has no echo, modulation, LF decay ratio or reference frequency, so those are dropped, and reverb can only be panned left/right
+- Reverb sends are pre distance attenuation, clamped to [0, 1] by the engine
 - Sounds must use the "Play When Silent" virtualization mode, or a fully muffled sound stops
-- `BakeGeometry` and the bake commandlet exist because cooked builds drop CPU mesh data (checked in a packaged build: the cooked `/Engine/BasicShapes/Cube` had no CPU indices). The material component used to set `bAllowCPUAccess` on its actor's meshes in `PostLoad`/`OnRegister`, but that only changed them in memory (so it didn't survive cooking) and dirtied users' and engine assets, so it was removed in favour of the bake. `FVABakedMesh` is keyed by a soft mesh path + the requested `MeshLOD`, like `FVAMeshKey`, so placements share an entry and level instance or cell-embedded actors still match after cooking. `AddStaticMeshPrimitives` prefers the live render data and falls back to `FindBakedMesh`. `ForEachBakeTarget` visits loaded actors, and with `loadAll` (the bake) also block-loads unloaded level instances and runs `FWorldPartitionHelpers::ForEachActorWithLoading`. `AVAWorld::PreSave` warns when `IsBakedGeometryStale` (loaded actors only), which skips meshes with no render data and, in World Partition maps, unused entries. The commandlet initialises each world with `FScopedEditorWorld` and saves the VAWorld's own package (its external actor package in World Partition maps). The devproject's `-VACookedMeshCheck` (packaged game only) logs geometry and muffling, switches every material component to `Visuals`, and logs again
+- `BakeGeometry` and the bake commandlet exist because cooked builds drop CPU mesh data. `FVABakedMesh` is keyed by soft mesh path + `MeshLOD`, and `AddStaticMeshPrimitives` falls back to `FindBakedMesh` when there's no live render data. Don't set `bAllowCPUAccess` on meshes at runtime instead, it doesn't survive cooking and dirties users' assets
 - Units are cm (`MetersPerUnit = 0.01`) with `VACoordinateSystemUnreal`
 - Materials are DataAssets plus a component rather than scene nodes and metadata
 - `bAutoCapture` on `AVAInputStreamSource`, `bAutoFollowCamera` and `ListenerReverbSubmix` on `AVAListener`, `bAirAbsorptionEnabled`, `BoundsFollow` and `BoundsUpdateDistance` on `AVAWorld` are Unreal-only
@@ -114,27 +105,17 @@ Don't "fix" these:
 
 # Building and testing
 
-The automation tests aren't in this repo. They live in a separate host project (`vaudio-unreal-devproject`, module `VaudioUnrealTests`) with a headless runner, as tests named `VAudio.<scenario>` that match the Godot plugins' scenario names. They assert on raytracing results, not audio output, so everything must keep working with no audio device (`-nosound`).
-
-When that project is available on this machine you may build and run the tests yourself, with the Unreal editor closed. Otherwise the user builds and reports errors. The editor target hides missing includes through its shared PCH, so a change that adds engine types should include their headers explicitly, or packaged game targets fail to compile.
+The automation tests live in a separate host project (`vaudio-unreal-devproject`, module `VaudioUnrealTests`), as `VAudio.<scenario>` tests matching the Godot plugins' scenario names. They assert on raytracing results, not audio output, so everything must keep working with no audio device (`-nosound`). When that project is available you may build and run the tests yourself, with the Unreal editor closed. Otherwise the user builds and reports errors.
 
 # Coding guidelines
 
-- Log with the macros in `Private/VALog.h` (`VA_LOG`, `VA_WARN`, `VA_ERROR`, plus `_NAMED` and `_RESULT` variants). Warnings and errors also appear on screen, but on-screen messages don't exist in Shipping, so never use `GEngine->AddOnScreenDebugMessage` as the only channel
-- Messages are read by someone working in the editor, not in this code, so say what's wrong and what to change rather than naming internal functions
-- Use camelCase for variable names
-- Don't use single capitalised acronyms for variable names, e.g. use `position` instead of `P`, `vaWorld` instead of `VAW`, etc
-- Don't capitalise variable names, e.g. use `listener` instead of `Listener`
-- Use `TCHAR` with `TEXT()`, never `wchar_t` (`TCHAR` is `char16_t` on Linux)
-- `UE_LOG` and the `VA_*` macros need braces in an unbraced `if`/`else`
-- UHT rejects a function parameter named like a member, case-insensitively (`materials` vs `Materials`)
-- An effect preset's `Settings` UPROPERTY is stale after `UpdateSettings`, read live values with `GetSettings()`
+- Log with the macros in `Private/VALog.h` (`VA_LOG`, `VA_WARN`, `VA_ERROR`, plus `_NAMED` and `_RESULT` variants). On-screen messages don't exist in Shipping, so never use `GEngine->AddOnScreenDebugMessage` as the only channel
+- Messages are read by someone working in the editor, so say what's wrong and what to change rather than naming internal functions
+- Use camelCase for variable names, not capitalised names (`listener`, not `Listener`) or single acronyms (`position`, not `P`)
 
 ## Unreal Engine 4.27
 
-The repo source is plain 5.x, and only builds on 4.27 once its marker blocks are resolved. 4.27 users get that resolved source from the release zip.
-
-4.27's UHT rejects any `#if` in a parsed header other than `WITH_EDITOR`, `WITH_EDITORONLY_DATA`, `0` or `1`. So anything that differs between engines inside a `UCLASS`/`USTRUCT` body, even a plain virtual override, is a marker block, never `UE_VERSION_OLDER_THAN`:
+The repo source is plain 5.x, and only builds on 4.27 once its marker blocks are resolved (4.27 users get the resolved source from the release zip). 4.27's UHT rejects any `#if` in a parsed header other than `WITH_EDITOR`, `WITH_EDITORONLY_DATA`, `0` or `1`, so anything that differs between engines inside a `UCLASS`/`USTRUCT` body is a marker block, never `UE_VERSION_OLDER_THAN`:
 
 ```cpp
 #if 0 // VA_UE4
@@ -144,38 +125,27 @@ The repo source is plain 5.x, and only builds on 4.27 once its marker blocks are
 #endif // VA_UE4
 ```
 
-Code rules:
 - No `TObjectPtr`, use raw pointers
 - No container `IsEmpty()`, use `Num() == 0`
 - `VAActorName` instead of `GetActorNameOrLabel`, and the other helpers in `VAEngineCompat.h`
 - `FVAVector3f`/`FVAVector2f` instead of `FVector3f`/`FVector2f` outside reflected members
-- `FVector` and `VAFloat` are both float on 4.27 (single precision SDK), so nothing narrows between them, but float and double literals in the same call still need care, e.g. `FMath::Clamp` is ambiguous with a float value and `1.0` bounds
-- 4.27's UHT rejects `double` in Blueprint-exposed members, so those are declared with a marker block, and `VABlueprintReal` is the matching type in plain C++
-
-Compiled out on 4.27, as the engine doesn't have them: World Partition (including the bake's `ForEachActorWithLoading`) and Level Instances (`AddLevelInstanceContents`, `LevelInstanceSources`, and the level instance step in `FindMaterialInChain`/`SyncPrimitive`).
-
-Other differences:
-- Launcher 4.27 is PhysX, so convex hulls and `FVALandscapeHeightfield` have a `UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS` path. Holes follow the PhysX collision, which from reading the engine code sits one quad towards -X of the painted quads
+- Mixing float and double literals in one call still needs care, e.g. `FMath::Clamp` with a float value and `1.0` bounds is ambiguous
+- 4.27's UHT rejects `double` in Blueprint-exposed members, so those use a marker block, and `VABlueprintReal` is the matching type in plain C++
+- World Partition and Level Instances are compiled out
+- Launcher 4.27 is PhysX, so convex hulls and `FVALandscapeHeightfield` have a `UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS` path
 - Slate has no SVG brushes, so `VAEditorStyle` uses PNGs rendered from `VALogo.svg`
 - Assets saved by 5.x don't load, so the committed `Content/Icons` are 5.x and the release zip's are generated by 4.27
-- The test suite runs with `-nullrhi -nosound` by default, so pass `--sound` to cover the RT60 table in `VAReverbConversion.cpp` and submix sends, and `--rendering` for rendering. Neither covers submix registration in a cooked build, which only a packaged game shows
 
 ## Actor Initialisation
 
 If an actor is configured incorrectly, disable it with `SetActorTickEnabled(false)`, rather than letting `if (!AudioWorld)` or `if (!Emitter)` checks pollute the rest of the code, e.g. in `VASourceRelative.cpp`:
 
 ```cpp
-void AVASourceRelative::BeginPlay()
+if (SourceSounds.Num() == 0)
 {
-	Super::BeginPlay();
-
-	// Disable the actor if validation fails
-	if (SourceSounds.Num() == 0)
-	{
-		VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound"));
-		SetActorTickEnabled(false);
-		return;
-	}
+	VA_WARN_NAMED(TEXT("Has no SourceSounds and will not play sound"));
+	SetActorTickEnabled(false);
+	return;
 }
 ```
 
@@ -186,7 +156,7 @@ Actor BeginPlay order isn't guaranteed, so never require another actor (e.g. the
 When a va* function returns a VAResult, handle every documented return code, and never `check(result == VA_SUCCESS)`, e.g. in `VAListener.cpp`:
 
 ```cpp
-VAResult result = vaEmitterAddTarget(Emitter, target->GetVAEmitter());
+VAResult result = vaEmitterAddTarget(Emitter, target);
 
 switch (result)
 {
@@ -195,15 +165,11 @@ switch (result)
 		break;
 
 	case VA_NOT_ADDED_TO_WORLD:
-		VA_ERROR_NAMED(TEXT("Failed to add target '%s' as it has not been added to the same world as this listener."), *target->GetActorNameOrLabel());
-		break;
-
-	case VA_FEATURE_DISABLED:
-		VA_ERROR_NAMED(TEXT("Failed to add target '%s' as this listener casts neither occlusion nor permeation rays."), *target->GetActorNameOrLabel());
+		VA_ERROR_NAMED(TEXT("Failed to add target '%s' as it has not been added to the same world as this listener."), *name);
 		break;
 
 	default:
-		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to add target '%s'."), *target->GetActorNameOrLabel());
+		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to add target '%s'."), *name);
 		break;
 }
 ```
