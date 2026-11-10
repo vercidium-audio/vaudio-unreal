@@ -29,14 +29,14 @@ This repository requires Vercidium Audio v1.11.1 to run.
 
 ### 1. Add the plugin
 
-Download the zip for your engine version from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases) (`vaudio-unreal-4.27.zip`, `vaudio-unreal-5.7.zip` or `vaudio-unreal-5.8.zip`) and extract it into your project's `Plugins` folder. It contains the plugin source plus prebuilt binaries for Win64, Linux and Mac. On 5.x you can also clone this repository instead, which builds the plugin from source. On 4.27 you must use the zip, as the repository's source only builds on 5.x.
+Download the zip for your engine version from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases) (`vaudio-unreal-4.27.zip`, `vaudio-unreal-5.7.zip` or `vaudio-unreal-5.8.zip`) and extract it into your project's `Plugins` folder. It contains the plugin source plus prebuilt binaries for Win64, Linux and Mac. On 5.x you can also clone this repository instead, which builds the plugin from source. On 4.27 you must use the zip (see [Unreal Engine 4.27](#unreal-engine-427)).
 
 The `.uplugin` file must exist at:
 ```
 YourProject/Plugins/vaudio-unreal/vaudio-unreal.uplugin
 ```
 
-If you're using git, addi it as a submodule from your project root:
+If you're using git, add it as a submodule from your project root:
 
 ```
 git submodule add <this-repo-url> Plugins/vaudio-unreal
@@ -59,7 +59,7 @@ YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Mac/libvaudionati
 - if using Unreal 4.27, copy the files of the single-precision native SDK (`3d/native`) into the above locations.
 
 You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy:
-- For Window: `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`
+- For Windows: `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`
 - For Linux: `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`
 - For Mac: `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`
 
@@ -78,11 +78,11 @@ When you build, the plugin copies the above dll/so/dylib files into `Binaries/Th
 
 ## Unreal Engine 4.27
 
-Use `vaudio-unreal-4.27.zip` from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases). Cloning this repository doesn't work on 4.27. The SDK setup is the same as on 5.x, except it uses the single precision SDK (`3d/native`) rather than `3d/native-double`, as 4.27 positions are floats.
+4.27 is fully supported, but you must use `vaudio-unreal-4.27.zip` from the [Releases page](https://github.com/vercidium-audio/vaudio-unreal/releases). The source in this repository is written for 5.x, and a few headers contain blocks that are converted to their 4.27 versions when the zip is built, so cloning the repository won't compile on 4.27.
 
-Some features don't exist in 4.27, so the plugin doesn't have them there:
-- World Partition isn't available, so the World Partition notes in this README don't apply, and `Bake Geometry For Shipping` covers the level's loaded actors.
-- Level Instances aren't available, so a `VAMaterialComponent` can't reach into one.
+These Unreal features don't exist in 4.27, so the sections of this README about them don't apply:
+- World Partition
+- Level Instances
 
 Other differences on 4.27:
 - Unreal's positions are floats, so geometry and sources far from the origin are less precise than on 5.x.
@@ -90,7 +90,7 @@ Other differences on 4.27:
 
 Platform requirements:
 - **Windows:** build with Visual Studio 2019.
-- **Linux:** 4.27 must be built from source, and prebuilt modules only load in the exact engine build that made them. A Blueprint-only project fails at startup with `Plugin 'vaudio-unreal' failed to load because module 'VaudioUnreal' could not be found`. Use a C++ project instead, which rebuilds the plugin for your engine.
+- **Linux:** Epic doesn't release a 4.27 editor for Linux, so you need to build the engine from source. The zip's prebuilt Linux binaries only load in the engine build that compiled them, so they won't load in yours. Use a C++ project, which rebuilds the plugin for your engine. A Blueprint-only project fails at startup with `Plugin 'vaudio-unreal' failed to load because module 'VaudioUnreal' could not be found`.
 - **Mac:** the 4.27 editor is x86_64 only, and runs under Rosetta on Apple Silicon. To build a C++ project with Xcode 27, set the below environment variable:
 
 ```
@@ -149,11 +149,11 @@ A `VASource` uses the Sound Attenuation on its sound, so attenuation set on the 
 
 | Function | Replaces | Returns | Raytracing |
 |---|---|---|---|
-| `PlaySoundAtLocation` | `UGameplayStatics::PlaySoundAtLocation` | nothing | Its own rays, cast once |
+| `PlaySoundAtLocation` | `UGameplayStatics::PlaySoundAtLocation` | nothing | Its own rays, cast once by default |
 | `PlaySoundLeech` | | nothing | Reuses a `VAEmitter`'s rays |
 | `PlaySoundRelative` | `UGameplayStatics::PlaySound2D` | nothing | None |
-| `SpawnSoundAtLocation` | `UGameplayStatics::SpawnSoundAtLocation` | `AVASource*` | Its own rays, cast once |
-| `SpawnSoundAttached` | `UGameplayStatics::SpawnSoundAttached` | `AVASource*` | Its own rays, every frame |
+| `SpawnSoundAtLocation` | `UGameplayStatics::SpawnSoundAtLocation` | `AVASource*` | Its own rays, cast once by default |
+| `SpawnSoundAttached` | `UGameplayStatics::SpawnSoundAttached` | `AVASource*` | Its own rays, cast continuously |
 
 The `Play*` functions don't spawn an actor: the `VAWorld` keeps each sound's filter and reverb send up to date until it finishes, so they cost about the same as the `UGameplayStatics` functions plus their rays.
 
@@ -177,61 +177,96 @@ AVASource* source = AVAWorld::SpawnSoundAtLocation(this, Sound, SoundLocation, s
 AVASource* attached = AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, bStopWhenAttachedToDestroyed, settings);
 ```
 
-- A sound at a location raytraces once (`bRaytraceOnce`), and its reverb tail starts when the sound finishes. An attached sound keeps raytracing every frame as it moves, so `SpawnSoundAttached` is the expensive choice for frequent sounds.
+- `PlaySoundAtLocation` and `SpawnSoundAtLocation` raytrace once by default, as the sound doesn't move. Its muffling still updates as the listener moves, and its reverb tail starts when the sound finishes. Set `settings.bRaytraceOnce = false` to keep raytracing for the sound's whole lifetime, e.g. for a long sound while doors open and close around it.
+- `SpawnSoundAttached` ignores `bRaytraceOnce` and keeps raytracing as it moves, so it's the expensive choice for frequent sounds.
 - The sound starts after the first raytracing result, not straight away, so it's muffled correctly from the beginning.
 - A one-shot needs a `VAListener` that has begun play. Without one, `PlaySoundAtLocation`, `PlaySoundLeech` and the `Spawn*` functions log a warning and play nothing, rather than waiting for a listener. This includes sounds played from a `BeginPlay` that runs before the listener's.
 - `PlaySoundAtLocation` needs a `VAWorld` that has begun play in the world context object's level, and does nothing otherwise. The `Spawn*` functions return null if the sound, world or component is missing.
 
-For frequent sounds on a character, like an enemy's footsteps or gunshots, put one `VAEmitter` on each enemy and play all of its sounds through it with `AVAWorld::PlaySoundLeech`. Like a `VASourceLeech`, the sound is attached to the `VAEmitter` and uses its muffling and reverb instead of rays of its own, so hundreds of sounds a second cost no more rays than the one emitter:
+#### Leech sounds
+
+For frequent sounds on a character, like an enemy's footsteps or gunshots, put one `VAEmitter` on each enemy and play all of its sounds through it with `AVAWorld::PlaySoundLeech`. The sound is attached to the `VAEmitter` and uses its muffling and reverb instead of casting its own rays, so hundreds of sounds a second cost no more than the one emitter:
 
 ```cpp
 AVAWorld::PlaySoundLeech(GunshotSound, EnemyEmitter, Volume, Pitch, AttenuationSettings);
 ```
 
-It plays immediately, as the emitter should already be raytraced. A sound started before then waits, and is dropped without playing if the emitter is destroyed first. It follows the emitter, and if the emitter is destroyed mid-sound it finishes playing where it was. A listener can't be leeched, so use `PlaySoundRelative` for the player's own sounds.
+- It plays immediately if the emitter has already been raytraced. Otherwise it waits, and is dropped if the emitter is destroyed first.
+- It follows the emitter, and if the emitter is destroyed mid-sound, it finishes playing where it was.
+- A listener can't be leeched, so use `PlaySoundRelative` for the player's own sounds.
 
-For the player's own sounds, `AVAWorld::PlaySoundRelative` replaces `UGameplayStatics::PlaySound2D`. Like a `VASourceRelative` it isn't raytraced, so it plays straight away, unmuffled and with the current listener's reverb:
+#### Relative sounds
+
+For the player's own sounds, `AVAWorld::PlaySoundRelative` replaces `UGameplayStatics::PlaySound2D`. It isn't raytraced, so it plays straight away, unmuffled and with the current listener's reverb:
 
 ```cpp
 AVAWorld::PlaySoundRelative(this, FootstepSound, Volume, Pitch);
 ```
 
-`PlaySoundLeech` and `PlaySoundRelative` do nothing if there's no audio device. `PlaySoundAtLocation` is still raytraced without one, but isn't heard.
+#### Notes
 
-The `Play*` functions release a sound when it finishes, so a looping sound would play forever. The Output Log warns once per sound and still plays it. Use `SpawnSoundAtLocation`, a `VASourceLeech` or a `VASourceRelative` for looping sounds instead, as they can be stopped. `StopOneShots()` on the `VAWorld` stops every sound started by the `Play*` functions at once.
-
-The `Play*` functions reuse their audio components: once a sound finishes, its component is kept by the `VAWorld` and reset for the next sound, so playing many sounds doesn't create a new component each time. `MaxPooledAudioComponents` on the `VAWorld` (default 64) is how many idle components are kept, and any finished beyond it are destroyed. Raise it if more sounds than that overlap regularly. The pooled components are owned by the `VAWorld`.
-
-`AttenuationSettings` can also be set on a placed `VASource`.
+- `PlaySoundLeech` and `PlaySoundRelative` do nothing if there's no audio device. `PlaySoundAtLocation` is still raytraced without one, but isn't heard.
+- The `Play*` functions can't be stopped individually, so a looping sound would play forever. The Output Log warns once per sound and still plays it. Use `SpawnSoundAtLocation`, a `VASourceLeech` or a `VASourceRelative` for looping sounds instead, as they can be stopped.
+- `StopOneShots()` on the `VAWorld` stops every sound started by the `Play*` functions.
+- The `Play*` functions reuse their audio components. `MaxPooledAudioComponents` on the `VAWorld` (default 64) is how many idle components are kept for reuse. Raise it if more sounds than that regularly overlap.
+- `AttenuationSettings` can also be set on a placed `VASource`.
 
 ### Geometry and materials
 
 A **VAMaterialComponent** (`UVAMaterialComponent`) makes its actor part of the raytraced scene, along with any attached child actors that don't have their own. Shape components and simple collision are used where they exist, and render triangles otherwise.
-
-**Planes**: a mesh whose box collision has no thickness, like `/Engine/BasicShapes/Plane`, is an open sheet that always uses flat transmission (`bUseFlatTransmission` is ignored). It reflects rays from both sides, but if the listener casts permeation rays, flat transmission on the built-in materials is too low to muffle sound crossing it. Give it a `VACustomMaterial` with `FlatTransmissionLF`/`HF` near 1 to muffle that sound.
-
-On a **Level Instance** actor, it also covers the actors in the instance's level that don't have their own, added once that level has loaded. In World Partition maps, level instances with the default "Partitioned" Level Behavior are embedded into the map's cells when played, so for those put the `VAMaterialComponent` on actors inside the instance's level instead.
 
 - `Material` picks a built-in material (concrete, wood, glass, ...). `MaterialAsset` uses a material asset instead.
 - `PropagateMode` chooses between colliders, render triangles or both, and `MeshLOD` picks which LOD is raytraced.
 - `MaterialOverrides` gives individual components another material, e.g. a glass window in a brick wall.
 - `CollisionObjectTypes` on the `VAWorld` limits colliders to certain object types.
 
-Geometry is added and removed as actors spawn, are destroyed or stream in and out, and follows them when they move. Hidden actors and actors with collision disabled still block sound. Call `SyncPrimitive(Actor)` on the `VAWorld` after attaching an actor to one that has a material component, changing an actor's meshes, or adding instances to an instanced static mesh.
+Geometry is added and removed as actors spawn, are destroyed or stream in and out, and follows them when they move. Hidden actors and actors with collision disabled still affect raytracing.
+
+Call `SyncPrimitive(Actor)` on the `VAWorld` after:
+- attaching an actor to one that has a material component
+- changing an actor's meshes
+- adding instances to an instanced static mesh
 
 Geometry and sources in an unloaded streaming level don't affect sound, as their actors don't exist yet. Stream levels in before they're within earshot, e.g. with a larger streaming volume, or keep walls that matter for sound in the persistent level. Otherwise the muffling changes the moment the level loads.
 
-**Landscapes** work the same way: add a `VAMaterialComponent` to the landscape actor (and to each streaming proxy, which is its own actor). Every landscape component becomes one heightmap built from its collision, so it works in cooked builds without baking, and it needs collision to be enabled on the landscape. A landscape with a negative or zero scale on any axis is skipped with a warning. Each component is an open surface that always uses flat transmission (`bUseFlatTransmission` is ignored), so it muffles sound crossing it from either side, however deep the source is (e.g. a cave far below). Flat transmission uses the material's `FlatTransmissionLF`/`HF`, which are low on the built-in materials, so give landscapes a `VACustomMaterial` that has them near 1. Holes painted with the visibility layer are left open. `LandscapeLOD` on the `VAWorld` simplifies every landscape for raytracing without changing its collision: LOD N gives each component 1/2^N as many rows and columns of evenly spaced points (rounded up), so 1 m quads become roughly 2 m at LOD 1, 4 m at LOD 2 and so on. Heights are taken from the collision's surface and components still meet without gaps. It defaults to 3 (roughly 8 m quads), which keeps the memory used by large landscapes down. Lower it for terrain with sharp features smaller than that, such as narrow ridges or trenches. Call `SyncPrimitive` on the landscape actor after sculpting it during play.
+#### Planes
+
+A mesh whose box collision has no thickness, like `/Engine/BasicShapes/Plane`, is an open sheet that always uses flat transmission (`bUseFlatTransmission` is ignored). It reflects rays from both sides, but flat transmission on the built-in materials is too low to muffle sound passing through it. Give it a `VACustomMaterial` with `FlatTransmissionLF` and `FlatTransmissionHF` near 1 to muffle that sound.
+
+#### Level Instances
+
+Putting a `VAMaterialComponent` on a **Level Instance** actor also adds the actors inside the instance's level (except those with their own `VAMaterialComponent`), once that level has loaded.
+
+In World Partition maps, level instances with the default "Partitioned" Level Behavior are merged into the map's cells when played, so the Level Instance actor no longer exists. For those, put the `VAMaterialComponent` on the actors inside the instance's level instead.
+
+#### Landscapes
+
+Add a `VAMaterialComponent` to the landscape actor, and to each streaming proxy, as each is its own actor.
+- Each landscape component becomes one heightmap built from its collision, so collision must be enabled on the landscape. It works in cooked builds without baking.
+- Holes painted with the visibility layer are left open.
+- A landscape with a negative or zero scale on any axis is skipped with a warning.
+- Landscapes always use flat transmission (`bUseFlatTransmission` is ignored), so sound crossing it is muffled from either side, however deep the source is (e.g. a cave far below). The built-in materials' flat transmission is low, so give landscapes a `VACustomMaterial` with `FlatTransmissionLF` and `FlatTransmissionHF` near 1.
+- `LandscapeLOD` on the `VAWorld` simplifies every landscape for raytracing, without changing its collision. Each LOD halves the number of points, so 1 m quads become 2 m at LOD 1, 4 m at LOD 2, and so on. It defaults to 3 (roughly 8 m quads) to keep memory usage down on large landscapes. Lower it for terrain with sharp features smaller than that, such as narrow ridges or trenches.
+- Call `SyncPrimitive` on the landscape actor after sculpting it during play.
+
+#### Materials
 
 Material assets are created in the Content Browser and added to the `VAWorld`'s `Materials` array:
-- **VADefaultMaterial** (`UVADefaultMaterial`) changes the properties of one of the built-in materials everywhere it's used. Pick it with `MaterialType`, and use **Reset To Defaults** to load the SDK's values.
+- **VADefaultMaterial** (`UVADefaultMaterial`) changes the properties of one of the built-in materials everywhere it's used. Pick it with `MaterialType`, and use `Reset To Defaults` to load the SDK's values.
 - **VACustomMaterial** (`UVACustomMaterial`) is a new material. Assign it to a component's `MaterialAsset`.
 
 Use `SetMaterials` on the `VAWorld` to change the list during play.
 
 ### Shipping builds
 
-Cooked builds drop the CPU copy of a mesh's triangles unless the mesh has "Allow CPU Access" set, so a mesh raytraced by its render triangles (one without simple collision, or under a material component set to `Visuals`) affects nothing in a packaged game until it's baked. Box, sphere, capsule and convex collision, and landscapes, don't need baking. **Bake Geometry For Shipping** on the `VAWorld` (or the `-run=VABake` commandlet, which bakes and saves every level with a `VAWorld`) stores one copy of the triangles per static mesh and LOD in the level, shared by every placement. It covers loaded actors, level instances, and in World Partition maps every actor, loading unloaded cells while it runs. The live mesh is used whenever it still has its triangles, so the bake is only read in cooked builds. The bake doesn't update itself, so saving or cooking a level whose meshes no longer match it (a mesh or LOD is added or no longer used, or a baked mesh was edited) logs a warning naming the mesh. That check only looks at loaded actors, so in World Partition maps it can't tell that a mesh is no longer used. Bake again and save to clear it.
+Cooked builds drop the CPU copy of a mesh's triangles unless the mesh has `Allow CPU Access` set, so a mesh raytraced by its render triangles (one without simple collision, or under a material component set to `Visuals`) affects nothing in a packaged game until it's baked. Box, sphere, capsule and convex collision, and landscapes, don't need baking.
+
+Click `Bake Geometry For Shipping` on the `VAWorld`, or run the `-run=VABake` commandlet, which bakes and saves every level that has a `VAWorld`. This stores one copy of the triangles per static mesh and LOD in the level, shared by every placement. The bake includes:
+- actors in levels that are loaded in the editor. Load every streaming sublevel before baking, or its meshes aren't baked
+- every Level Instance, loading unloaded ones while it runs
+- in World Partition maps, every actor, loading unloaded cells while it runs
+
+The baked triangles are only used in cooked builds. The bake doesn't update itself, so saving or cooking a level whose meshes no longer match it (a mesh or LOD is added or no longer used, or a baked mesh was edited) logs a warning naming the mesh. Bake again and save to clear it. This check only looks at loaded actors, so in World Partition maps it can't tell that a mesh is no longer used.
 
 On-screen warnings don't exist in Shipping builds, so check the log (`LogVAudio`) there.
 
@@ -274,35 +309,52 @@ void AMyCharacter::MulticastReceiveVoice_Implementation(const TArray<uint8>& Dat
 }
 ```
 
-The stream must use the input source's `Format` (`Mono16` here) and the rate the device actually captures at, which is why the rate is sent along with the data. Raw 16-bit PCM is about 96 KB/s at 48 kHz, so compress it (e.g. Opus) before sending in production. Data pushed before the source is first raytraced is dropped, so the first moments of speech after it spawns may be lost.
+- The stream must use the input source's `Format` (`Mono16` here) and the rate the device actually captures at, which is why the rate is sent along with the data.
+- Raw 16-bit PCM is about 96 KB/s at 48 kHz, so compress it (e.g. Opus) before sending in production.
+- Data pushed before the source is first raytraced is dropped, so the first moments of speech after it spawns may be lost.
 
 ### Open worlds
 
 A level can only have one `VAWorld`, and everything else finds it automatically. Geometry (`VAMaterialComponent`), emitters, listeners and sources join it when they begin play and leave it when they end play, so World Partition cells, streamed sublevels and level instances are raytraced while they're loaded, with no extra setup. Placements of the same static mesh share one copy of its triangles, so placing a level instance many times is cheap.
 
-**Where to put the VAWorld**
-- Put it in the persistent level. With World Partition, also untick **Is Spatially Loaded** on it, so it never streams out.
+#### Where to put the VAWorld
+
+- Put it in the persistent level. With World Partition, also untick `Is Spatially Loaded` on it, so it never streams out.
 - Never put a `VAWorld` inside a level instance or a streamed sublevel. Placing that instance twice gives a second `VAWorld`, which logs an error and is ignored.
 - Each map needs its own `VAWorld`. Opening another map (`OpenLevel`, server travel) destroys the old map's `VAWorld` along with its emitters and geometry, and the new map's actors use the new one.
 - Actors that seamless travel carries into the new map (e.g. a listener or source on the player's pawn) join the new map's `VAWorld` when it begins play. Don't add the `VAWorld` itself to the list of actors to keep.
 
-**World bounds**
+#### World bounds
 
-Only the box at the `VAWorld`'s location (its minimum corner) with size `BoundsSize` is raytraced. The box is always axis-aligned, so the Details panel only shows the VAWorld's location and the rotate and scale gizmos do nothing. Select the VAWorld to show a handle in the middle of each face of the box: click one and drag the translate widget to move that face along its axis while the opposite face stays put (dragging a min face moves the VAWorld too). The handles only show in the editor, not during play. `BoundsFollow` decides what that box does during play:
-- `None` (default): a fixed box. Good for levels that fit inside one box. It still follows the `VAWorld` actor if you move it.
-- `Listener`: the box is centred on the current `VAListener`. Use this with World Partition, and set `BoundsSize` to cover the area that's loaded around the player, e.g. twice the runtime grid's loading range. The plugin can't read the loading range itself. The actor's location only places the box in the editor, and until a listener begins play.
+Only the box at the `VAWorld`'s location (its minimum corner) with size `BoundsSize` is raytraced. The box is always axis-aligned, so the Details panel only shows the VAWorld's location, and the rotate and scale gizmos do nothing.
 
-Moving the bounds makes the SDK re-check every raytraced trail, so they move in steps instead of every frame: the box only follows once the listener (or the `VAWorld` actor) is `BoundsUpdateDistance` away, 100 m by default. With `BoundsFollow = Listener`, `BoundsSize` is clamped to at least twice `BoundsUpdateDistance` on every axis, so the listener can't walk out of the box before it recentres. `SetBoundsFollow`, `SetBoundsSize` and `SetBoundsUpdateDistance` change these during play.
+In the editor, select the VAWorld to show a handle in the middle of each face of the box. Click one and drag the translate widget to move that face, while the opposite face stays put.
 
-Sources that are loaded but outside the box aren't raytraced. `bEmittersOutsideTheWorldAreMuffled` on the `VAWorld` decides what happens to them. When it's off, they aren't muffled at all and play clearly with no reverb (they don't wait for their own reverb, which they can't get outside), and get their reverb back once they're inside again. When it's on (default), they're fully muffled, and the bounds are final for raytraced sounds:
+`BoundsFollow` decides what the box does during play:
+- `None` (default): a fixed box, for levels that fit inside one box. It still follows the `VAWorld` actor if you move it.
+- `Listener`: the box is centred on the current `VAListener`. Use this with World Partition, and set `BoundsSize` to cover the area that's loaded around the player, e.g. twice the runtime grid's loading range. The actor's location only places the box in the editor, and until a listener begins play.
+
+Moving the bounds is expensive, so the box only moves once the listener (or the `VAWorld` actor) is `BoundsUpdateDistance` away (100 m by default). With `BoundsFollow = Listener`, `BoundsSize` is clamped to at least twice `BoundsUpdateDistance` on every axis, so the listener can't walk out of the box before it recentres. `SetBoundsFollow`, `SetBoundsSize` and `SetBoundsUpdateDistance` change these during play.
+
+#### Sources outside the world bounds
+
+Sources that are loaded but outside the box aren't raytraced. `bEmittersOutsideTheWorldAreMuffled` on the `VAWorld` decides what happens to them.
+
+When it's off, they play clearly with no muffling or reverb, and get their reverb back once they're inside again.
+
+When it's on (default), they're fully muffled, and:
 - A sound that doesn't loop isn't started outside the box. `PlaySoundAtLocation`, `PlaySoundLeech` and the `Spawn*` functions log a warning and create nothing (`Spawn*` return null), and a looping `Play*` is dropped the same way. A `VASource` or `VASourceLeech` that doesn't loop returns false from `Play()` with a warning, and isn't retried once it's inside (with `bAutoDestroy`, it's destroyed).
 - A sound that leaves the box, or that the box moves away from, is stopped that tick, cut off mid-sound. One-shots and sources that don't loop are then finished, and destroyed with `bAutoDestroy`.
 - A looping `VASource` (including a looping `Spawn*` one-shot) or `VASourceLeech`, and an open stream source, wait outside the box and play again from the start once they're back inside. `Stop()` cancels that wait, and a stream whose sound stopped for any other reason isn't restarted.
 - `IsSilencedByBounds` on an emitter or the `VAWorld` returns whether this applies. An emitter with `bClampPosition` on (the default for `VAEmitter`, but not for sources) is raytraced from the nearest point inside the box, so it's never silenced, and neither are leeches of it.
 
-**When the VAWorld ends play**
+#### When the VAWorld ends play
 
-If the `VAWorld` is destroyed or streams out while other actors stay loaded, they stop raytracing and wait. When another `VAWorld` begins play they join it, and their geometry is added again. Their sounds stop when the `VAWorld` ends: a `VASource` with `bAutoPlay` plays again once it rejoins (with `bAutoDestroy`, only if its sound loops, otherwise it's destroyed), but a stream source's stream is closed, so call `OpenStream` again (and `OpenCapture` + `StartCapture` on a `VAInputStreamSource`).
+If the `VAWorld` is destroyed or streams out while other actors stay loaded, they stop raytracing and wait. When another `VAWorld` begins play they join it, and their geometry is added again.
+
+Their sounds stop when the `VAWorld` ends play:
+- A `VASource` with `bAutoPlay` plays again once it rejoins. With `bAutoDestroy`, it only plays again if its sound loops, otherwise it's destroyed.
+- A stream source's stream is closed, so call `OpenStream` again (and `OpenCapture` + `StartCapture` on a `VAInputStreamSource`).
 
 ## References
 - [Vercidium Audio documentation](https://vercidium.com/docs)
