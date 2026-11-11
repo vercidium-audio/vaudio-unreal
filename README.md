@@ -5,7 +5,7 @@ Unreal Engine plugin for Vercidium Audio — raytraced audio simulation with rea
 > [!WARNING]
 > This plugin is experimental. Please raise issues on the [Support repository](https://github.com/vercidium-audio/support)
 
-This repository requires Vercidium Audio v1.11.1 to run.
+This repository requires Vercidium Audio v1.11.2 to run.
 - Download the Vercidium Audio SDK from [vercidium.com](https://vercidium.com)
 
 > Please note that the Vercidium Audio SDK is not free for commercial use. See [vercidium.com/eula](https://vercidium.com/eula)
