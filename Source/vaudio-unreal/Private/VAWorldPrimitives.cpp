@@ -15,6 +15,7 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/AggregateGeom.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/LevelStreaming.h"
 #include "LandscapeHeightfieldCollisionComponent.h"
 #include "LandscapeDataAccess.h"
 
@@ -163,7 +164,7 @@ static void ForEachBakeTargetOnActor(AActor* actor, FVABakeVisitor visit)
 	}
 }
 
-// Calls visit for every mesh component BakeGeometry bakes, in every loaded actor. With loadAll, level instances that aren't loaded are loaded for the call and unloaded after, and so is every World Partition actor
+// Calls visit for every mesh component BakeGeometry bakes, in every loaded actor, including those in sublevels hidden in the editor. With loadAll, level instances that aren't loaded are loaded for the call and unloaded after, and so is every World Partition actor
 static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
 {
 #if !UE_VERSION_OLDER_THAN(5, 0, 0)
@@ -192,6 +193,19 @@ static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
 
 	for (TActorIterator<AActor> it(world); it; ++it)
 		actors.Add(*it);
+
+	// A streaming sublevel hidden in the editor is still loaded, but TActorIterator skips levels that aren't visible
+	for (ULevelStreaming* streaming : world->GetStreamingLevels())
+	{
+		ULevel* level = streaming ? streaming->GetLoadedLevel() : nullptr;
+
+		if (!level || level->bIsVisible)
+			continue;
+
+		for (AActor* actor : level->Actors)
+			if (IsValid(actor))
+				actors.Add(actor);
+	}
 
 	for (AActor* actor : actors)
 		visitActor(actor);

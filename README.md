@@ -261,8 +261,8 @@ Use `SetMaterials` on the `VAWorld` to change the list during play.
 
 Cooked builds drop the CPU copy of a mesh's triangles unless the mesh has `Allow CPU Access` set, so a mesh raytraced by its render triangles (one without simple collision, or under a material component set to `Visuals`) affects nothing in a packaged game until it's baked. Box, sphere, capsule and convex collision, and landscapes, don't need baking.
 
-Click `Bake Geometry For Shipping` on the `VAWorld`, or run the `-run=VABake` commandlet, which bakes and saves every level that has a `VAWorld`. This stores one copy of the triangles per static mesh and LOD in the level, shared by every placement. The bake includes:
-- actors in levels that are loaded in the editor. Load every streaming sublevel before baking, or its meshes aren't baked
+Click `Bake Geometry For Shipping` on the `VAWorld`, or run the `-run=VABake` commandlet, which bakes and saves every level that has a `VAWorld` (add `-MapPath=/Game/Maps` to only bake the levels under that folder). This stores one copy of the triangles per static mesh and LOD in the level, shared by every placement. The bake includes:
+- the persistent level and its streaming sublevels, whatever their streaming method, and whether or not they're hidden in the editor, as the editor and the commandlet both load every sublevel
 - every Level Instance, loading unloaded ones while it runs
 - in World Partition maps, every actor, loading unloaded cells while it runs
 

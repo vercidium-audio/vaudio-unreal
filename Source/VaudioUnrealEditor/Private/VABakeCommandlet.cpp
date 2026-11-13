@@ -80,6 +80,15 @@ int32 UVABakeCommandlet::Main(const FString& Params)
 	Filter.ClassPaths.Add(UWorld::StaticClass()->GetClassPathName());
 #endif
 
+	// -MapPath=/Game/Maps only bakes the levels under that content folder
+	FString MapPath;
+
+	if (FParse::Value(*Params, TEXT("MapPath="), MapPath))
+	{
+		Filter.PackagePaths.Add(FName(*MapPath));
+		Filter.bRecursivePaths = true;
+	}
+
 	TArray<FAssetData> WorldAssets;
 	AssetRegistry.GetAssets(Filter, WorldAssets);
 
