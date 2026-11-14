@@ -32,14 +32,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
 	float PitchMultiplier = 1.0f;
 
+	// Silences this source's direct audio but keeps its reverb send, e.g. to hear your own microphone in the room without the dry signal. The VAWorld's bReverbOnly does this for every source
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	bool bReverbOnly = false;
+
 	// Stops every sound this source is playing
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	virtual void Stop();
 
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
 	bool IsPlaying() const { return Playback.IsPlaying(); }
-
-	void SetDryOutputEnabled(bool bEnabled) { Playback.SetDryOutputEnabled(bEnabled); }
 
 	const FVASourcePlayback& GetPlayback() const { return Playback; }
 

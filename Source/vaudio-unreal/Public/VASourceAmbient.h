@@ -33,6 +33,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
 	float PitchMultiplier = 1.0f;
 
+	// Silences this source's direct audio. An ambient source has no reverb send, so this silences it entirely. The VAWorld's bReverbOnly does this for every source
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	bool bReverbOnly = false;
+
 	const FVASourcePlayback& GetPlayback() const { return Playback; }
 
 private:

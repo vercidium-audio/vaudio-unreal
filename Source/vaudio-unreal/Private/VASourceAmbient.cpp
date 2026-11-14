@@ -55,6 +55,8 @@ void AVASourceAmbient::Tick(float DeltaTime)
 
 	// Found every tick, as the VAWorld may begin play after this actor
 	AVAWorld* audioWorld = AVAWorld::Find(this);
+	Playback.SetDryOutputEnabled(!AVAWorld::IsReverbOnly(audioWorld, bReverbOnly));
+
 	AVAListener* listener = audioWorld ? audioWorld->GetMainListener() : nullptr;
 
 	// The listener may not have begun play yet

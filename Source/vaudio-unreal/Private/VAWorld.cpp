@@ -1117,15 +1117,9 @@ void AVAWorld::Tick(float DeltaTime)
 		if (bReverbOnly != bWasReverbOnly)
 		{
 			bWasReverbOnly = bReverbOnly;
-			bool bDryEnabled = !bReverbOnly;
-
-			// Only sources have dry output to toggle
-			for (AVAEmitter* Emitter : RegisteredEmitters)
-				if (AVARaytracedSource* ConcreteEmitter = Cast<AVARaytracedSource>(Emitter))
-					ConcreteEmitter->SetDryOutputEnabled(bDryEnabled);
 
 			for (FVAOneShot& oneShot : OneShots)
-				oneShot.Playback.SetDryOutputEnabled(bDryEnabled);
+				oneShot.Playback.SetDryOutputEnabled(!bReverbOnly);
 		}
 
 		if (bShowDebugMessages && GEngine)

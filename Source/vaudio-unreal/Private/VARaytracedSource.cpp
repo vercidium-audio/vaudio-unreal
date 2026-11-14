@@ -1,4 +1,5 @@
 #include "VARaytracedSource.h"
+#include "VAWorld.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -31,6 +32,7 @@ void AVARaytracedSource::UpdatePlayback()
 {
 	Playback.SetVolumeMultiplier(VolumeMultiplier);
 	Playback.SetPitchMultiplier(PitchMultiplier);
+	Playback.SetDryOutputEnabled(!AVAWorld::IsReverbOnly(GetAudioWorld(), bReverbOnly));
 
 	ApplyResultsToPlayback(Playback);
 }

@@ -433,8 +433,7 @@ public:
 
 	// --- Mode ---
 
-	// Silence all direct audio but keep reverb submix sends active.
-	// Useful for auditioning the acoustic response of a space in isolation.
+	// Silences the direct audio of every source and one-shot but keeps their reverb submix sends active, for auditioning the acoustic response of a space in isolation. Each source also has its own bReverbOnly
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
 	bool bReverbOnly = false;
 
@@ -581,6 +580,9 @@ public:
 	// The VAWorld in the context object's level, once it has begun play. Every VA actor and component uses this, so none of them need a reference to it
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject"))
 	static AVAWorld* Find(const UObject* WorldContextObject);
+
+	// Whether a source plays only its reverb: its own bReverbOnly, or this VAWorld's. AudioWorld may be null
+	static bool IsReverbOnly(const AVAWorld* AudioWorld, bool bSourceReverbOnly) { return bSourceReverbOnly || (AudioWorld && AudioWorld->bReverbOnly); }
 
 	// --- One-shot sounds ---
 
@@ -789,8 +791,7 @@ private:
 
 	TArray<FString> ActorsWithInvalidMaterials;
 
-	// Mirrors bReverbOnly as of the last Tick(), so the dry-output loop over RegisteredEmitters
-	// only runs on the tick where it actually changes.
+	// Mirrors bReverbOnly as of the last Tick(), so the one-shots' dry output is only updated on the tick it changes. Sources apply it themselves every tick
 	bool bWasReverbOnly = false;
 
 	// Custom material IDs (1000 and up) assigned by this world, like Godot's VAWorld.custom_materials. Removed custom materials keep their ID, so re-adding one reuses it
