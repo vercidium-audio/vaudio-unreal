@@ -103,7 +103,7 @@ export CCC_OVERRIDE_OPTIONS="# +-Wno-error +-Wno-deprecated-builtins +-fno-acces
 
 1. Place one **VAWorld** in the level. Its location is the minimum corner of the raytraced box and `BoundsSize` is the box's size, so move and size it to cover the playable area.
 2. For reverb to work, add at least one submix to `VAWorld.GroupedEAXSubmixes` (I recommend at least three)
-3. Add a **VAMaterialComponent** to every actor that should affect raytracing (walls, floors, props) and select its `Material` (brick, concrete, dirt, etc).
+3. Add a **VAMaterialComponent** to every actor that should affect raytracing (walls, floors, props) and select its `Material` (brick, concrete, dirt, etc), or give a Static Mesh asset a [VAMeshMaterial](#static-mesh-materials) so every placement of it is raytraced.
 4. Place one **VAListener**. By default it follows the player's camera (`bAutoFollowCamera`). For muffling to work, enable its occlusion and permeation rays (e.g. `OcclusionRayCount=1024`, `OcclusionBounceCount=8`, `PermeationRayCount=128`, `PermeationBounceCount=2`)
 5. Place a **VASource** for each sound, set its `SourceSound` and `bAutoPlay`, and give it reverb rays (e.g. `ReverbRayCount=64`, `ReverbBounceCount=64`) so it has reverb.
 
@@ -228,6 +228,24 @@ Call `SyncPrimitive(Actor)` on the `VAWorld` after:
 - adding instances to an instanced static mesh
 
 Geometry and sources in an unloaded streaming level don't affect sound, as their actors don't exist yet. Stream levels in before they're within earshot, e.g. with a larger streaming volume, or keep walls that matter for sound in the persistent level. Otherwise the muffling changes the moment the level loads.
+
+#### Static Mesh materials
+
+A Static Mesh asset can carry its own material, so every placement of it is raytraced without a `VAMaterialComponent`, e.g. a wall mesh that's always brick. Open the mesh in the Static Mesh editor, add an entry to **Asset User Data** in its Details panel, and choose **VAMeshMaterial** (`UVAMeshMaterialUserData`). Save the mesh, and it applies in every level.
+
+- `Material`, `MaterialAsset`, `bUseFlatTransmission`, `PropagateMode` and `MeshLOD` work the same as on a `VAMaterialComponent`. `MaterialAsset` must still be in the `VAWorld`'s `Materials` array.
+- It only applies to that mesh's static mesh components (instanced and foliage meshes included). The rest of the actor, such as shape components, isn't raytraced unless the actor has a `VAMaterialComponent`.
+- Placed actors, streamed sublevels, World Partition cells and level instances are picked up when they load. Actors spawned during play are picked up on the `VAWorld`'s next tick, so a mesh set right after spawning is still found.
+- Editing a `VAMeshMaterial` during Play In Editor rebuilds the geometry straight away. Adding or removing the entry itself takes effect the next time you play.
+- Meshes raytraced by their render triangles still need baking for shipping builds (see below), and the bake includes them.
+
+When a mesh component could get its material from more than one place, the first of these wins:
+1. A `MaterialOverrides` entry for that component, on the actor's own `VAMaterialComponent`
+2. The actor's own `VAMaterialComponent`
+3. The mesh's `VAMeshMaterial`
+4. A `VAMaterialComponent` on an attach parent or Level Instance
+
+So a glass window mesh attached to a brick building stays glass, while a `VAMaterialComponent` on the window actor itself overrides the mesh. Removing an actor's `VAMaterialComponent` during play returns its meshes to their `VAMeshMaterial`.
 
 #### Planes
 

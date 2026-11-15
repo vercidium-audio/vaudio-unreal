@@ -1,4 +1,8 @@
 #include "VAMaterialConversion.h"
+#include "VAMaterial.h"
+#include "VAWorld.h"
+#include "VALog.h"
+
 
 VAMaterialType EVAMaterialToVA(EVAMaterial Material)
 {
@@ -28,4 +32,21 @@ VAMaterialType EVAMaterialToVA(EVAMaterial Material)
 	case EVAMaterial::WoodOutdoor:      return VAMaterialWoodOutdoor;
 	default:                                return VAMaterialConcrete;
 	}
+}
+
+bool VAResolveMaterialId(const UVAMaterialBase* asset, EVAMaterial material, const AVAWorld* world, const UObject* reporter, const FString& context, int32& outMaterialId)
+{
+	if (!asset)
+	{
+		outMaterialId = (int32)EVAMaterialToVA(material);
+		return true;
+	}
+
+	if (!world || !world->HasMaterial(asset))
+	{
+		VAReport(ELogVerbosity::Warning, reporter, VA_CALL_SITE_KEY(reporter), FString::Printf(TEXT("MaterialAsset '%s' is not in the VAWorld's Materials array%s. Add it to the Materials array of the level's VAWorld."), *asset->GetName(), *context));
+		return false;
+	}
+
+	return asset->GetMaterialId(world, outMaterialId);
 }

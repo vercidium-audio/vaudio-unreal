@@ -1,6 +1,7 @@
 #include "VAWorld.h"
 #include "VAEngineCompat.h"
 #include "VAMaterialComponent.h"
+#include "VAMeshMaterialUserData.h"
 #include "VAConstants.h"
 #include "VALog.h"
 
@@ -92,6 +93,33 @@ static UVAMaterialComponent* FindMaterialInChain(AActor* Actor)
 	return nullptr;
 }
 
+// Fills Owner, PropagateMode and MeshLOD, and returns the mesh's VAMeshMaterial if it's what the component uses. The actor's own VAMaterialComponent beats the mesh's VAMeshMaterial, which beats one inherited from an attach parent or level instance. Owner is null if nothing adds the component
+static const UVAMeshMaterialUserData* ResolvePrimitiveOwner(UVAMaterialComponent* source, UActorComponent* component, FVAPrimitiveSettings& outSettings)
+{
+	UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component);
+	bool ownSource = source && source->GetOwner() == component->GetOwner();
+	const UVAMeshMaterialUserData* meshDefault = meshComponent && !ownSource ? UVAMeshMaterialUserData::Find(meshComponent->GetStaticMesh()) : nullptr;
+
+	if (meshDefault)
+	{
+		// Bound to the mesh component rather than a source, so it outlives an inherited source's removal
+		outSettings.Owner = meshComponent;
+		outSettings.PropagateMode = meshDefault->PropagateMode;
+		outSettings.MeshLOD = meshDefault->MeshLOD;
+		return meshDefault;
+	}
+
+	outSettings.Owner = source;
+
+	if (source)
+	{
+		outSettings.PropagateMode = source->PropagateMode;
+		outSettings.MeshLOD = source->MeshLOD;
+	}
+
+	return nullptr;
+}
+
 // True if this mesh would use its simple collision rather than its render triangles
 static bool HasSimpleCollision(UStaticMesh* Mesh)
 {
@@ -143,11 +171,8 @@ using FVABakeVisitor = TFunctionRef<void(AActor*, UStaticMeshComponent*, UStatic
 // Calls visit for each of the actor's mesh components that add their render triangles, with the LOD they use
 static void ForEachBakeTargetOnActor(AActor* actor, FVABakeVisitor visit)
 {
-	// Null if this actor (or its attach-parent chain) has no UVAMaterialComponent. A level has one VAWorld, so every material component belongs to this one
+	// Null if this actor (or its attach-parent chain) has no UVAMaterialComponent, in which case only mesh defaults are baked. A level has one VAWorld, so every material component belongs to this one
 	UVAMaterialComponent* materialComponent = FindMaterialInChain(actor);
-
-	if (!materialComponent || materialComponent->PropagateMode == EVAPropagateMode::Colliders)
-		return;
 
 	TArray<UStaticMeshComponent*> meshComponents;
 	actor->GetComponents<UStaticMeshComponent>(meshComponents);
@@ -155,12 +180,17 @@ static void ForEachBakeTargetOnActor(AActor* actor, FVABakeVisitor visit)
 	for (UStaticMeshComponent* meshComponent : meshComponents)
 	{
 		UStaticMesh* mesh = meshComponent->GetStaticMesh();
+		FVAPrimitiveSettings settings;
+		ResolvePrimitiveOwner(materialComponent, meshComponent, settings);
 
-		// Meshes with simple collision use it instead of their triangles, unless only visuals are added
-		if (!mesh || (HasSimpleCollision(mesh) && materialComponent->PropagateMode != EVAPropagateMode::Visuals))
+		if (!mesh || !settings.Owner || settings.PropagateMode == EVAPropagateMode::Colliders)
 			continue;
 
-		visit(actor, meshComponent, mesh, materialComponent->MeshLOD);
+		// Meshes with simple collision use it instead of their triangles, unless only visuals are added
+		if (HasSimpleCollision(mesh) && settings.PropagateMode != EVAPropagateMode::Visuals)
+			continue;
+
+		visit(actor, meshComponent, mesh, settings.MeshLOD);
 	}
 }
 
@@ -347,17 +377,65 @@ void AVAWorld::AddMaterialPrimitives(UVAMaterialComponent* source)
 	if (!owner)
 		return;
 
-	// Safe to call again, e.g. if the component is re-registered
-	RemoveMaterialPrimitives(source);
+	// Safe to call again, e.g. if the component is re-registered. Mesh defaults in the tree are bound to their mesh component, not this source, so they're dropped by the tree before being added again
+	TSet<AActor*> tree;
+	CollectActorTree(owner, tree);
+	ForgetMaterialSource(source, tree);
 	MaterialSources.Add(source);
 	AddActorTree(owner, source);
 }
 
 void AVAWorld::RemoveMaterialPrimitives(UVAMaterialComponent* source)
 {
+	// While the actor lives, its tree is added again with the material it inherits (or only its mesh defaults). Otherwise the tree's mesh defaults are bound to their mesh components, so they stay
+	AActor* owner = source->GetOwner();
+	bool readd = World && owner && owner->HasActorBegunPlay() && !owner->IsActorBeingDestroyed();
+	TSet<AActor*> tree;
+
+	if (readd)
+		CollectActorTree(owner, tree);
+
+	ForgetMaterialSource(source, tree);
+
+	if (!readd)
+		return;
+
+	// The removed component is still on the actor, so the chain is searched from its parent
+	AActor* parent = GetMaterialParent(owner);
+	UVAMaterialComponent* inherited = parent ? FindMaterialInChain(parent) : nullptr;
+	AddActorTree(owner, inherited && inherited->GetAudioWorld() == this ? inherited : nullptr);
+}
+
+void AVAWorld::ForgetMaterialSource(UVAMaterialComponent* source, const TSet<AActor*>& tree)
+{
 	MaterialSources.Remove(source);
 	LevelInstanceSources.RemoveAll([source](const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry) { return entry.Value.Get() == source; });
-	RemoveBindings([source](const FVAPrimitiveBinding& binding) { return binding.Source.Get() == source; });
+
+	RemoveBindings([source, &tree](const FVAPrimitiveBinding& binding)
+	{
+		USceneComponent* component = binding.Component.Get();
+		return binding.Source.Get() == source || (component && tree.Contains(component->GetOwner()));
+	});
+}
+
+void AVAWorld::CollectActorTree(AActor* actor, TSet<AActor*>& tree)
+{
+	TArray<AActor*> pending = { actor };
+
+	while (pending.Num() > 0)
+	{
+		AActor* current = pending.Pop();
+		tree.Add(current);
+
+		TArray<AActor*> children;
+		current->GetAttachedActors(children);
+
+		for (AActor* child : children)
+			if (!child->FindComponentByClass<UVAMaterialComponent>())
+				pending.Add(child);
+
+		ForEachLevelInstanceRoot(current, [&pending](AActor* root) { pending.Add(root); });
+	}
 }
 
 void AVAWorld::RebuildPrimitives()
@@ -377,6 +455,8 @@ void AVAWorld::RebuildPrimitives()
 		else
 			it.RemoveCurrent();
 	}
+
+	AddWorldMeshDefaults();
 }
 
 void AVAWorld::SetCollisionObjectTypes(const TArray<TEnumAsByte<ECollisionChannel>>& objectTypes)
@@ -406,24 +486,8 @@ void AVAWorld::SyncPrimitive(AActor* actor)
 	if (!actor || !World)
 		return;
 
-	// The actor, plus the attached children it would add, i.e. those without their own VAMaterialComponent (they manage their own geometry)
 	TSet<AActor*> tree;
-	TArray<AActor*> pending = { actor };
-
-	while (pending.Num() > 0)
-	{
-		AActor* current = pending.Pop();
-		tree.Add(current);
-
-		TArray<AActor*> children;
-		current->GetAttachedActors(children);
-
-		for (AActor* child : children)
-			if (!child->FindComponentByClass<UVAMaterialComponent>())
-				pending.Add(child);
-
-		ForEachLevelInstanceRoot(current, [&pending](AActor* root) { pending.Add(root); });
-	}
+	CollectActorTree(actor, tree);
 
 	RemoveBindings([&tree](const FVAPrimitiveBinding& binding)
 	{
@@ -433,7 +497,8 @@ void AVAWorld::SyncPrimitive(AActor* actor)
 
 	UVAMaterialComponent* source = FindMaterialInChain(actor);
 
-	if (source && source->GetAudioWorld() == this)
+	// With no source, only mesh defaults are added again
+	if (!source || source->GetAudioWorld() == this)
 		AddActorTree(actor, source);
 }
 
@@ -462,8 +527,11 @@ void AVAWorld::AddActorTree(AActor* actor, UVAMaterialComponent* source)
 void AVAWorld::AddLevelInstanceContents(AActor* instance, UVAMaterialComponent* source)
 {
 #if !UE_VERSION_OLDER_THAN(5, 0, 0)
-	TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>> entry(instance, source);
-	LevelInstanceSources.AddUnique(entry);
+	if (source)
+	{
+		TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>> entry(instance, source);
+		LevelInstanceSources.AddUnique(entry);
+	}
 
 	ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
 #endif
@@ -471,27 +539,87 @@ void AVAWorld::AddLevelInstanceContents(AActor* instance, UVAMaterialComponent* 
 
 void AVAWorld::OnLevelAddedToWorld(ULevel* level, UWorld* world)
 {
-#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	if (world != GetWorld() || !World)
 		return;
 
-	ULevelInstanceSubsystem* subsystem = world->GetSubsystem<ULevelInstanceSubsystem>();
-
-	if (!subsystem)
-		return;
-
+#if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	LevelInstanceSources.RemoveAll([](const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry) { return !entry.Key.IsValid() || !entry.Value.IsValid(); });
 
-	// Copied, as adding the level's actors can reach nested level instances
-	for (const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry : TArray<TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>>(LevelInstanceSources))
+	if (ULevelInstanceSubsystem* subsystem = world->GetSubsystem<ULevelInstanceSubsystem>())
 	{
-		AActor* instance = entry.Key.Get();
-		UVAMaterialComponent* source = entry.Value.Get();
+		// Copied, as adding the level's actors can reach nested level instances
+		for (const TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>& entry : TArray<TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>>(LevelInstanceSources))
+		{
+			AActor* instance = entry.Key.Get();
+			UVAMaterialComponent* source = entry.Value.Get();
 
-		if (instance && source && subsystem->GetLevelInstanceLevel(Cast<ILevelInstanceInterface>(instance)) == level)
-			ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
+			if (instance && source && subsystem->GetLevelInstanceLevel(Cast<ILevelInstanceInterface>(instance)) == level)
+				ForEachLevelInstanceRoot(instance, [this, source](AActor* root) { AddActorTree(root, source); });
+		}
 	}
 #endif
+
+	// Streamed sublevels, World Partition cells and level instances
+	AddMeshDefaultLevel(level);
+}
+
+void AVAWorld::OnActorSpawned(AActor* actor)
+{
+	PendingSpawnedActors.Add(actor);
+}
+
+void AVAWorld::AddSpawnedMeshDefaults()
+{
+	if (PendingSpawnedActors.Num() == 0)
+		return;
+
+	TArray<TWeakObjectPtr<AActor>> spawned = MoveTemp(PendingSpawnedActors);
+
+	for (const TWeakObjectPtr<AActor>& actor : spawned)
+		if (AActor* alive = actor.Get())
+			AddMeshDefaultActor(alive);
+}
+
+void AVAWorld::AddWorldMeshDefaults()
+{
+	if (!World)
+		return;
+
+	for (ULevel* level : GetWorld()->GetLevels())
+		if (level && level->bIsVisible)
+			AddMeshDefaultLevel(level);
+}
+
+void AVAWorld::AddMeshDefaultLevel(ULevel* level)
+{
+	for (AActor* actor : level->Actors)
+		AddMeshDefaultActor(actor);
+}
+
+void AVAWorld::AddMeshDefaultActor(AActor* actor)
+{
+	if (!IsValid(actor) || actor->IsActorBeingDestroyed())
+		return;
+
+	bool hasMeshDefault = false;
+
+	for (UActorComponent* component : actor->GetComponents())
+	{
+		UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component);
+
+		if (!meshComponent || !UVAMeshMaterialUserData::Find(meshComponent->GetStaticMesh()))
+			continue;
+
+		// Already added, by an earlier scan or a VAMaterialComponent's tree
+		if (PrimitiveBindingsByComponent.Contains(meshComponent))
+			return;
+
+		hasMeshDefault = true;
+	}
+
+	// A VAMaterialComponent in the chain adds the actor itself, applying its mesh defaults
+	if (hasMeshDefault && !FindMaterialInChain(actor))
+		AddActorPrimitives(actor, nullptr);
 }
 
 void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
@@ -501,29 +629,32 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 
 	for (UActorComponent* component : actor->GetComponents())
 	{
-		int32 materialId;
-		bool useFlatTransmission;
+		FVAPrimitiveSettings settings;
 
 		if (UShapeComponent* shape = Cast<UShapeComponent>(component))
 		{
-			if (source->PropagateMode == EVAPropagateMode::Visuals || !PassesCollisionFilter(shape))
+			// Shapes only ever use a VAMaterialComponent, so this is checked before resolving their material
+			if (!source || source->PropagateMode == EVAPropagateMode::Visuals || !PassesCollisionFilter(shape))
 				continue;
 
-			if (!source->GetMaterialFor(shape, materialId, useFlatTransmission))
+			if (!ResolvePrimitiveSettings(source, shape, settings))
 			{
 				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
 				continue;
 			}
 
-			AddShapePrimitive(shape, source, materialId);
+			AddShapePrimitive(shape, settings);
 		}
 		else if (UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component))
 		{
-			if (!source->GetMaterialFor(meshComponent, materialId, useFlatTransmission))
+			if (!ResolvePrimitiveSettings(source, meshComponent, settings))
 			{
 				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
 				continue;
 			}
+
+			if (!settings.Owner)
+				continue;
 
 			// Foliage, PCG and other instanced meshes add one copy of the mesh per instance
 			if (UInstancedStaticMeshComponent* instanced = Cast<UInstancedStaticMeshComponent>(meshComponent))
@@ -533,25 +664,44 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 					FTransform instanceTransform;
 
 					if (instanced->GetInstanceTransform(i, instanceTransform, false))
-						AddStaticMeshPrimitives(instanced, source, instanceTransform, materialId, useFlatTransmission);
+						AddStaticMeshPrimitives(instanced, settings, instanceTransform);
 				}
 			}
 			else
 			{
-				AddStaticMeshPrimitives(meshComponent, source, FTransform::Identity, materialId, useFlatTransmission);
+				AddStaticMeshPrimitives(meshComponent, settings, FTransform::Identity);
 			}
 		}
 		else if (ULandscapeHeightfieldCollisionComponent* landscapeComponent = Cast<ULandscapeHeightfieldCollisionComponent>(component))
 		{
-			if (!source->GetMaterialFor(landscapeComponent, materialId, useFlatTransmission))
+			if (!source)
+				continue;
+
+			if (!ResolvePrimitiveSettings(source, landscapeComponent, settings))
 			{
 				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
 				continue;
 			}
 
-			AddLandscapePrimitive(landscapeComponent, source, materialId);
+			AddLandscapePrimitive(landscapeComponent, settings);
 		}
 	}
+}
+
+bool AVAWorld::ResolvePrimitiveSettings(UVAMaterialComponent* source, UActorComponent* component, FVAPrimitiveSettings& outSettings) const
+{
+	if (const UVAMeshMaterialUserData* meshDefault = ResolvePrimitiveOwner(source, component, outSettings))
+	{
+		outSettings.bUseFlatTransmission = meshDefault->bUseFlatTransmission;
+		return meshDefault->GetMaterialId(this, component->GetOwner(), outSettings.MaterialId);
+	}
+
+	// No source and no mesh default, so nothing is added
+	if (!source)
+		return true;
+
+	// The actor's own MaterialOverrides are applied here
+	return source->GetMaterialFor(component, outSettings.MaterialId, outSettings.bUseFlatTransmission);
 }
 
 bool AVAWorld::PassesCollisionFilter(const UPrimitiveComponent* component) const
@@ -559,13 +709,13 @@ bool AVAWorld::PassesCollisionFilter(const UPrimitiveComponent* component) const
 	return CollisionObjectTypes.Num() == 0 || CollisionObjectTypes.Contains(component->GetCollisionObjectType());
 }
 
-void AVAWorld::AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId)
+void AVAWorld::AddShapePrimitive(UShapeComponent* shape, const FVAPrimitiveSettings& settings)
 {
-	VAMaterialType materialType = (VAMaterialType)materialId;
+	VAMaterialType materialType = (VAMaterialType)settings.MaterialId;
 
 	FVAPrimitiveBinding binding;
 	binding.Component = shape;
-	binding.Source = source;
+	binding.Source = settings.Owner;
 
 	// Sizes and transforms are set by RefreshPrimitiveTransform in AddBinding
 	if (Cast<USphereComponent>(shape))
@@ -594,7 +744,7 @@ void AVAWorld::AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* s
 	}
 }
 
-void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
+void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform)
 {
 	UStaticMesh* staticMesh = meshComponent->GetStaticMesh();
 
@@ -602,7 +752,7 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 	if (!staticMesh)
 		return;
 
-	VAMaterialType materialType = (VAMaterialType)materialId;
+	VAMaterialType materialType = (VAMaterialType)settings.MaterialId;
 	UBodySetup* bodySetup = staticMesh->GetBodySetup();
 	bool addedSimple = false;
 
@@ -610,7 +760,7 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 	{
 		FVAPrimitiveBinding binding;
 		binding.Component = meshComponent;
-		binding.Source = source;
+		binding.Source = settings.Owner;
 		binding.Primitive = primitive;
 		binding.Kind = kind;
 		binding.MeshTransform = meshTransform;
@@ -620,7 +770,7 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 	};
 
 	// If this mesh is composed of simple collision elements, add them all. A mesh whose collision is filtered out is skipped rather than falling back to its triangles, since it's a collider
-	if (source->PropagateMode != EVAPropagateMode::Visuals && HasSimpleCollision(staticMesh))
+	if (settings.PropagateMode != EVAPropagateMode::Visuals && HasSimpleCollision(staticMesh))
 	{
 		if (!PassesCollisionFilter(meshComponent))
 			return;
@@ -717,11 +867,11 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 #endif
 			};
 
-			addedSimple |= AddMeshPrimitive(FVAMeshKey{ staticMesh, 0, convexIndex }, readHull, meshComponent, source, meshTransform, materialId, false);
+			addedSimple |= AddMeshPrimitive(FVAMeshKey{ staticMesh, 0, convexIndex }, readHull, meshComponent, settings, meshTransform, false);
 		}
 	}
 
-	if (addedSimple || source->PropagateMode == EVAPropagateMode::Colliders)
+	if (addedSimple || settings.PropagateMode == EVAPropagateMode::Colliders)
 		return;
 
 	// The live render data, or the baked copy if a cooked build has dropped it
@@ -731,9 +881,9 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 		TArray<FVAVector3f> liveVertices;
 		const TArray<FVAVector3f>* renderVertices = nullptr;
 
-		if (GetRenderVertices(staticMesh, source->MeshLOD, liveVertices))
+		if (GetRenderVertices(staticMesh, settings.MeshLOD, liveVertices))
 			renderVertices = &liveVertices;
-		else if (const FVABakedMesh* bakedMesh = FindBakedMesh(staticMesh, source->MeshLOD))
+		else if (const FVABakedMesh* bakedMesh = FindBakedMesh(staticMesh, settings.MeshLOD))
 			renderVertices = &bakedMesh->Vertices;
 
 		if (!renderVertices)
@@ -750,7 +900,7 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAM
 		return true;
 	};
 
-	AddMeshPrimitive(FVAMeshKey{ staticMesh, source->MeshLOD, INDEX_NONE }, readTriangles, meshComponent, source, meshTransform, materialId, useFlatTransmission);
+	AddMeshPrimitive(FVAMeshKey{ staticMesh, settings.MeshLOD, INDEX_NONE }, readTriangles, meshComponent, settings, meshTransform, settings.bUseFlatTransmission);
 }
 
 // The samples and hole flags of a landscape component's collision heightfield, in component space. The only part of AddLandscapePrimitive that depends on the physics engine
@@ -807,10 +957,10 @@ struct FVALandscapeHeightfield
 };
 #endif
 
-void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId)
+void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, const FVAPrimitiveSettings& settings)
 {
 	// A landscape is both a collider and a visual, so only the collision filter can leave it out
-	if (source->PropagateMode != EVAPropagateMode::Visuals && !PassesCollisionFilter(landscapeComponent))
+	if (settings.PropagateMode != EVAPropagateMode::Visuals && !PassesCollisionFilter(landscapeComponent))
 		return;
 
 	FString landscapeName = VAActorName(landscapeComponent->GetOwner());
@@ -908,12 +1058,12 @@ void AVAWorld::AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* la
 		return;
 	}
 
-	vaHeightmapPrimitiveSetMaterial(heightmap, (VAMaterialType)materialId);
+	vaHeightmapPrimitiveSetMaterial(heightmap, (VAMaterialType)settings.MaterialId);
 
 	// An open surface that always uses flat transmission, which is two-sided and muffles once per crossing. Scale and transform are set by RefreshPrimitiveTransform in AddBinding
 	FVAPrimitiveBinding binding;
 	binding.Component = landscapeComponent;
-	binding.Source = source;
+	binding.Source = settings.Owner;
 	binding.Primitive = heightmap;
 	binding.Kind = EVAPrimitiveKind::Heightmap;
 	binding.LocalExtent = FVector(quadSize * cellQuadsX, quadSize * cellQuadsY, 1.0);
@@ -993,7 +1143,7 @@ void AVAWorld::ReleaseSharedMesh(const FVAMeshKey& key)
 	SharedMeshes.Remove(key);
 }
 
-bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission)
+bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform, bool useFlatTransmission)
 {
 	VAMesh* sharedMesh = AcquireSharedMesh(key, readVertices, meshComponent);
 
@@ -1004,7 +1154,7 @@ bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<
 	VAMatrix vaTransform = MakeScaleRotTransMatrix(meshTransform * meshComponent->GetComponentTransform());
 	VAMeshPrimitive* mesh;
 
-	VAResult result = vaMeshPrimitiveCreateFromMesh((VAMaterialType)materialId, sharedMesh, &vaTransform, &mesh);
+	VAResult result = vaMeshPrimitiveCreateFromMesh((VAMaterialType)settings.MaterialId, sharedMesh, &vaTransform, &mesh);
 
 	if (result != VA_SUCCESS)
 	{
@@ -1017,7 +1167,7 @@ bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<
 
 	FVAPrimitiveBinding binding;
 	binding.Component = meshComponent;
-	binding.Source = source;
+	binding.Source = settings.Owner;
 	binding.Primitive = mesh;
 	binding.Kind = EVAPrimitiveKind::Mesh;
 	binding.MeshKey = key;
