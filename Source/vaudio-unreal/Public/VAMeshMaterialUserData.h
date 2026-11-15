@@ -20,8 +20,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	UVAMaterialBase* MaterialAsset = nullptr;
 
-	// Used when MaterialAsset above is unset (the common case) - one of the 23 built-in materials.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (EditCondition = "MaterialAsset == nullptr", EditConditionHides))
+	// Used when MaterialAsset above is unset (the common case) - one of the 23 built-in materials. Ignored while MaterialAsset is set. No EditCondition here, as the Static Mesh editor can't evaluate one on an Asset User Data entry and hides the property
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	EVAMaterial Material = EVAMaterial::Concrete;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
