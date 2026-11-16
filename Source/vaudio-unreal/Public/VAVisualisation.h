@@ -32,6 +32,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "1"))
 	int32 VisualisationUpdateFrequency = 200;
 
+	// Whether to randomise visualisation rays each time. When false, VisualisationSeed is used, so every update casts the same rays
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation")
+	bool bRandomVisualisationSeed = true;
+
+	// Seed used to randomise visualisation rays when bRandomVisualisationSeed is false
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (EditCondition = "!bRandomVisualisationSeed", EditConditionHides))
+	int32 VisualisationSeed = 0;
+
 	// How long, in milliseconds, each diamond takes to fade in from transparent to Color's alpha
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0"))
 	int32 FadeInMilliseconds = 750;

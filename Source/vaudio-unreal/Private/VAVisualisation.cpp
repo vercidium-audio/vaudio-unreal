@@ -166,6 +166,7 @@ void UVAVisualisation::TeardownVisualisation()
 			{
 				vaEmitterSetVisualisationCallback(handle, nullptr);
 				vaEmitterSetVisualisationRayCount(handle, 0);
+				vaEmitterClearVisualisationSeed(handle);
 			}
 
 			if (OwnerEmitter->VisualisationComponent == this)
@@ -330,6 +331,11 @@ void UVAVisualisation::ApplyVisualisationSettings() const
 	vaEmitterSetVisualisationRayCount(OwnerEmitter->GetVAEmitter(), VisualisationRayCount);
 	vaEmitterSetVisualisationBounceCount(OwnerEmitter->GetVAEmitter(), VisualisationBounceCount);
 	vaEmitterSetVisualisationUpdateFrequency(OwnerEmitter->GetVAEmitter(), VisualisationUpdateFrequency);
+
+	if (bRandomVisualisationSeed)
+		vaEmitterClearVisualisationSeed(OwnerEmitter->GetVAEmitter());
+	else
+		vaEmitterSetVisualisationSeed(OwnerEmitter->GetVAEmitter(), VisualisationSeed);
 }
 
 void UVAVisualisation::OnVisualisationData(VAVisualisationData* data, int32 count)
