@@ -8,6 +8,7 @@
 #include "StaticMeshAttributes.h"
 #include "Engine/World.h"
 #include "UObject/Package.h"
+#include "Misc/App.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -137,7 +138,11 @@ void UVAVisualisation::InitializeVisualisation()
 		return;
 
 	ValidateDiamondMaterial();
-	CreateInstancedMesh();
+
+	// A cooked game that can't render (-nullrhi, a dedicated server) asserts when building a runtime mesh, so it only broadcasts OnVisualisationDataReceived. The editor still builds it under -nullrhi
+	if (FApp::CanEverRender() || !FPlatformProperties::RequiresCookedData())
+		CreateInstancedMesh();
+
 	ApplyVisualisationSettings();
 
 	OwnerEmitter->VisualisationComponent = this;
