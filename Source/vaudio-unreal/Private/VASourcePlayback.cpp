@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VASourcePlayback.h"
 #include "Components/AudioComponent.h"
 
@@ -38,7 +40,7 @@ bool VAApplyBoundsRulesOnPlay(const UObject* Source, FVASourcePlayback& Playback
 		return false;
 
 	if (!bLooping)
-		VAReport(ELogVerbosity::Warning, Source, VA_CALL_SITE_KEY(Source), TEXT("Play() was called outside the VAWorld's bounds, so nothing played. A sound that doesn't loop isn't started outside them, and doesn't play once back inside"));
+		VAReport(ELogVerbosity::Warning, Source, VA_CALL_SITE_KEY(Source), TEXT("This source did not play because it is outside the world bounds."));
 
 	bAutoPlayPending = true;
 	return VAApplyBoundsRules(Playback, bSilenced, bLooping, bAutoPlayPending, bPlayAttempted);
@@ -47,14 +49,15 @@ bool VAApplyBoundsRulesOnPlay(const UObject* Source, FVASourcePlayback& Playback
 void FVASourcePlayback::Play(UAudioComponent* Component)
 {
 	Component->bAutoDestroy = bAutoDestroy;
-	// Set on the component, which Play() copies to the new active sound. SetLowPassFilter*() only reaches active sounds, so before Play() they did nothing
+
+	// Must set these directly, as SetLowPassFilterFrequency() does nothing before calling Play()
 	Component->bEnableLowPassFilter = true;
 	Component->LowPassFilterFrequency = Filter.GetCutoffFrequency();
 	Component->SetVolumeMultiplier(GetVolume());
 	Component->SetPitchMultiplier(PitchMultiplier);
+
 	Component->Play();
 
-	// These are commands to the active sound, which Play() creates
 	if (ReverbSubmix)
 		VASetReverbSend(Component, ReverbSubmix, ReverbSendLevel);
 
@@ -85,7 +88,10 @@ bool FVASourcePlayback::IsPlaying() const
 void FVASourcePlayback::RemoveFinished()
 {
 	// bAutoDestroy destroys a component once its sound finishes
-	Components.RemoveAll([](UAudioComponent* component) { return !IsValid(component) || !component->IsPlaying(); });
+	Components.RemoveAll([](UAudioComponent* component)
+	{
+		return !IsValid(component) || !component->IsPlaying();
+	});
 }
 
 void FVASourcePlayback::SetFilter(float GainLF, float GainHF)
@@ -148,7 +154,7 @@ void FVASourcePlayback::SetLocation(const FVector& Location)
 
 void FVASourcePlayback::SetReverbSend(USoundSubmix* Submix, float SendLevel)
 {
-	// Moved to another submix (a different grouped EAX slot, between grouped and listener reverb, or a new current listener), so silence the old send
+	// Silence the old submix when moving to a new one
 	if (ReverbSubmix && ReverbSubmix != Submix)
 	{
 		for (UAudioComponent* component : Components)
