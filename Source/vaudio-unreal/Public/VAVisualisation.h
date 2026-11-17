@@ -82,6 +82,8 @@ public:
 	// True while this component receives its owner's visualisation data
 	bool IsCallbackRegistered() const { return bCallbackRegistered; }
 
+	virtual void DestroyComponent(bool bPromoteChildren = false) override;
+
 #if WITH_EDITOR
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio|Visualisation")
 	void GenerateFadeNodes();
@@ -92,7 +94,6 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	virtual void DestroyComponent(bool bPromoteChildren) override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
