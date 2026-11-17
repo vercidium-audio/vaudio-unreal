@@ -34,6 +34,14 @@ public class VaudioUnreal : ModuleRules
 		{
 			platform = "Win64";
 			library = "vaudionative.dll";
+
+#if UE_5_2_OR_LATER
+			// arm64 games get the ARM64 SDK in its own folder, so an arm64+x64 package keeps both DLLs. arm64ec loads the x64 one
+			if (Target.Architecture == UnrealArch.Arm64)
+			{
+				platform = "Win64-arm64";
+			}
+#endif
 		}
 		else if (Target.Platform == UnrealTargetPlatform.Linux)
 		{
