@@ -124,7 +124,7 @@ Every source is muffled relative to the current listener automatically. Sounds s
 - **VAStreamSource** (`AVAStreamSource`) is a raytraced sound that plays raw PCM data pushed at runtime: `OpenStream`, `PushAudioData`, `CloseStream`.
 - **VAInputStreamSource** (`AVAInputStreamSource`) is a stream fed by a microphone, with an `OnAudioCaptured` event for sending it elsewhere. Not supported on Linux.
 - **VANetworkedStreamSource** (`AVANetworkedStreamSource`) is a stream for audio received over the network
-- **VAVisualisation** (`UVAVisualisation`) is a component that renders dots where rays bounce. Must be attached to a `VAListener`, `VASource` or `VAEmitter`
+- **VAVisualisation** (`UVAVisualisation`) is a component that renders dots where rays bounce, with an `OnVisualisationDataReceived` event that has the position and normal of each bounce. Must be attached to a `VAListener`, `VASource` or `VAEmitter`
 
 Useful emitter properties, shared by the listener and the raytraced sources:
 - `bAffectsGroupedEAX`: this emitter's reverb is blended into the world's grouped reverbs (on by default for sources). When off, `bUseListenerReverb` chooses between the listener's reverb and none.

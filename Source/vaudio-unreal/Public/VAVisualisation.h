@@ -9,6 +9,8 @@ class AVAEmitter;
 class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FVAOnVisualisationDataReceived, const TArray<FVector>&, Positions, const TArray<FVector>&, Normals);
+
 UCLASS(ClassGroup = ("Vercidium Audio"), meta = (BlueprintSpawnableComponent), DisplayName = "VAVisualisation")
 class VAUDIOUNREAL_API UVAVisualisation : public USceneComponent
 {
@@ -69,6 +71,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0.0"))
 	float MaxDistance = 3000.0f;
 
+	// Broadcast every VisualisationUpdateFrequency milliseconds with the world-space position and surface normal of every visualisation ray bounce, one normal per position. Includes bounces beyond MaxDistance, which only limits rendering
+	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio|Visualisation")
+	FVAOnVisualisationDataReceived OnVisualisationDataReceived;
+
 	// Called from the VAEmitterVisualisationCallback trampoline with a batch of ray-bounce
 	// results, always on the main thread during vaWorldUpdate() - safe to touch UObjects directly
 	void OnVisualisationData(VAVisualisationData* data, int32 count);
@@ -123,6 +129,7 @@ private:
 	void CreateInstancedMesh();
 	void ApplyMaterialParameters();
 	void ApplyVisualisationSettings() const;
+	void BroadcastVisualisationData(VAVisualisationData* data, int32 count);
 
 	void ValidateDiamondMaterial() const;
 
