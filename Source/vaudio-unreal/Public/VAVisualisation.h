@@ -9,6 +9,8 @@ class AVAEmitter;
 class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FVAOnVisualisationDataReceived, const TArray<FVector>&, Positions, const TArray<FVector>&, Normals);
+
 UCLASS(ClassGroup = ("Vercidium Audio"), meta = (BlueprintSpawnableComponent), DisplayName = "VAVisualisation")
 class VAUDIOUNREAL_API UVAVisualisation : public USceneComponent
 {
@@ -31,6 +33,14 @@ public:
 	// How often to cast visualisation rays (milliseconds)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "1"))
 	int32 VisualisationUpdateFrequency = 200;
+
+	// Whether to randomise visualisation rays each time. When false, VisualisationSeed is used, so every update casts the same rays
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation")
+	bool bRandomVisualisationSeed = true;
+
+	// Seed used to randomise visualisation rays when bRandomVisualisationSeed is false
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (EditCondition = "!bRandomVisualisationSeed", EditConditionHides))
+	int32 VisualisationSeed = 0;
 
 	// How long, in milliseconds, each diamond takes to fade in from transparent to Color's alpha
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0"))
@@ -61,6 +71,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Visualisation", meta = (ClampMin = "0.0"))
 	float MaxDistance = 3000.0f;
 
+	// Broadcast every VisualisationUpdateFrequency milliseconds with the world-space position and surface normal of every visualisation ray bounce, one normal per position. Includes bounces beyond MaxDistance, which only limits rendering
+	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio|Visualisation")
+	FVAOnVisualisationDataReceived OnVisualisationDataReceived;
+
 	// Called from the VAEmitterVisualisationCallback trampoline with a batch of ray-bounce
 	// results, always on the main thread during vaWorldUpdate() - safe to touch UObjects directly
 	void OnVisualisationData(VAVisualisationData* data, int32 count);
@@ -74,6 +88,8 @@ public:
 	// True while this component receives its owner's visualisation data
 	bool IsCallbackRegistered() const { return bCallbackRegistered; }
 
+	virtual void DestroyComponent(bool bPromoteChildren = false) override;
+
 #if WITH_EDITOR
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio|Visualisation")
 	void GenerateFadeNodes();
@@ -84,7 +100,6 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	virtual void DestroyComponent(bool bPromoteChildren) override;
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
@@ -114,6 +129,7 @@ private:
 	void CreateInstancedMesh();
 	void ApplyMaterialParameters();
 	void ApplyVisualisationSettings() const;
+	void BroadcastVisualisationData(VAVisualisationData* data, int32 count);
 
 	void ValidateDiamondMaterial() const;
 

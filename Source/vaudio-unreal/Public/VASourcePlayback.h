@@ -46,6 +46,7 @@ struct VAUDIOUNREAL_API FVASourcePlayback
 	// The component volume: gainLF x the volume multiplier
 	float GetVolume() const { return Filter.GetVolume() * VolumeMultiplier; }
 	float GetPitchMultiplier() const { return PitchMultiplier; }
+	bool IsDryOutputEnabled() const { return bDryEnabled; }
 
 	const TArray<UAudioComponent*>& GetComponents() const { return Components; }
 

@@ -118,7 +118,7 @@ void AVAStreamSource::PushAudioData(const uint8* Data, int32 NumBytes)
 {
 	if (!bStreamOpen)
 	{
-		VA_ERROR_NAMED(TEXT("PushAudioData called before OpenStream (or after CloseStream)"));
+		VA_ERROR_NAMED(TEXT("PushAudioData failed as the stream never opened"));
 		return;
 	}
 

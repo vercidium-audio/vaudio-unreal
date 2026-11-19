@@ -76,12 +76,24 @@ struct FVASharedMesh
 	int32 TriangleCount = 0;
 };
 
+// What one component's primitives are added with, resolved per component by AVAWorld::ResolvePrimitiveSettings
+struct FVAPrimitiveSettings
+{
+	// The VAMaterialComponent the settings came from, or the mesh component when its mesh's VAMeshMaterial won. Becomes each binding's Source
+	UObject* Owner = nullptr;
+
+	int32 MaterialId = 0;
+	bool bUseFlatTransmission = false;
+	EVAPropagateMode PropagateMode{};
+	int32 MeshLOD = 0;
+};
+
 struct FVAPrimitiveBinding
 {
 	TWeakObjectPtr<USceneComponent> Component;
 
-	// The material component this primitive's material came from, on the component's own actor or inherited from an attach parent
-	TWeakObjectPtr<UVAMaterialComponent> Source;
+	// What added this primitive (FVAPrimitiveSettings::Owner), so its geometry can be removed with it
+	TWeakObjectPtr<UObject> Source;
 
 	void* Primitive = nullptr;
 	EVAPrimitiveKind Kind = EVAPrimitiveKind::Mesh;
@@ -433,8 +445,7 @@ public:
 
 	// --- Mode ---
 
-	// Silence all direct audio but keep reverb submix sends active.
-	// Useful for auditioning the acoustic response of a space in isolation.
+	// Silences the direct audio of every source and one-shot but keeps their reverb submix sends active, for auditioning the acoustic response of a space in isolation. Each source also has its own bReverbOnly
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|World")
 	bool bReverbOnly = false;
 
@@ -555,7 +566,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetLandscapeLOD(int32 lod);
 
-	// Rebuilds the geometry of every VAMaterialComponent in this world
+	// Rebuilds the geometry of every VAMaterialComponent and mesh with a VAMeshMaterial in this world
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void RebuildPrimitives();
 
@@ -581,6 +592,9 @@ public:
 	// The VAWorld in the context object's level, once it has begun play. Every VA actor and component uses this, so none of them need a reference to it
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject"))
 	static AVAWorld* Find(const UObject* WorldContextObject);
+
+	// Whether a source plays only its reverb: its own bReverbOnly, or this VAWorld's. AudioWorld may be null
+	static bool IsReverbOnly(const AVAWorld* AudioWorld, bool bSourceReverbOnly) { return bSourceReverbOnly || (AudioWorld && AudioWorld->bReverbOnly); }
 
 	// --- One-shot sounds ---
 
@@ -724,6 +738,10 @@ private:
 	TArray<TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>> LevelInstanceSources;
 	FDelegateHandle LevelAddedToWorldHandle;
 
+	// Actors spawned since the last Tick, checked for mesh defaults then, as a spawned actor's mesh is usually set after spawning
+	TArray<TWeakObjectPtr<AActor>> PendingSpawnedActors;
+	FDelegateHandle ActorSpawnedHandle;
+
 	// Non-listener emitters, which are all targets of the main listener. Raw pointers are safe as emitters unregister in EndPlay
 	TArray<AVAEmitter*> RegisteredEmitters;
 
@@ -789,8 +807,7 @@ private:
 
 	TArray<FString> ActorsWithInvalidMaterials;
 
-	// Mirrors bReverbOnly as of the last Tick(), so the dry-output loop over RegisteredEmitters
-	// only runs on the tick where it actually changes.
+	// Mirrors bReverbOnly as of the last Tick(), so the one-shots' dry output is only updated on the tick it changes. Sources apply it themselves every tick
 	bool bWasReverbOnly = false;
 
 	// Custom material IDs (1000 and up) assigned by this world, like Godot's VAWorld.custom_materials. Removed custom materials keep their ID, so re-adding one reuses it
@@ -815,12 +832,26 @@ private:
 	void AddActorTree(AActor* actor, UVAMaterialComponent* source);
 	void AddLevelInstanceContents(AActor* instance, UVAMaterialComponent* source);
 	void OnLevelAddedToWorld(ULevel* level, UWorld* world);
+	void OnActorSpawned(AActor* actor);
+	// Adds the actor's mesh default components if no VAMaterialComponent in its chain will add them, and they aren't added yet
+	void AddMeshDefaultActor(AActor* actor);
+	void AddMeshDefaultLevel(ULevel* level);
+	// Every visible level's mesh default actors
+	void AddWorldMeshDefaults();
+	void AddSpawnedMeshDefaults();
+	// source is the VAMaterialComponent the actor uses, its own or inherited from an attach parent or level instance. Null adds only its mesh components whose mesh has a VAMeshMaterial
 	void AddActorPrimitives(AActor* actor, UVAMaterialComponent* source);
-	void AddShapePrimitive(UShapeComponent* shape, UVAMaterialComponent* source, int32 materialId);
-	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
-	void AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, UVAMaterialComponent* source, int32 materialId);
+	// Picks the component's own VAMaterialComponent, its mesh's VAMeshMaterial, or the inherited source, in that order. Owner is null if there's nothing to add (no source and no mesh default). Returns false if the material is invalid
+	bool ResolvePrimitiveSettings(UVAMaterialComponent* source, UActorComponent* component, FVAPrimitiveSettings& outSettings) const;
+	// Forgets the source and removes its bindings, plus every binding on the tree's actors
+	void ForgetMaterialSource(UVAMaterialComponent* source, const TSet<AActor*>& tree);
+	// The actor, plus the attached children and level instance actors it would add, i.e. those without their own VAMaterialComponent
+	static void CollectActorTree(AActor* actor, TSet<AActor*>& tree);
+	void AddShapePrimitive(UShapeComponent* shape, const FVAPrimitiveSettings& settings);
+	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform);
+	void AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, const FVAPrimitiveSettings& settings);
 	// readVertices is only called when no placement of this mesh exists yet. It fills the triangle list in mesh space, or returns false if there is none
-	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, UVAMaterialComponent* source, const FTransform& meshTransform, int32 materialId, bool useFlatTransmission);
+	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform, bool useFlatTransmission);
 	bool PassesCollisionFilter(const UPrimitiveComponent* component) const;
 
 	// Sets the primitive's transform, adds it to the vaWorld and tracks its component's movement. Destroys it if the SDK rejects it

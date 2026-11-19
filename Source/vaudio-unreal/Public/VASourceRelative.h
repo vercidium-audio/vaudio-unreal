@@ -42,6 +42,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
 	float PitchMultiplier = 1.0f;
 
+	// Silences this source's direct audio but keeps its send to the listener's reverb, e.g. to hear your own microphone in the room without the dry signal. The VAWorld's bReverbOnly does this for every source
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	bool bReverbOnly = false;
+
 	// Plays a random sound from SourceSounds. Each call starts a new sound, so calls overlap. Returns false if this actor failed validation, or if the sound couldn't be created (e.g. there's no audio device)
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	bool Play();

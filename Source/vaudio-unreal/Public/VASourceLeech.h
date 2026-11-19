@@ -47,6 +47,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
 	float PitchMultiplier = 1.0f;
 
+	// Silences this source's direct audio but keeps its reverb send. The VAWorld's bReverbOnly does this for every source
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
+	bool bReverbOnly = false;
+
 	// Plays a random sound from SourceSounds. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while the leeched emitter's IsSilencedByBounds is true, like AVASource::Play (any looping SourceSound counts as looping)
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	bool Play();
@@ -94,6 +98,9 @@ private:
 	bool bWarnedNoEmitter = false;
 
 	bool bWarnedPlayBeforeReady = false;
+
+	// Pushes the multipliers and dry output toggle to Playback
+	void UpdateMultipliers();
 
 	// Pushes the multipliers, and the emitter's muffling and reverb send, to Playback
 	void UpdatePlayback(AVAEmitter* emitter);

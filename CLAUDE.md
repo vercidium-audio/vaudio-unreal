@@ -36,6 +36,7 @@ Reflected names are exactly the Godot node names. There is no backward compatibi
 | `AVASourceAmbient` | `VASourceAmbient` | A 2D sound filtered by the listener's ambient filter |
 | `UVAVisualisation` | `VAVisualisation` | Scene component on an emitter that draws where its rays land |
 | `UVAMaterialComponent` | `vercidium_audio_material` metadata | Makes an actor's geometry part of the raytraced scene |
+| `UVAMeshMaterialUserData` ("VAMeshMaterial") | none | Asset User Data on a `UStaticMesh`, a default material for every placement of the mesh |
 | `UVADefaultMaterial`, `UVACustomMaterial` | `VADefaultMaterial`, `VACustomMaterial` | DataAssets listed in `AVAWorld::Materials` |
 | `UVAWorldSubsystem` | `find_va_world()` | Tracks the map's `AVAWorld` |
 | `FVASourcePlayback` | `ALSource` | Owns a source's audio components, filter and reverb send |
@@ -74,6 +75,12 @@ Every listener in a world shares one SDK emitter, held by the current listener (
 
 `UVAMaterialComponent` is the registration point: `AVAWorld::AddMaterialPrimitives` adds its actor and every attached child actor without its own material component, which covers spawned actors, streamed levels, World Partition cells and level instances. A level instance's actors aren't attached to its `ALevelInstance`, so they're reached through `ULevelInstanceSubsystem` (`AddLevelInstanceContents`, `OnLevelAddedToWorld`). Only add the contents of a visible level, as `AddBinding` doesn't dedupe.
 
+A Static Mesh can also carry a `UVAMeshMaterialUserData` (`UVAMeshMaterialUserData::Find(mesh)`), so its actors need no `UVAMaterialComponent`. Precedence is per mesh component, in the file-static `ResolvePrimitiveOwner` in `VAWorldPrimitives.cpp`: own `MaterialOverrides` entry > own component > mesh default > component inherited from an attach parent or level instance. `AVAWorld::ResolvePrimitiveSettings` wraps it and fills an `FVAPrimitiveSettings` (owner, material id, flat transmission, `PropagateMode`, `MeshLOD`), which is what the `Add*Primitive(s)` functions take. The bake (`ForEachBakeTargetOnActor`) uses `ResolvePrimitiveOwner` too.
+- The binding owner (`FVAPrimitiveBinding::Source`, a `TWeakObjectPtr<UObject>`) is the mesh component for mesh-default geometry, not a material component, so removing an inherited parent's component doesn't drop it. Removing an actor's own component re-adds its mesh defaults
+- `AddActorPrimitives(actor, nullptr)` adds only an actor's mesh-default components. Actors with no material component in their chain are discovered by `AddMeshDefaultActor`/`AddMeshDefaultLevel`: at `AVAWorld::BeginPlay` (`AddWorldMeshDefaults`, every visible level), in `OnLevelAddedToWorld` for every streamed level, and at the end of `RebuildPrimitives`. An actor with a mesh-default component already bound is skipped
+- `SetStaticMesh` has no event and usually runs after `SpawnActor`, so the `AddOnActorSpawnedHandler` callback only queues actors (`PendingSpawnedActors`), resolved in `AVAWorld::Tick`
+- `UVAMeshMaterialUserData::PostEditChangeProperty` rebuilds every running `AVAWorld`, so PIE edits apply
+
 - Shape components and simple collision become SDK prisms, spheres and capsules. Convex hulls and render triangles become mesh primitives, sharing triangle data through `AVAWorld::SharedMeshes`
 - A zero-thickness simple collision box (e.g. `/Engine/BasicShapes/Plane`) becomes an SDK plane, as a thin prism leaks bouncing rays. Planes always use flat transmission
 - The SDK's mesh triangle test is one-sided. Render triangles already have the right winding, but convex hull winding varies, so each hull triangle is faced away from the hull's centre
@@ -100,6 +107,7 @@ Don't "fix" these:
 - `BakeGeometry` and the bake commandlet exist because cooked builds drop CPU mesh data. `FVABakedMesh` is keyed by soft mesh path + `MeshLOD`, and `AddStaticMeshPrimitives` falls back to `FindBakedMesh` when there's no live render data. Don't set `bAllowCPUAccess` on meshes at runtime instead, it doesn't survive cooking and dirties users' assets
 - Units are cm (`MetersPerUnit = 0.01`) with `VACoordinateSystemUnreal`
 - Materials are DataAssets plus a component rather than scene nodes and metadata
+- `UVAMeshMaterialUserData` (a default material on a Static Mesh asset) has no Godot equivalent yet
 - `bAutoCapture` on `AVAInputStreamSource`, `bAutoFollowCamera` and `ListenerReverbSubmix` on `AVAListener`, `bAirAbsorptionEnabled`, `BoundsFollow` and `BoundsUpdateDistance` on `AVAWorld` are Unreal-only
 - PIE is in-process, so there is no debugger relay: `PostEditChangeProperty` on the PIE actor reaches the running world
 

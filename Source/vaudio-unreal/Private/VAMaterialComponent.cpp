@@ -16,19 +16,7 @@ UVAMaterialComponent::UVAMaterialComponent()
 
 bool UVAMaterialComponent::GetMaterialId(int32& OutMaterialId)
 {
-	if (!MaterialAsset)
-	{
-		OutMaterialId = (int32)EVAMaterialToVA(Material);
-		return true;
-	}
-
-	if (!AudioWorld || !AudioWorld->HasMaterial(MaterialAsset))
-	{
-		VA_WARN_NAMED(TEXT("MaterialAsset '%s' is not in the VAWorld's Materials array. Add it to the Materials array of the level's VAWorld."), *MaterialAsset->GetName());
-		return false;
-	}
-
-	return MaterialAsset->GetMaterialId(AudioWorld, OutMaterialId);
+	return VAResolveMaterialId(MaterialAsset, Material, AudioWorld, this, FString(), OutMaterialId);
 }
 
 bool UVAMaterialComponent::GetMaterialFor(const UActorComponent* component, int32& outMaterialId, bool& outUseFlatTransmission)
@@ -42,20 +30,7 @@ bool UVAMaterialComponent::GetMaterialFor(const UActorComponent* component, int3
 				continue;
 
 			outUseFlatTransmission = materialOverride.bUseFlatTransmission;
-
-			if (!materialOverride.MaterialAsset)
-			{
-				outMaterialId = (int32)EVAMaterialToVA(materialOverride.Material);
-				return true;
-			}
-
-			if (!AudioWorld || !AudioWorld->HasMaterial(materialOverride.MaterialAsset))
-			{
-				VA_WARN_NAMED(TEXT("The MaterialAsset '%s' for component '%s' is not in the VAWorld's Materials array."), *materialOverride.MaterialAsset->GetName(), *component->GetName());
-				return false;
-			}
-
-			return materialOverride.MaterialAsset->GetMaterialId(AudioWorld, outMaterialId);
+			return VAResolveMaterialId(materialOverride.MaterialAsset, materialOverride.Material, AudioWorld, this, FString::Printf(TEXT(" (override for component '%s')"), *component->GetName()), outMaterialId);
 		}
 	}
 

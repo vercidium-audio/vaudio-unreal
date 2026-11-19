@@ -2,6 +2,7 @@
 #include "VAEngineCompat.h"
 #include "VAEmitter.h"
 #include "VAListener.h"
+#include "VAWorld.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"
 #include "Components/BillboardComponent.h"
@@ -105,8 +106,7 @@ void AVASourceLeech::Tick(float DeltaTime)
 	// Keeps the last filter and send while there's no emitter, e.g. after it was destroyed
 	if (!emitter)
 	{
-		Playback.SetVolumeMultiplier(VolumeMultiplier);
-		Playback.SetPitchMultiplier(PitchMultiplier);
+		UpdateMultipliers();
 
 		if (!bWarnedNoEmitter)
 		{
@@ -137,11 +137,18 @@ void AVASourceLeech::Tick(float DeltaTime)
 		Play();
 }
 
-void AVASourceLeech::UpdatePlayback(AVAEmitter* emitter)
+void AVASourceLeech::UpdateMultipliers()
 {
 	Playback.SetVolumeMultiplier(VolumeMultiplier);
 	Playback.SetPitchMultiplier(PitchMultiplier);
 
+	// Found every tick, as the VAWorld may begin play after this actor
+	Playback.SetDryOutputEnabled(!AVAWorld::IsReverbOnly(AVAWorld::Find(this), bReverbOnly));
+}
+
+void AVASourceLeech::UpdatePlayback(AVAEmitter* emitter)
+{
+	UpdateMultipliers();
 	emitter->ApplyResultsToPlayback(Playback);
 }
 

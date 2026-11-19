@@ -5,7 +5,7 @@ Unreal Engine plugin for Vercidium Audio — raytraced audio simulation with rea
 > [!WARNING]
 > This plugin is experimental. Please raise issues on the [Support repository](https://github.com/vercidium-audio/support)
 
-This repository requires Vercidium Audio v1.11.1 to run.
+This repository requires Vercidium Audio v1.11.2 to run.
 - Download the Vercidium Audio SDK from [vercidium.com](https://vercidium.com)
 
 > Please note that the Vercidium Audio SDK is not free for commercial use. See [vercidium.com/eula](https://vercidium.com/eula)
@@ -52,7 +52,20 @@ YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Win64/vaudionativ
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Win64/vaudionative.dll
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Linux/libvaudionative.so
 YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Mac/libvaudionative.dylib
+YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/LinuxArm64/libvaudionative.so
+YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Win64-arm64/vaudionative.lib
+YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Win64-arm64/vaudionative.dll
 ```
+
+The SDK's platform folders map to these `lib` folders:
+
+| SDK folder | Plugin folder |
+|---|---|
+| `windows` | `lib/Win64` |
+| `linux` | `lib/Linux` |
+| `mac` | `lib/Mac` |
+| `linux-arm64` | `lib/LinuxArm64` (5.x only, see [ARM64](#arm64)) |
+| `windows-arm64` | `lib/Win64-arm64` (5.8 only, see [ARM64](#arm64)) |
 
 [Download the SDK](https://vercidium.com) and:
 - if using Unreal 5.7 onwards, copy the files of the double-precision native SDK (`3d/native-double`) into the above locations.
@@ -60,8 +73,9 @@ YourProject/Plugins/vaudio-unreal/Source/ThirdParty/vaudio/lib/Mac/libvaudionati
 
 You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy:
 - For Windows: `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`
-- For Linux: `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux`
+- For Linux: `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux` (and `lib/LinuxArm64`)
 - For Mac: `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`
+- For Windows ARM64: `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64-arm64`
 
 The Mac SDK is universal (arm64 and x86_64), so Mac builds can target Apple Silicon, Intel or Universal. The debug window is universal too, so it opens on Apple Silicon and Intel.
 
@@ -75,6 +89,15 @@ When you build, the plugin copies the above dll/so/dylib files into `Binaries/Th
 - Regenerate your project files (right-click your `.uproject` and click `Generate Visual Studio project files`), then build the project in Visual Studio (or open the `.uproject` and let Unreal prompt you to rebuild missing modules).
 - Open the project in the Unreal Editor, go to `Edit > Plugins`, search for `Vercidium Audio`, and enable it.
 - Restart the editor if prompted.
+
+## ARM64
+
+Unreal has no ARM64 editor for Windows or Linux, so ARM64 is supported for packaged games only, e.g. for raytracing AI hearing on ARM cloud servers. The plugin is built from source when you package, against the SDK in `lib/LinuxArm64` or `lib/Win64-arm64`.
+
+- **Linux ARM64** (5.7 and 5.8): package from a Linux x64 editor with Unreal's Linux ARM64 target support, e.g. `-platform=LinuxArm64`. The packaged game's launcher is `YourProject-Arm64.sh`.
+- **Windows ARM64** (5.8 only, experimental in Unreal): install the engine's Windows ARM64 target platform component (Epic Games Launcher > Library > 5.8 > Options), then package from the x64 editor with `-platform=Win64 -clientarchitecture=arm64`, or `arm64+x64` for a game with both executables. The ARM64 and x64 SDKs are staged into separate `Binaries/ThirdParty/vaudio/Win64-arm64` and `Win64` folders. `arm64ec` uses the x64 SDK and is untested.
+
+Games that can't render (`-nullrhi`, dedicated servers) still raytrace, but `VAVisualisation` doesn't create its debug mesh there.
 
 ## Unreal Engine 4.27
 
@@ -103,7 +126,7 @@ export CCC_OVERRIDE_OPTIONS="# +-Wno-error +-Wno-deprecated-builtins +-fno-acces
 
 1. Place one **VAWorld** in the level. Its location is the minimum corner of the raytraced box and `BoundsSize` is the box's size, so move and size it to cover the playable area.
 2. For reverb to work, add at least one submix to `VAWorld.GroupedEAXSubmixes` (I recommend at least three)
-3. Add a **VAMaterialComponent** to every actor that should affect raytracing (walls, floors, props) and select its `Material` (brick, concrete, dirt, etc).
+3. Add a **VAMaterialComponent** to every actor that should affect raytracing (walls, floors, props) and select its `Material` (brick, concrete, dirt, etc), or give a Static Mesh asset a [VAMeshMaterial](#static-mesh-materials) so every placement of it is raytraced.
 4. Place one **VAListener**. By default it follows the player's camera (`bAutoFollowCamera`). For muffling to work, enable its occlusion and permeation rays (e.g. `OcclusionRayCount=1024`, `OcclusionBounceCount=8`, `PermeationRayCount=128`, `PermeationBounceCount=2`)
 5. Place a **VASource** for each sound, set its `SourceSound` and `bAutoPlay`, and give it reverb rays (e.g. `ReverbRayCount=64`, `ReverbBounceCount=64`) so it has reverb.
 
@@ -124,7 +147,7 @@ Every source is muffled relative to the current listener automatically. Sounds s
 - **VAStreamSource** (`AVAStreamSource`) is a raytraced sound that plays raw PCM data pushed at runtime: `OpenStream`, `PushAudioData`, `CloseStream`.
 - **VAInputStreamSource** (`AVAInputStreamSource`) is a stream fed by a microphone, with an `OnAudioCaptured` event for sending it elsewhere. Not supported on Linux.
 - **VANetworkedStreamSource** (`AVANetworkedStreamSource`) is a stream for audio received over the network
-- **VAVisualisation** (`UVAVisualisation`) is a component that renders dots where rays bounce. Must be attached to a `VAListener`, `VASource` or `VAEmitter`
+- **VAVisualisation** (`UVAVisualisation`) is a component that renders dots where rays bounce, with an `OnVisualisationDataReceived` event that has the position and normal of each bounce. Must be attached to a `VAListener`, `VASource` or `VAEmitter`
 
 Useful emitter properties, shared by the listener and the raytraced sources:
 - `bAffectsGroupedEAX`: this emitter's reverb is blended into the world's grouped reverbs (on by default for sources). When off, `bUseListenerReverb` chooses between the listener's reverb and none.
@@ -229,6 +252,24 @@ Call `SyncPrimitive(Actor)` on the `VAWorld` after:
 
 Geometry and sources in an unloaded streaming level don't affect sound, as their actors don't exist yet. Stream levels in before they're within earshot, e.g. with a larger streaming volume, or keep walls that matter for sound in the persistent level. Otherwise the muffling changes the moment the level loads.
 
+#### Static Mesh materials
+
+A Static Mesh asset can carry its own material, so every placement of it is raytraced without a `VAMaterialComponent`, e.g. a wall mesh that's always brick. Open the mesh in the Static Mesh editor, add an entry to **Asset User Data** in its Details panel, and choose **VAMeshMaterial** (`UVAMeshMaterialUserData`). Save the mesh, and it applies in every level.
+
+- `Material`, `MaterialAsset`, `bUseFlatTransmission`, `PropagateMode` and `MeshLOD` work the same as on a `VAMaterialComponent`. `MaterialAsset` must still be in the `VAWorld`'s `Materials` array.
+- It only applies to that mesh's static mesh components (instanced and foliage meshes included). The rest of the actor, such as shape components, isn't raytraced unless the actor has a `VAMaterialComponent`.
+- Placed actors, streamed sublevels, World Partition cells and level instances are picked up when they load. Actors spawned during play are picked up on the `VAWorld`'s next tick, so a mesh set right after spawning is still found.
+- Editing a `VAMeshMaterial` during Play In Editor rebuilds the geometry straight away. Adding or removing the entry itself takes effect the next time you play.
+- Meshes raytraced by their render triangles still need baking for shipping builds (see below), and the bake includes them.
+
+When a mesh component could get its material from more than one place, the first of these wins:
+1. A `MaterialOverrides` entry for that component, on the actor's own `VAMaterialComponent`
+2. The actor's own `VAMaterialComponent`
+3. The mesh's `VAMeshMaterial`
+4. A `VAMaterialComponent` on an attach parent or Level Instance
+
+So a glass window mesh attached to a brick building stays glass, while a `VAMaterialComponent` on the window actor itself overrides the mesh. Removing an actor's `VAMaterialComponent` during play returns its meshes to their `VAMeshMaterial`.
+
 #### Planes
 
 A mesh whose box collision has no thickness, like `/Engine/BasicShapes/Plane`, is an open sheet that always uses flat transmission (`bUseFlatTransmission` is ignored). It reflects rays from both sides, but flat transmission on the built-in materials is too low to muffle sound passing through it. Give it a `VACustomMaterial` with `FlatTransmissionLF` and `FlatTransmissionHF` near 1 to muffle that sound.
@@ -261,8 +302,8 @@ Use `SetMaterials` on the `VAWorld` to change the list during play.
 
 Cooked builds drop the CPU copy of a mesh's triangles unless the mesh has `Allow CPU Access` set, so a mesh raytraced by its render triangles (one without simple collision, or under a material component set to `Visuals`) affects nothing in a packaged game until it's baked. Box, sphere, capsule and convex collision, and landscapes, don't need baking.
 
-Click `Bake Geometry For Shipping` on the `VAWorld`, or run the `-run=VABake` commandlet, which bakes and saves every level that has a `VAWorld`. This stores one copy of the triangles per static mesh and LOD in the level, shared by every placement. The bake includes:
-- actors in levels that are loaded in the editor. Load every streaming sublevel before baking, or its meshes aren't baked
+Click `Bake Geometry For Shipping` on the `VAWorld`, or run the `-run=VABake` commandlet, which bakes and saves every level that has a `VAWorld` (add `-MapPath=/Game/Maps` to only bake the levels under that folder). This stores one copy of the triangles per static mesh and LOD in the level, shared by every placement. The bake includes:
+- the persistent level and its streaming sublevels, whatever their streaming method, and whether or not they're hidden in the editor, as the editor and the commandlet both load every sublevel
 - every Level Instance, loading unloaded ones while it runs
 - in World Partition maps, every actor, loading unloaded cells while it runs
 

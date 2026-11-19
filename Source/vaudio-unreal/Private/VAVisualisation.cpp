@@ -8,6 +8,7 @@
 #include "StaticMeshAttributes.h"
 #include "Engine/World.h"
 #include "UObject/Package.h"
+#include "Misc/App.h"
 
 extern "C" {
 #include "vaudio.h"
@@ -104,7 +105,7 @@ void UVAVisualisation::BeginPlay()
 
 	if (!OwnerEmitter)
 	{
-		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Must be attached to a VAListener, VAEmitter or VASource actor and will not render"));
+		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Won't render or broadcast OnVisualisationDataReceived because its owner '%s' isn't a VAListener, VAEmitter or VASource actor. Add it to one of those instead"), *GetNameSafe(GetOwner()));
 		return;
 	}
 
@@ -122,13 +123,13 @@ void UVAVisualisation::InitializeVisualisation()
 		if (!OwnerEmitter->GetAudioWorld())
 			return;
 
-		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Will not render as its owner failed to initialise"));
+		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Won't render or broadcast OnVisualisationDataReceived because its owner '%s' failed to initialise. Check the owner's own warnings for why"), *OwnerEmitter->GetName());
 		return;
 	}
 
 	if (!DiamondMaterial)
 	{
-		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Has no DiamondMaterial assigned and will not render"));
+		VA_WARN_NAMED_SLOT(EVAMessageSlot::Status, TEXT("Won't render or broadcast OnVisualisationDataReceived because it has no DiamondMaterial. Assign one, then click Generate Fade Nodes above it"));
 		return;
 	}
 
@@ -137,7 +138,11 @@ void UVAVisualisation::InitializeVisualisation()
 		return;
 
 	ValidateDiamondMaterial();
-	CreateInstancedMesh();
+
+	// A cooked game that can't render (-nullrhi, a dedicated server) asserts when building a runtime mesh, so it only broadcasts OnVisualisationDataReceived. The editor still builds it under -nullrhi
+	if (FApp::CanEverRender() || !FPlatformProperties::RequiresCookedData())
+		CreateInstancedMesh();
+
 	ApplyVisualisationSettings();
 
 	OwnerEmitter->VisualisationComponent = this;
@@ -145,7 +150,7 @@ void UVAVisualisation::InitializeVisualisation()
 
 	if (result != VA_SUCCESS)
 	{
-		VA_ERROR_NAMED_RESULT(result, TEXT("Failed to register the visualisation callback."));
+		VA_ERROR_NAMED_RESULT(result, TEXT("Won't render or broadcast OnVisualisationDataReceived because registering the visualisation callback on '%s' failed"), *OwnerEmitter->GetName());
 		OwnerEmitter->VisualisationComponent = nullptr;
 		return;
 	}
@@ -166,6 +171,7 @@ void UVAVisualisation::TeardownVisualisation()
 			{
 				vaEmitterSetVisualisationCallback(handle, nullptr);
 				vaEmitterSetVisualisationRayCount(handle, 0);
+				vaEmitterClearVisualisationSeed(handle);
 			}
 
 			if (OwnerEmitter->VisualisationComponent == this)
@@ -330,11 +336,40 @@ void UVAVisualisation::ApplyVisualisationSettings() const
 	vaEmitterSetVisualisationRayCount(OwnerEmitter->GetVAEmitter(), VisualisationRayCount);
 	vaEmitterSetVisualisationBounceCount(OwnerEmitter->GetVAEmitter(), VisualisationBounceCount);
 	vaEmitterSetVisualisationUpdateFrequency(OwnerEmitter->GetVAEmitter(), VisualisationUpdateFrequency);
+
+	if (bRandomVisualisationSeed)
+		vaEmitterClearVisualisationSeed(OwnerEmitter->GetVAEmitter());
+	else
+		vaEmitterSetVisualisationSeed(OwnerEmitter->GetVAEmitter(), VisualisationSeed);
+}
+
+void UVAVisualisation::BroadcastVisualisationData(VAVisualisationData* data, int32 count)
+{
+	if (!OnVisualisationDataReceived.IsBound())
+		return;
+
+	TArray<FVector> positions;
+	TArray<FVector> normals;
+	positions.Reserve(count);
+	normals.Reserve(count);
+
+	for (int32 i = 0; i < count; i++)
+	{
+		positions.Add(VAVectorToFVector(data[i].position));
+		normals.Add(VAVectorToFVector(data[i].normal));
+	}
+
+	OnVisualisationDataReceived.Broadcast(positions, normals);
 }
 
 void UVAVisualisation::OnVisualisationData(VAVisualisationData* data, int32 count)
 {
-	if (!InstancedMesh || count <= 0)
+	if (!data || count <= 0)
+		return;
+
+	BroadcastVisualisationData(data, count);
+
+	if (!InstancedMesh)
 		return;
 
 	int32 capacity = InstancedMesh->GetInstanceCount();

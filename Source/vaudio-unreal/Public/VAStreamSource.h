@@ -69,7 +69,7 @@ private:
 
 	bool bStreamOpen = false;
 
-	// Latched once this source is first ready to play, so the stream keeps accepting data if the listener goes away
+	// Set once this source is first ready to play and stays true until the stream closes, so the stream keeps accepting data if the listener goes away
 	bool bStreamReady = false;
 
 	// Opened or left the bounds while playing, so the sound starts once it's inside

@@ -19,7 +19,7 @@ struct FVAEAXReverbResult
 {
 	GENERATED_BODY()
 
-	// Percentage of reverb ray energy that escaped outside
+	// Percentage of ambient occlusion energy that reached the edge of the world
 	UPROPERTY(BlueprintReadOnly, Category = "Vercidium Audio|Reverb")
 	float OutsidePercent = 0.0f;
 

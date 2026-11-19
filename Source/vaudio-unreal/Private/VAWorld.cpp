@@ -315,6 +315,10 @@ void AVAWorld::BeginPlay()
 
 	// Actors that began play before this one join it now
 	subsystem->RegisterWorld(this);
+
+	// Actors with no VAMaterialComponent whose meshes have a VAMeshMaterial
+	ActorSpawnedHandle = GetWorld()->AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateUObject(this, &AVAWorld::OnActorSpawned));
+	AddWorldMeshDefaults();
 }
 
 AVAWorld* AVAWorld::Find(const UObject* WorldContextObject)
@@ -950,6 +954,8 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	RunningWorlds.RemoveSingleSwap(this);
 	FWorldDelegates::LevelAddedToWorld.Remove(LevelAddedToWorldHandle);
+	GetWorld()->RemoveOnActorSpawnedHandler(ActorSpawnedHandle);
+	PendingSpawnedActors.Empty();
 
 	StopOneShots();
 
@@ -1099,6 +1105,7 @@ void AVAWorld::Tick(float DeltaTime)
 			FollowBounds();
 
 		SyncDebugCamera();
+		AddSpawnedMeshDefaults();
 
 		vaWorldUpdate(World);
 
@@ -1117,15 +1124,9 @@ void AVAWorld::Tick(float DeltaTime)
 		if (bReverbOnly != bWasReverbOnly)
 		{
 			bWasReverbOnly = bReverbOnly;
-			bool bDryEnabled = !bReverbOnly;
-
-			// Only sources have dry output to toggle
-			for (AVAEmitter* Emitter : RegisteredEmitters)
-				if (AVARaytracedSource* ConcreteEmitter = Cast<AVARaytracedSource>(Emitter))
-					ConcreteEmitter->SetDryOutputEnabled(bDryEnabled);
 
 			for (FVAOneShot& oneShot : OneShots)
-				oneShot.Playback.SetDryOutputEnabled(bDryEnabled);
+				oneShot.Playback.SetDryOutputEnabled(!bReverbOnly);
 		}
 
 		if (bShowDebugMessages && GEngine)

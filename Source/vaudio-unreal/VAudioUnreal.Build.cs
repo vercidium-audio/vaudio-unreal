@@ -30,14 +30,30 @@ public class VaudioUnreal : ModuleRules
 		string platform;
 		string library;
 
+		bool linux = Target.Platform == UnrealTargetPlatform.Linux;
+#if UE_5_0_OR_LATER
+		bool linuxArm64 = Target.Platform == UnrealTargetPlatform.LinuxArm64;
+		linux |= linuxArm64;
+#else
+		bool linuxArm64 = false;
+#endif
+
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
 			platform = "Win64";
 			library = "vaudionative.dll";
+
+#if UE_5_2_OR_LATER
+			// arm64 games get the ARM64 SDK in its own folder, so an arm64+x64 package keeps both DLLs. arm64ec loads the x64 one
+			if (Target.Architecture == UnrealArch.Arm64)
+			{
+				platform = "Win64-arm64";
+			}
+#endif
 		}
-		else if (Target.Platform == UnrealTargetPlatform.Linux)
+		else if (linux)
 		{
-			platform = "Linux";
+			platform = linuxArm64 ? "LinuxArm64" : "Linux";
 			library = "libvaudionative.so";
 		}
 		else if (Target.Platform == UnrealTargetPlatform.Mac)
@@ -47,7 +63,7 @@ public class VaudioUnreal : ModuleRules
 		}
 		else
 		{
-			throw new BuildException("vaudio-unreal doesn't support " + Target.Platform + ", only Win64, Linux and Mac");
+			throw new BuildException("vaudio-unreal doesn't support " + Target.Platform + ", only Win64, Linux, LinuxArm64 and Mac");
 		}
 
 		string libPath = Path.Combine(sdkPath, "lib", platform);
@@ -75,7 +91,7 @@ public class VaudioUnreal : ModuleRules
 			PublicRuntimeLibraryPaths.Add(Path.Combine(PluginDirectory, "Binaries", "ThirdParty", "vaudio", platform));
 
 			// On Linux, UBT makes that rpath relative through the building machine's engine folder, which a packaged game doesn't have, so put the library beside the executable instead ($ORIGIN is always in its rpath)
-			if (Target.Platform == UnrealTargetPlatform.Linux && Target.LinkType == TargetLinkType.Monolithic)
+			if (linux && Target.LinkType == TargetLinkType.Monolithic)
 			{
 				binariesPath = "$(TargetOutputDir)";
 			}
@@ -85,7 +101,7 @@ public class VaudioUnreal : ModuleRules
 
 		// The dev SDK ships the debug window, which it looks for beside the shared library. The production SDK doesn't have it
 		string[] debugWindowFiles = Target.Platform == UnrealTargetPlatform.Win64 ? new string[] { "vaudio-debug-window.exe", "glfw3.dll" }
-			: Target.Platform == UnrealTargetPlatform.Linux ? new string[] { "vaudio-debug-window", "libglfw.so.3" }
+			: linux ? new string[] { "vaudio-debug-window", "libglfw.so.3" }
 			: new string[] { "vaudio-debug-window", "libglfw.3.dylib" };
 
 		foreach (string file in debugWindowFiles)

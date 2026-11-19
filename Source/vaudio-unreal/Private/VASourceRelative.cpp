@@ -108,7 +108,10 @@ void AVASourceRelative::UpdatePlayback()
 	Playback.SetPitchMultiplier(PitchMultiplier);
 
 	// Found every tick, as the VAWorld may begin play after this actor
-	ApplyListenerReverbSend(Playback, AVAWorld::Find(this), this, WarnedListener);
+	AVAWorld* audioWorld = AVAWorld::Find(this);
+	Playback.SetDryOutputEnabled(!AVAWorld::IsReverbOnly(audioWorld, bReverbOnly));
+
+	ApplyListenerReverbSend(Playback, audioWorld, this, WarnedListener);
 }
 
 void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener)
