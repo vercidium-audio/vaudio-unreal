@@ -680,6 +680,7 @@ FVAOneShot& AVAWorld::AddOneShot(float volumeMultiplier, float pitchMultiplier)
 {
 	FVAOneShot& oneShot = OneShots.AddDefaulted_GetRef();
 	oneShot.Playback.bAutoDestroy = false;
+	oneShot.Playback.bTrackPlaybackTime = false;
 	oneShot.Playback.SetVolumeMultiplier(volumeMultiplier);
 	oneShot.Playback.SetPitchMultiplier(pitchMultiplier);
 	oneShot.Playback.SetDryOutputEnabled(!bReverbOnly);
@@ -813,7 +814,7 @@ void AVAWorld::UpdateOneShots()
 		}
 
 		// With no audio device nothing plays, so it's released as soon as it's ready
-		if (!oneShot.Playback.IsPlaying())
+		if (!oneShot.Playback.HasSound())
 			RemoveOneShot(i);
 	}
 }

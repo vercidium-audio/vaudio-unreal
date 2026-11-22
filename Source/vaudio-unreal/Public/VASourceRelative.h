@@ -46,16 +46,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bReverbOnly = false;
 
-	// Plays a random sound from SourceSounds. Each call starts a new sound, so calls overlap. Returns false if this actor failed validation, or if the sound couldn't be created (e.g. there's no audio device)
+	// Plays a random sound from SourceSounds, starting StartTime seconds in. Each call starts a new sound, so calls overlap. While paused it starts paused. Returns false if this actor failed validation, or if the sound couldn't be created (e.g. there's no audio device)
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
-	bool Play();
+	bool Play(float StartTime = 0.0f);
 
 	// Stops every sound started by Play()
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	void Stop();
 
+	// False while paused
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
 	bool IsPlaying() const { return Playback.IsPlaying(); }
+
+	// See AVARaytracedSource::SetPaused
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
+	void SetPaused(bool bPause) { Playback.SetPaused(bPause); }
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
+	bool IsPaused() const { return Playback.IsPaused(); }
+
+	// See AVARaytracedSource::Seek
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
+	void Seek(float Time) { Playback.Seek(Time); }
+
+	// See AVARaytracedSource::GetPlaybackTime
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
+	float GetPlaybackTime() const { return Playback.GetPlaybackTime(); }
 
 	const FVASourcePlayback& GetPlayback() const { return Playback; }
 

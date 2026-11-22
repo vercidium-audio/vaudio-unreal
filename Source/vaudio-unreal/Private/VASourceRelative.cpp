@@ -52,7 +52,7 @@ void AVASourceRelative::Tick(float DeltaTime)
 
 	Playback.RemoveFinished();
 
-	if (bAutoDestroy && bPlayAttempted && !IsPlaying())
+	if (bAutoDestroy && bPlayAttempted && !Playback.HasSound())
 	{
 		Destroy();
 		return;
@@ -64,7 +64,7 @@ void AVASourceRelative::Tick(float DeltaTime)
 		Play();
 }
 
-bool AVASourceRelative::Play()
+bool AVASourceRelative::Play(float StartTime)
 {
 	if (!bValidConfig)
 		return false;
@@ -93,7 +93,7 @@ bool AVASourceRelative::Play()
 		return false;
 	}
 
-	Playback.Play(component);
+	Playback.Play(component, StartTime);
 	return true;
 }
 

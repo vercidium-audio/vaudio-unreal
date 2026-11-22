@@ -13,18 +13,35 @@ struct VAUDIOUNREAL_API FVASourcePlayback
 {
 	GENERATED_BODY()
 
-	// Takes a component that hasn't started playing, applies the current state to it, then plays it
-	void Play(UAudioComponent* Component);
+	// Takes a component that hasn't started playing, applies the current state to it, then plays it StartTime seconds in. While paused it starts paused
+	void Play(UAudioComponent* Component, float StartTime = 0.0f);
 
 	void Stop();
 
-	bool IsPlaying() const;
+	// False while paused, matching Godot's ALSource. Use HasSound() to include paused sounds
+	bool IsPlaying() const { return !bPaused && HasSound(); }
+
+	// Whether a sound is playing or paused
+	bool HasSound() const;
+
+	// Pauses every sound, and resumes them from the same time when unpaused. Sounds played while paused start paused
+	void SetPaused(bool bPause);
+	bool IsPaused() const { return bPaused; }
+
+	// Moves every sound to Time seconds in, while playing or paused. UAudioComponent can't seek, so each one restarts there. A looping sound wraps around, and one that doesn't loop finishes if Time is past its end
+	void Seek(float Time);
+
+	// How many seconds into the most recently played sound it is, or 0 if nothing is playing. Only updated while the sound plays on an audio device
+	float GetPlaybackTime() const;
 
 	// Drops components that finished playing. Only for auto-destroyed components, as nothing else would destroy the dropped ones
 	void RemoveFinished();
 
 	// Set on each component by Play(). Off for pooled components, which their owner takes back after Stop()
 	bool bAutoDestroy = true;
+
+	// Whether Play() listens for each component's playback percent, for GetPlaybackTime(). Off for pooled one-shots, which nothing asks
+	bool bTrackPlaybackTime = true;
 
 	// Kept with no components (not playing yet, or no audio device), and applied by the next Play()
 	void SetFilter(float GainLF, float GainHF);
@@ -58,6 +75,14 @@ private:
 	USoundSubmix* ReverbSubmix = nullptr;
 
 	FVASourceFilter Filter;
+
+	// Plays the component at StartTime, and applies the reverb send and dry output, which belong to the sound it starts
+	void StartComponent(UAudioComponent* Component, float StartTime);
+
+	// The playback time of the newest component, updated from its OnAudioPlaybackPercentNative. Shared with that delegate, as the component can outlive this struct, and a struct in an array moves
+	TSharedPtr<float> LatestPlaybackTime;
+
+	bool bPaused = false;
 
 	float ReverbSendLevel = 0.0f;
 	float VolumeMultiplier = 1.0f;

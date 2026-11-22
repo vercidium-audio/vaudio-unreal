@@ -51,16 +51,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bReverbOnly = false;
 
-	// Plays a random sound from SourceSounds. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while the leeched emitter's IsSilencedByBounds is true, like AVASource::Play (any looping SourceSound counts as looping)
+	// Plays a random sound from SourceSounds, starting StartTime seconds in. Each call starts a new sound, so calls overlap. While paused it starts paused. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while the leeched emitter's IsSilencedByBounds is true, like AVASource::Play (any looping SourceSound counts as looping)
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
-	bool Play();
+	bool Play(float StartTime = 0.0f);
 
 	// Stops every sound started by Play(), and cancels a play that's waiting (bAutoPlay, or a loop waiting for the bounds), as if it had played
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	void Stop();
 
+	// False while paused
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
 	bool IsPlaying() const { return Playback.IsPlaying(); }
+
+	// See AVARaytracedSource::SetPaused
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
+	void SetPaused(bool bPause) { Playback.SetPaused(bPause); }
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
+	bool IsPaused() const { return Playback.IsPaused(); }
+
+	// See AVARaytracedSource::Seek
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
+	void Seek(float Time) { Playback.Seek(Time); }
+
+	// See AVARaytracedSource::GetPlaybackTime
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
+	float GetPlaybackTime() const { return Playback.GetPlaybackTime(); }
 
 	// True once the leeched emitter is ready to play, see AVAEmitter::IsReadyToPlay
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
