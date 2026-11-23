@@ -97,7 +97,13 @@ Unreal has no ARM64 editor for Windows or Linux, so ARM64 is supported for packa
 - **Linux ARM64** (5.7 and 5.8): package from a Linux x64 editor with Unreal's Linux ARM64 target support, e.g. `-platform=LinuxArm64`. The packaged game's launcher is `YourProject-Arm64.sh`.
 - **Windows ARM64** (5.8 only, experimental in Unreal): install the engine's Windows ARM64 target platform component (Epic Games Launcher > Library > 5.8 > Options), then package from the x64 editor with `-platform=Win64 -clientarchitecture=arm64`, or `arm64+x64` for a game with both executables. The ARM64 and x64 SDKs are staged into separate `Binaries/ThirdParty/vaudio/Win64-arm64` and `Win64` folders. `arm64ec` uses the x64 SDK and is untested.
 
-Games that can't render (`-nullrhi`, dedicated servers) still raytrace, but `VAVisualisation` doesn't create its debug mesh there.
+## Dedicated servers
+
+The plugin works in Linux x64 and Linux ARM64 dedicated servers (5.x), e.g. for raytracing AI hearing. Servers have no audio device, so nothing is heard, but emitters are still raytraced and their muffling, reverb and ambient results can be read as usual.
+
+- With no player controller, the level's current `VAListener` is used as the listener, so place one in the level (or spawn one) for muffling to have something to be relative to.
+- A dedicated server opens `Server Default Map` (Project Settings > Maps & Modes), not `Game Default Map`, so set it or pass the map on the command line.
+- Games that can't render (`-nullrhi`, dedicated servers) still raytrace, but `VAVisualisation` doesn't create its debug mesh there.
 
 ## Unreal Engine 4.27
 
@@ -138,11 +144,11 @@ Every source is muffled relative to the current listener automatically. Sounds s
 
 ### Emitters and sources
 
-- **VAListener** (`AVAListener`) is the point everything is heard from. A level can have several, and one is current at a time (`bCurrent`, `MakeCurrent()`). Sounds that use listener reverb are sent to its `ListenerReverbSubmix`. Listeners can share one submix asset, and the current listener controls its reverb.
+- **VAListener** (`AVAListener`) is the point everything is heard from. A level can have several, and one is current at a time (`bCurrent`, `MakeCurrent()`). Sounds that use listener reverb are sent to its `ListenerReverbSubmix`. Listeners can share one submix asset, and the current listener controls its reverb. The submix is silent until the listener has its first raytraced reverb (EAX), rather than playing the engine's default reverb, and the grouped EAX submixes likewise. Give the listener reverb rays (`ReverbRayCount`, `ReverbBounceCount`) if it has a submix, or it stays silent.
 - **VASource** (`AVASource`) is a raytraced 3D sound. It only plays once it has been raytraced (`IsReadyToPlay()`), so it never starts unmuffled. `Play()` can be called repeatedly and the sounds overlap. Looping comes from the sound asset.
 - **VAEmitter** (`AVAEmitter`) is a raytraced point that plays no sound itself, e.g. on an enemy. Use `VASourceLeech` actors to play sounds
 - **VASourceLeech** (`AVASourceLeech`) is a 3D sound that reuses the muffling and reverb of the `VAEmitter` it's attached to, instead of casting rays, e.g. many gunshots and footsteps sounds will use the one `VAEmitter`'s raytracing properties
-- **VASourceRelative** (`AVASourceRelative`) is a non-3D sound for the player's own sounds like footsteps. It isn't muffled or raytraced, and uses the listener's reverb.
+- **VASourceRelative** (`AVASourceRelative`) is a non-3D sound for the player's own sounds like footsteps. It isn't muffled or raytraced, and uses the listener's reverb. It waits for the current listener's first EAX before playing (`IsReadyToPlay()`), so it never plays through a default reverb. `bAutoPlay` plays it once it's ready, and `Play()` before then returns true and plays it once ready (`Stop()` cancels it), like Godot's `VASourceRelative`. It's ready straight away if the listener has no `ListenerReverbSubmix`, casts no reverb rays or is outside the bounds.
 - **VASourceAmbient** (`AVASourceAmbient`) is a non-3D sound for rain or wind, filtered by how enclosed the listener is. The listener needs ambient rays (`AmbientOcclusionRayCount` or `AmbientPermeationRayCount`) for this to work
 - **VAStreamSource** (`AVAStreamSource`) is a raytraced sound that plays raw PCM data pushed at runtime: `OpenStream`, `PushAudioData`, `CloseStream`.
 - **VAInputStreamSource** (`AVAInputStreamSource`) is a stream fed by a microphone, with an `OnAudioCaptured` event for sending it elsewhere. Not supported on Linux.
@@ -203,7 +209,7 @@ AVASource* attached = AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone
 - `PlaySoundAtLocation` and `SpawnSoundAtLocation` raytrace once by default, as the sound doesn't move. Its muffling still updates as the listener moves, and its reverb tail starts when the sound finishes. Set `settings.bRaytraceOnce = false` to keep raytracing for the sound's whole lifetime, e.g. for a long sound while doors open and close around it.
 - `SpawnSoundAttached` ignores `bRaytraceOnce` and keeps raytracing as it moves, so it's the expensive choice for frequent sounds.
 - The sound starts after the first raytracing result, not straight away, so it's muffled correctly from the beginning.
-- A one-shot needs a `VAListener` that has begun play. Without one, `PlaySoundAtLocation`, `PlaySoundLeech` and the `Spawn*` functions log a warning and play nothing, rather than waiting for a listener. This includes sounds played from a `BeginPlay` that runs before the listener's.
+- A one-shot needs a `VAListener` that has begun play. Without one, `PlaySoundAtLocation`, `PlaySoundLeech`, `PlaySoundRelative` and the `Spawn*` functions log a warning and play nothing, rather than waiting for a listener. This includes sounds played from a `BeginPlay` that runs before the listener's.
 - `PlaySoundAtLocation` needs a `VAWorld` that has begun play in the world context object's level, and does nothing otherwise. The `Spawn*` functions return null if the sound, world or component is missing.
 
 #### Leech sounds
@@ -220,7 +226,7 @@ AVAWorld::PlaySoundLeech(GunshotSound, EnemyEmitter, Volume, Pitch, AttenuationS
 
 #### Relative sounds
 
-For the player's own sounds, `AVAWorld::PlaySoundRelative` replaces `UGameplayStatics::PlaySound2D`. It isn't raytraced, so it plays straight away, unmuffled and with the current listener's reverb:
+For the player's own sounds, `AVAWorld::PlaySoundRelative` replaces `UGameplayStatics::PlaySound2D`. It isn't raytraced, and plays unmuffled with the current listener's reverb. Like a `VASourceRelative`, it waits for the listener's first EAX, and plays as soon as the listener has it:
 
 ```cpp
 AVAWorld::PlaySoundRelative(this, FootstepSound, Volume, Pitch);

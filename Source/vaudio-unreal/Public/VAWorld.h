@@ -393,7 +393,7 @@ public:
 
 	// --- Reverb ---
 
-	// One submix per grouped EAX. The SDK assigns each source emitter a grouped EAX index, which selects the submix its audio is sent to. Must have at least 2 entries.
+	// One submix per grouped EAX. The SDK assigns each source emitter a grouped EAX index, which selects the submix its audio is sent to. Must have at least 2 entries. Each submix's reverb is silent until its first grouped EAX, rather than the engine's default reverb.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb")
 	TArray<USoundSubmix*> GroupedEAXSubmixes;
 
@@ -610,7 +610,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (AutoCreateRefTerm = "Settings"))
 	static AVASource* SpawnSoundAttached(USoundBase* Sound, USceneComponent* AttachComponent, FName AttachPointName, FVector Location, EAttachLocation::Type LocationType, bool bStopWhenAttachedToDestroyed, const FVAOneShotSettings& Settings);
 
-	// Like UGameplayStatics::PlaySound2D, for the player's own sounds such as footsteps, like a VASourceRelative: plays straight away, unmuffled and with the current listener's reverb. No actor is spawned, the VAWorld updates the sound until it finishes. Does nothing if the sound or VAWorld is missing or there's no audio device. Use a VASourceRelative to stop it or for looping sounds
+	// Like UGameplayStatics::PlaySound2D, for the player's own sounds such as footsteps, like a VASourceRelative: plays unmuffled and with the current listener's reverb, once the listener has its first EAX (see AVASourceRelative::IsReadyToPlay), so straight away after that. No actor is spawned, the VAWorld updates the sound until it finishes. It's dropped without playing if the last listener leaves while it waits. Does nothing if the sound or VAWorld is missing, no VAListener has begun play, or there's no audio device. Use a VASourceRelative to stop it or for looping sounds
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio", meta = (WorldContext = "WorldContextObject"))
 	static void PlaySoundRelative(const UObject* WorldContextObject, USoundBase* Sound, float VolumeMultiplier = 1.0f, float PitchMultiplier = 1.0f);
 

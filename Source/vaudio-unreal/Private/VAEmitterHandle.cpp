@@ -88,10 +88,28 @@ bool VAIsHandleOutsideBounds(VAEmitter* handle, const AVAWorld* world)
 	return world && handle && world->IsOutsideBounds(VAVectorToFVector(vaEmitterGetPosition(handle)), vaEmitterGetClampPosition(handle));
 }
 
+// Casts reverb rays but has no EAX yet
+static bool VAIsWaitingForEAX(VAEmitter* handle)
+{
+	return vaEmitterGetReverbEnabled(handle) && !vaEmitterGetEAX(handle);
+}
+
 // Its grouped EAX slot, and so its reverb send, isn't known until it casts its own reverb rays
 static bool VAIsWaitingForOwnEAX(VAEmitter* handle)
 {
-	return vaEmitterGetAffectsGroupedEAX(handle) && vaEmitterGetReverbEnabled(handle) && !vaEmitterGetEAX(handle);
+	return vaEmitterGetAffectsGroupedEAX(handle) && VAIsWaitingForEAX(handle);
+}
+
+bool VAIsListenerReverbReady(const AVAWorld* world)
+{
+	AVAListener* listener = world ? world->GetMainListener() : nullptr;
+	VAEmitter* handle = listener ? listener->GetVAEmitter() : nullptr;
+
+	if (!handle)
+		return false;
+
+	// Nothing to wait for without a submix, and outside the bounds it isn't raytraced, so it would never get its EAX
+	return !listener->ListenerReverbSubmix || !VAIsWaitingForEAX(handle) || VAIsHandleOutsideBounds(handle, world);
 }
 
 bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world)

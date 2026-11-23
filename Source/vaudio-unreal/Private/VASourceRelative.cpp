@@ -1,4 +1,5 @@
 #include "VASourceRelative.h"
+#include "VAEmitterHandle.h"
 #include "VAEngineCompat.h"
 #include "VAListener.h"
 #include "VAWorld.h"
@@ -36,7 +37,7 @@ void AVASourceRelative::BeginPlay()
 	}
 
 	bValidConfig = true;
-	bAutoPlayPending = bAutoPlay;
+	bPlayPending = bAutoPlay;
 }
 
 void AVASourceRelative::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -60,8 +61,13 @@ void AVASourceRelative::Tick(float DeltaTime)
 
 	UpdatePlayback();
 
-	if (bAutoPlayPending)
-		Play();
+	if (bPlayPending && IsReadyToPlay())
+		Play(PendingStartTime);
+}
+
+bool AVASourceRelative::IsReadyToPlay() const
+{
+	return VAIsListenerReverbReady(AVAWorld::Find(this));
 }
 
 bool AVASourceRelative::Play(float StartTime)
@@ -69,7 +75,16 @@ bool AVASourceRelative::Play(float StartTime)
 	if (!bValidConfig)
 		return false;
 
-	bAutoPlayPending = false;
+	// Waits for the listener's reverb, so the sound never plays through the submix's default reverb. Tick plays it once ready, like Godot's VASourceRelative
+	if (!IsReadyToPlay())
+	{
+		bPlayPending = true;
+		PendingStartTime = StartTime;
+		return true;
+	}
+
+	bPlayPending = false;
+	PendingStartTime = 0.0f;
 	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update
@@ -99,6 +114,8 @@ bool AVASourceRelative::Play(float StartTime)
 
 void AVASourceRelative::Stop()
 {
+	VACancelPendingPlay(bPlayPending, bPlayAttempted);
+	PendingStartTime = 0.0f;
 	Playback.Stop();
 }
 

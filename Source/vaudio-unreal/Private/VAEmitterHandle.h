@@ -88,6 +88,9 @@ bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world);
 // VAHasHandleResults, except a handle outside the bounds doesn't wait for its own EAX, as it isn't raytraced there
 bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world);
 
+// True once the current listener has its EAX, so a relative sound never plays through the default reverb of its ListenerReverbSubmix. Also true if the listener has no submix, casts no reverb rays or is outside the bounds, as there's nothing to wait for. False with no listener
+bool VAIsListenerReverbReady(const AVAWorld* world);
+
 // See AVAEmitter::ResolveReverbSend. groupedEAXIndex is -1 when the handle doesn't affect grouped EAX. Outside the bounds there's no send. Warnings are prefixed with logContext's name
 bool VAResolveReverbSend(VAEmitter* handle, const AVAWorld* world, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext, USoundSubmix*& outSubmix, float& outSendLevel);
 

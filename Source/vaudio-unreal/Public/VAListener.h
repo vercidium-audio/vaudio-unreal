@@ -45,7 +45,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
 	bool bAutoFollowCamera = true;
 
-	// This submix applies reverb to sounds created by this listener
+	// This submix applies reverb to sounds created by this listener. Its reverb is silent until the listener's first EAX, rather than the engine's default reverb, so VASourceRelative and PlaySoundRelative wait for that EAX before playing
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Listener")
 	USoundSubmix* ListenerReverbSubmix = nullptr;
 
