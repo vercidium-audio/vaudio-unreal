@@ -131,7 +131,7 @@ void AVASourceRelative::UpdatePlayback()
 	ApplyListenerReverbSend(Playback, audioWorld, this, WarnedListener);
 }
 
-void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener)
+void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener, float sendLevel)
 {
 	AVAListener* listener = audioWorld ? audioWorld->GetMainListener() : nullptr;
 
@@ -145,7 +145,6 @@ void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, con
 		VAReport(ELogVerbosity::Warning, reporter, VA_CALL_SITE_KEY(reporter), FString::Printf(TEXT("Will have no reverb as the listener '%s' has no ListenerReverbSubmix"), *VAActorName(listener)));
 	}
 
-	// Not muffled, so the send level isn't compensated
 	USoundSubmix* submix = listener->ListenerReverbSubmix;
-	playback.SetReverbSend(submix, submix ? 1.0f : 0.0f);
+	playback.SetReverbSend(submix, submix ? sendLevel : 0.0f);
 }

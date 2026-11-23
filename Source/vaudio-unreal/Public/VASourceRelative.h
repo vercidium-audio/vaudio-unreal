@@ -86,8 +86,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
 	float GetReverbSendLevel() const { return Playback.GetReverbSendLevel(); }
 
-	// Sends playback to the current listener's ListenerReverbSubmix, unmuffled. Keeps the current send while there's no listener. Shared with AVAWorld::PlaySoundRelative, which warns as reporter once per listener through warnedListener
-	static void ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener);
+	// Sends playback to the current listener's ListenerReverbSubmix at sendLevel (unmuffled by default). Keeps the current send while there's no listener. Shared with AVAWorld::PlaySoundRelative and AVASourceAmbient, which warn as reporter once per listener through warnedListener
+	static void ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener, float sendLevel = 1.0f);
 
 private:
 	UPROPERTY(Transient)

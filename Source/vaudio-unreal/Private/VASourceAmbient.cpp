@@ -1,4 +1,6 @@
 #include "VASourceAmbient.h"
+#include "VASourceRelative.h"
+#include "VAEmitterHandle.h"
 #include "VAWorld.h"
 #include "VAListener.h"
 #include "VALog.h"
@@ -33,6 +35,11 @@ void AVASourceAmbient::BeginPlay()
 	if (!SourceSound->IsPlayWhenSilent())
 	{
 		VA_WARN_NAMED(TEXT("SourceSound '%s' must have Virtualization Mode set to 'Play When Silent', else it may stop playing when fully muffled"), *SourceSound->GetName());
+	}
+
+	if (ReverbSend == EVAAmbientReverbSend::Custom && !CustomReverbSubmix)
+	{
+		VA_WARN_NAMED(TEXT("Will have no reverb as ReverbSend is Custom but CustomReverbSubmix is not set"));
 	}
 
 	bSourcePendingSpawn = true;
@@ -80,8 +87,35 @@ void AVASourceAmbient::Tick(float DeltaTime)
 
 	Playback.SetFilter(AmbientFilter->gainLF, AmbientFilter->gainHF);
 
-	if (bSourcePendingSpawn)
+	// Set after the filter, as the send level is compensated by gainLF. Sending gainLF muffles the send's volume like the dry path
+	switch (ReverbSend)
+	{
+	case EVAAmbientReverbSend::ListenerReverbSubmix:
+		AVASourceRelative::ApplyListenerReverbSend(Playback, audioWorld, this, WarnedListener, AmbientFilter->gainLF);
+		break;
+	case EVAAmbientReverbSend::Custom:
+		Playback.SetReverbSend(CustomReverbSubmix, CustomReverbSubmix ? AmbientFilter->gainLF : 0.0f);
+		break;
+	default:
+		Playback.SetReverbSend(nullptr, 0.0f);
+		break;
+	}
+
+	if (bSourcePendingSpawn && IsReadyToPlay())
 		TrySpawnSourceSound();
+}
+
+bool AVASourceAmbient::IsReadyToPlay() const
+{
+	AVAWorld* audioWorld = AVAWorld::Find(this);
+	AVAListener* listener = audioWorld ? audioWorld->GetMainListener() : nullptr;
+	VAEmitter* vaListener = listener ? listener->GetVAEmitter() : nullptr;
+
+	if (!vaListener || !vaEmitterGetAmbientFilter(vaListener))
+		return false;
+
+	// Waits for the listener's reverb, so the sound never plays through the submix's default reverb
+	return ReverbSend != EVAAmbientReverbSend::ListenerReverbSubmix || VAIsListenerReverbReady(audioWorld);
 }
 
 void AVASourceAmbient::TrySpawnSourceSound()
