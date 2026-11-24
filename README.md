@@ -99,11 +99,10 @@ Unreal has no ARM64 editor for Windows or Linux, so ARM64 is supported for packa
 
 ## Dedicated servers
 
-The plugin works in Linux x64 and Linux ARM64 dedicated servers (5.x), e.g. for raytracing AI hearing. Servers have no audio device, so nothing is heard, but emitters are still raytraced and their muffling, reverb and ambient results can be read as usual.
+The plugin works on Linux dedicated servers (5.x, x64 and ARM64). Servers have no audio device, but raytracing still runs as usual and muffling, reverb, ambience and visualisation data is available.
 
-- With no player controller, the level's current `VAListener` is used as the listener, so place one in the level (or spawn one) for muffling to have something to be relative to.
-- A dedicated server opens `Server Default Map` (Project Settings > Maps & Modes), not `Game Default Map`, so set it or pass the map on the command line.
-- Games that can't render (`-nullrhi`, dedicated servers) still raytrace, but `VAVisualisation` doesn't create its debug mesh there.
+- With no player controller, the level's current `VAListener` is used as the listener, so place one in the level (or spawn one) for muffling and relative reverb to work
+- A dedicated server opens `Server Default Map` (Project Settings > Maps & Modes), not `Game Default Map`, so set it or pass the map on the command line
 
 ## Unreal Engine 4.27
 
