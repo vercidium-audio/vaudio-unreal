@@ -87,3 +87,19 @@ FSubmixEffectReverbSettings VAEAXReverbToSubmixSettings(const VAEAXReverb* EAX)
 
 	return settings;
 }
+
+void VASetReverbPresetSettings(USubmixEffectReverbPreset* preset, const FSubmixEffectReverbSettings& settings)
+{
+	preset->Settings = settings;
+	preset->SetSettings(settings);
+}
+
+USubmixEffectReverbPreset* VACreateSilentReverbPreset(UObject* outer)
+{
+	USubmixEffectReverbPreset* preset = NewObject<USubmixEffectReverbPreset>(outer);
+	FSubmixEffectReverbSettings settings = preset->GetSettings();
+	settings.WetLevel = 0.0f;
+	settings.DryLevel = 0.0f;
+	VASetReverbPresetSettings(preset, settings);
+	return preset;
+}

@@ -44,7 +44,7 @@ void AVASource::InitializeTypeSpecific()
 void AVASource::DeinitializeTypeSpecific()
 {
 	// A loop stopped by its VAWorld ending hasn't finished, so this source waits for the next VAWorld rather than being destroyed
-	if (IsPlaying() && SourceSound && SourceSound->IsLooping())
+	if (Playback.HasSound() && SourceSound && SourceSound->IsLooping())
 		bPlayAttempted = false;
 
 	Super::DeinitializeTypeSpecific();
@@ -70,7 +70,7 @@ void AVASource::Tick(float DeltaTime)
 	// Finished sounds were dropped in TickTypeSpecific
 	if (!IsFinalRemovalStarted())
 	{
-		if (!bAutoDestroy || !bPlayAttempted || IsPlaying())
+		if (!bAutoDestroy || !bPlayAttempted || Playback.HasSound())
 			return;
 
 		BeginFinalRemoval();
@@ -111,7 +111,7 @@ void AVASource::Stop()
 	Super::Stop();
 }
 
-bool AVASource::Play()
+bool AVASource::Play(float StartTime)
 {
 	if (!SourceSound)
 		return false;
@@ -163,6 +163,6 @@ bool AVASource::Play()
 	if (AttenuationSettings)
 		component->AttenuationSettings = AttenuationSettings;
 
-	Playback.Play(component);
+	Playback.Play(component, StartTime);
 	return true;
 }

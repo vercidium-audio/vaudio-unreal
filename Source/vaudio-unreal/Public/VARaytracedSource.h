@@ -40,8 +40,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	virtual void Stop();
 
+	// False while paused
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
 	bool IsPlaying() const { return Playback.IsPlaying(); }
+
+	// Pauses every sound this source is playing, and resumes them from the same time when unpaused. Sounds played while paused start paused
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
+	void SetPaused(bool bPause) { Playback.SetPaused(bPause); }
+
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
+	bool IsPaused() const { return Playback.IsPaused(); }
+
+	// Moves every sound this source is playing to Time seconds in, while playing or paused. A looping sound wraps around, and one that doesn't loop finishes if Time is past its end
+	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
+	virtual void Seek(float Time) { Playback.Seek(Time); }
+
+	// How many seconds into the most recently played sound it is, or 0 if nothing is playing. Only updated while the sound plays on an audio device
+	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Source")
+	float GetPlaybackTime() const { return Playback.GetPlaybackTime(); }
 
 	const FVASourcePlayback& GetPlayback() const { return Playback; }
 

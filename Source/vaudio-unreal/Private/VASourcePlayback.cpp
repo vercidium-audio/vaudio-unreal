@@ -2,6 +2,7 @@
 
 #include "VASourcePlayback.h"
 #include "Components/AudioComponent.h"
+#include "Sound/SoundWave.h"
 
 #include "VASubmixSend.h"
 #include "VALog.h"
@@ -24,7 +25,8 @@ bool VAApplyBoundsRules(FVASourcePlayback& Playback, bool bSilenced, bool bLoopi
 	{
 		VACancelPendingPlay(bAutoPlayPending, bPlayAttempted);
 	}
-	else if (Playback.IsPlaying())
+	// A paused loop waits too, and starts paused once back inside
+	else if (Playback.HasSound())
 	{
 		bAutoPlayPending = true;
 		bPlayAttempted = false;
@@ -46,7 +48,7 @@ bool VAApplyBoundsRulesOnPlay(const UObject* Source, FVASourcePlayback& Playback
 	return VAApplyBoundsRules(Playback, bSilenced, bLooping, bAutoPlayPending, bPlayAttempted);
 }
 
-void FVASourcePlayback::Play(UAudioComponent* Component)
+void FVASourcePlayback::Play(UAudioComponent* Component, float StartTime)
 {
 	Component->bAutoDestroy = bAutoDestroy;
 
@@ -56,15 +58,40 @@ void FVASourcePlayback::Play(UAudioComponent* Component)
 	Component->SetVolumeMultiplier(GetVolume());
 	Component->SetPitchMultiplier(PitchMultiplier);
 
-	Component->Play();
+	// Play() copies this to the sound it starts
+	Component->SetPaused(bPaused);
+
+	if (bTrackPlaybackTime)
+	{
+		TSharedPtr<float> playbackTime = MakeShared<float>(FMath::Max(0.0f, StartTime));
+		LatestPlaybackTime = playbackTime;
+
+		// Must be bound before Play(), which only reports the playback percent if something is listening. The percent includes the start time, and keeps growing while a looping sound repeats
+		Component->OnAudioPlaybackPercentNative.AddLambda([playbackTime](const UAudioComponent*, const USoundWave* Wave, const float Percent)
+		{
+			const float duration = Wave ? Wave->Duration : 0.0f;
+
+			if (duration <= 0.0f)
+				return;
+
+			const float time = Percent * duration;
+			*playbackTime = Wave->bLooping ? FMath::Fmod(time, duration) : FMath::Min(time, duration);
+		});
+	}
+
+	StartComponent(Component, StartTime);
+	Components.Add(Component);
+}
+
+void FVASourcePlayback::StartComponent(UAudioComponent* Component, float StartTime)
+{
+	Component->Play(FMath::Max(0.0f, StartTime));
 
 	if (ReverbSubmix)
 		VASetReverbSend(Component, ReverbSubmix, ReverbSendLevel);
 
 	if (!bDryEnabled)
 		VASetDryOutputEnabled(Component, false);
-
-	Components.Add(Component);
 }
 
 void FVASourcePlayback::Stop()
@@ -74,15 +101,44 @@ void FVASourcePlayback::Stop()
 			component->Stop();
 
 	Components.Empty();
+	LatestPlaybackTime.Reset();
 }
 
-bool FVASourcePlayback::IsPlaying() const
+bool FVASourcePlayback::HasSound() const
 {
 	for (UAudioComponent* component : Components)
 		if (IsValid(component) && component->IsPlaying())
 			return true;
 
 	return false;
+}
+
+void FVASourcePlayback::SetPaused(bool bPause)
+{
+	if (bPause == bPaused)
+		return;
+
+	bPaused = bPause;
+
+	for (UAudioComponent* component : Components)
+		if (IsValid(component))
+			component->SetPaused(bPaused);
+}
+
+void FVASourcePlayback::Seek(float Time)
+{
+	// A finished sound that hasn't been dropped yet isn't restarted
+	for (UAudioComponent* component : Components)
+		if (IsValid(component) && component->IsPlaying())
+			StartComponent(component, Time);
+
+	if (LatestPlaybackTime)
+		*LatestPlaybackTime = FMath::Max(0.0f, Time);
+}
+
+float FVASourcePlayback::GetPlaybackTime() const
+{
+	return HasSound() && LatestPlaybackTime ? *LatestPlaybackTime : 0.0f;
 }
 
 void FVASourcePlayback::RemoveFinished()

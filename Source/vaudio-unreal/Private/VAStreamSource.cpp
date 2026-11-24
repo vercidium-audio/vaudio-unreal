@@ -70,7 +70,7 @@ void AVAStreamSource::TickTypeSpecific(float DeltaTime)
 	// A stream is continuous, so like a loop it plays again once back inside the bounds, but not if it stopped for another reason
 	if (IsSilencedByBounds())
 	{
-		bStoppedByBounds |= IsPlaying();
+		bStoppedByBounds |= Playback.HasSound();
 		Playback.Stop();
 		return;
 	}
@@ -147,8 +147,8 @@ void AVAStreamSource::PushAudioData(const uint8* Data, int32 NumBytes)
 
 	AcceptedByteCount += NumBytes;
 
-	// Nothing consumes the queue without a playing sound, so don't grow it
-	if (!Playback.IsPlaying())
+	// Nothing consumes the queue without a playing sound, so don't grow it. Audio queued while paused would play late
+	if (!Playback.HasSound() || Playback.IsPaused())
 		return;
 
 	if (StreamFormat == EVAStreamFormat::Mono16 || StreamFormat == EVAStreamFormat::Stereo16)
@@ -184,6 +184,11 @@ void AVAStreamSource::CloseStream()
 void AVAStreamSource::Stop()
 {
 	CloseStream();
+}
+
+void AVAStreamSource::Seek(float Time)
+{
+	VA_WARN_NAMED(TEXT("A VAStreamSource can't seek, as it only plays the audio pushed to it"));
 }
 
 void AVAStreamSource::DeinitializeTypeSpecific()

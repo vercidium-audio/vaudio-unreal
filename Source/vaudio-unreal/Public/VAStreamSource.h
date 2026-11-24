@@ -52,6 +52,9 @@ public:
 	// Closes the stream too
 	virtual void Stop() override;
 
+	// Only logs a warning, as a stream only plays the audio pushed to it
+	virtual void Seek(float Time) override;
+
 	// Bytes accepted by PushAudioData since OpenStream, i.e. pushed after this source was first ready to play. Counted with no audio device too
 	int64 GetAcceptedByteCount() const { return AcceptedByteCount; }
 

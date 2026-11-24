@@ -1,4 +1,5 @@
 #include "VASourceRelative.h"
+#include "VAEmitterHandle.h"
 #include "VAEngineCompat.h"
 #include "VAListener.h"
 #include "VAWorld.h"
@@ -36,7 +37,7 @@ void AVASourceRelative::BeginPlay()
 	}
 
 	bValidConfig = true;
-	bAutoPlayPending = bAutoPlay;
+	bPlayPending = bAutoPlay;
 }
 
 void AVASourceRelative::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -52,7 +53,7 @@ void AVASourceRelative::Tick(float DeltaTime)
 
 	Playback.RemoveFinished();
 
-	if (bAutoDestroy && bPlayAttempted && !IsPlaying())
+	if (bAutoDestroy && bPlayAttempted && !Playback.HasSound())
 	{
 		Destroy();
 		return;
@@ -60,16 +61,30 @@ void AVASourceRelative::Tick(float DeltaTime)
 
 	UpdatePlayback();
 
-	if (bAutoPlayPending)
-		Play();
+	if (bPlayPending && IsReadyToPlay())
+		Play(PendingStartTime);
 }
 
-bool AVASourceRelative::Play()
+bool AVASourceRelative::IsReadyToPlay() const
+{
+	return VAIsListenerReverbReady(AVAWorld::Find(this));
+}
+
+bool AVASourceRelative::Play(float StartTime)
 {
 	if (!bValidConfig)
 		return false;
 
-	bAutoPlayPending = false;
+	// Waits for the listener's reverb, so the sound never plays through the submix's default reverb. Tick plays it once ready, like Godot's VASourceRelative
+	if (!IsReadyToPlay())
+	{
+		bPlayPending = true;
+		PendingStartTime = StartTime;
+		return true;
+	}
+
+	bPlayPending = false;
+	PendingStartTime = 0.0f;
 	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update
@@ -93,12 +108,14 @@ bool AVASourceRelative::Play()
 		return false;
 	}
 
-	Playback.Play(component);
+	Playback.Play(component, StartTime);
 	return true;
 }
 
 void AVASourceRelative::Stop()
 {
+	VACancelPendingPlay(bPlayPending, bPlayAttempted);
+	PendingStartTime = 0.0f;
 	Playback.Stop();
 }
 
@@ -114,7 +131,7 @@ void AVASourceRelative::UpdatePlayback()
 	ApplyListenerReverbSend(Playback, audioWorld, this, WarnedListener);
 }
 
-void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener)
+void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, const AVAWorld* audioWorld, const UObject* reporter, TWeakObjectPtr<AVAListener>& warnedListener, float sendLevel)
 {
 	AVAListener* listener = audioWorld ? audioWorld->GetMainListener() : nullptr;
 
@@ -128,7 +145,6 @@ void AVASourceRelative::ApplyListenerReverbSend(FVASourcePlayback& playback, con
 		VAReport(ELogVerbosity::Warning, reporter, VA_CALL_SITE_KEY(reporter), FString::Printf(TEXT("Will have no reverb as the listener '%s' has no ListenerReverbSubmix"), *VAActorName(listener)));
 	}
 
-	// Not muffled, so the send level isn't compensated
 	USoundSubmix* submix = listener->ListenerReverbSubmix;
-	playback.SetReverbSend(submix, submix ? 1.0f : 0.0f);
+	playback.SetReverbSend(submix, submix ? sendLevel : 0.0f);
 }

@@ -36,9 +36,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bAutoDestroy = true;
 
-	// Plays SourceSound. Each call starts a new sound, so calls overlap. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while IsSilencedByBounds is true, where a looping sound plays once back inside the bounds and any other is dropped with a warning (as if it had played, for bAutoDestroy). Sounds are stopped when they leave the bounds, and a looping one plays again from the start once back inside
+	// Plays SourceSound, starting StartTime seconds in. Each call starts a new sound, so calls overlap. While paused (see SetPaused) it starts paused. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while IsSilencedByBounds is true, where a looping sound plays once back inside the bounds and any other is dropped with a warning (as if it had played, for bAutoDestroy). Sounds are stopped when they leave the bounds, and a looping one plays again from the start once back inside
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
-	bool Play();
+	bool Play(float StartTime = 0.0f);
 
 	// Also cancels a play that's waiting (bAutoPlay, or a loop waiting for the bounds), as if it had played
 	virtual void Stop() override;

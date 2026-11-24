@@ -328,7 +328,7 @@ AVAWorld* AVAWorld::Find(const UObject* WorldContextObject)
 	return subsystem ? subsystem->GetVAWorld() : nullptr;
 }
 
-// Without a listener a raytraced one-shot never becomes ready, and one may never begin play, so it's dropped rather than left waiting. One silenced by the bounds would never be heard, so it isn't created either, unless it's a looping VASource, which waits for the bounds (an actor-free one-shot is removed when it's silenced)
+// Without a listener a one-shot never becomes ready (a relative one waits for its reverb), and one may never begin play, so it's dropped rather than left waiting. One silenced by the bounds would never be heard, so it isn't created either, unless it's a looping VASource, which waits for the bounds (an actor-free one-shot is removed when it's silenced)
 static bool VACanStartOneShot(const AVAWorld* audioWorld, const TCHAR* function, USoundBase* sound, const FVector& position, bool bClampPosition, bool bWaitsForBounds)
 {
 	if (!audioWorld || !audioWorld->GetMainListener())
@@ -607,6 +607,10 @@ void AVAWorld::ReleaseOneShotComponent(UAudioComponent* component)
 
 void AVAWorld::StartRelativeOneShot(USoundBase* sound, float volumeMultiplier, float pitchMultiplier)
 {
+	// Not raytraced, so the bounds don't apply
+	if (!VACanStartOneShot(this, TEXT("PlaySoundRelative"), sound, FVector::ZeroVector, false, true))
+		return;
+
 	UAudioComponent* component = AcquireOneShotComponent(sound, nullptr, nullptr);
 
 	if (!component)
@@ -615,8 +619,7 @@ void AVAWorld::StartRelativeOneShot(USoundBase* sound, float volumeMultiplier, f
 	FVAOneShot& oneShot = AddOneShot(volumeMultiplier, pitchMultiplier);
 	oneShot.bRelative = true;
 
-	ApplyOneShotResults(oneShot);
-	oneShot.Playback.Play(component);
+	WaitToPlayOneShot(oneShot, component);
 }
 
 void AVAWorld::StartLeechOneShot(USoundBase* sound, AVAEmitter* emitter, float volumeMultiplier, float pitchMultiplier, USoundAttenuation* attenuation)
@@ -680,6 +683,7 @@ FVAOneShot& AVAWorld::AddOneShot(float volumeMultiplier, float pitchMultiplier)
 {
 	FVAOneShot& oneShot = OneShots.AddDefaulted_GetRef();
 	oneShot.Playback.bAutoDestroy = false;
+	oneShot.Playback.bTrackPlaybackTime = false;
 	oneShot.Playback.SetVolumeMultiplier(volumeMultiplier);
 	oneShot.Playback.SetPitchMultiplier(pitchMultiplier);
 	oneShot.Playback.SetDryOutputEnabled(!bReverbOnly);
@@ -701,6 +705,9 @@ void AVAWorld::WaitToPlayOneShot(FVAOneShot& oneShot, UAudioComponent* component
 
 bool AVAWorld::IsOneShotReady(const FVAOneShot& oneShot) const
 {
+	if (oneShot.bRelative)
+		return VAIsListenerReverbReady(this);
+
 	if (oneShot.Handle)
 		return VAIsHandleReadyToPlay(oneShot.Handle, this);
 
@@ -799,7 +806,7 @@ void AVAWorld::UpdateOneShots()
 			if (!IsOneShotReady(oneShot))
 			{
 				// The last listener left, or the leeched emitter was destroyed, before it was ready. Like a new one-shot, it doesn't wait for a listener
-				if (!MainListener || (!oneShot.Handle && !oneShot.Emitter.IsValid()))
+				if (!MainListener || (!oneShot.bRelative && !oneShot.Handle && !oneShot.Emitter.IsValid()))
 					RemoveOneShot(i);
 
 				continue;
@@ -813,7 +820,7 @@ void AVAWorld::UpdateOneShots()
 		}
 
 		// With no audio device nothing plays, so it's released as soon as it's ready
-		if (!oneShot.Playback.IsPlaying())
+		if (!oneShot.Playback.HasSound())
 			RemoveOneShot(i);
 	}
 }
@@ -852,7 +859,8 @@ void AVAWorld::InitializeVAWorld()
 	for (int32 i = 0; i < GroupedEAXCount; i++)
 	{
 		USoundSubmix* Sub = GroupedEAXSubmixes[i];
-		USubmixEffectReverbPreset* Preset = NewObject<USubmixEffectReverbPreset>(this);
+		// Silent until its first grouped EAX
+		USubmixEffectReverbPreset* Preset = VACreateSilentReverbPreset(this);
 		UVASubmixEffectDirectionalPanPreset* PanPreset = NewObject<UVASubmixEffectDirectionalPanPreset>(this);
 
 		if (Sub)
@@ -915,8 +923,7 @@ void AVAWorld::OnReverbUpdated()
 
 		const VAEAXReverb* EAX = GroupedEAX[i];
 
-		FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
-		Preset->SetSettings(settings);
+		VASetReverbPresetSettings(Preset, VAEAXReverbToSubmixSettings(EAX));
 
 		if (ListenerVA)
 		{

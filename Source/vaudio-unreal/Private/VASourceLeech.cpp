@@ -95,7 +95,7 @@ void AVASourceLeech::Tick(float DeltaTime)
 
 	Playback.RemoveFinished();
 
-	if (bAutoDestroy && bPlayAttempted && !IsPlaying())
+	if (bAutoDestroy && bPlayAttempted && !Playback.HasSound())
 	{
 		Destroy();
 		return;
@@ -152,7 +152,7 @@ void AVASourceLeech::UpdatePlayback(AVAEmitter* emitter)
 	emitter->ApplyResultsToPlayback(Playback);
 }
 
-bool AVASourceLeech::Play()
+bool AVASourceLeech::Play(float StartTime)
 {
 	if (!bValidConfig)
 		return false;
@@ -204,7 +204,7 @@ bool AVASourceLeech::Play()
 	component->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 	component->bAllowSpatialization = true;
 
-	Playback.Play(component);
+	Playback.Play(component, StartTime);
 	return true;
 }
 

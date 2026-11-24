@@ -38,10 +38,10 @@ void AVAListener::InitializeTypeSpecific()
 			}
 		}
 
-		// Owned by the VAWorld, since it can outlive the listener that created it
+		// Owned by the VAWorld, since it can outlive the listener that created it. Silent until the first EAX
 		if (!ListenerReverbPreset)
 		{
-			ListenerReverbPreset = NewObject<USubmixEffectReverbPreset>(AudioWorld);
+			ListenerReverbPreset = VACreateSilentReverbPreset(AudioWorld);
 			VAAddSubmixEffect(this, ListenerReverbSubmix, ListenerReverbPreset);
 		}
 
@@ -225,8 +225,7 @@ void AVAListener::ApplyListenerReverb()
 	if (!EAX)
 		return;
 
-	FSubmixEffectReverbSettings settings = VAEAXReverbToSubmixSettings(EAX);
-	ListenerReverbPreset->SetSettings(settings);
+	VASetReverbPresetSettings(ListenerReverbPreset, VAEAXReverbToSubmixSettings(EAX));
 }
 
 #if WITH_EDITOR
