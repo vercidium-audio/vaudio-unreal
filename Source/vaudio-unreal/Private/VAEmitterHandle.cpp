@@ -68,7 +68,7 @@ int32 VARandomScatteringSeed()
 #endif
 }
 
-VALowPassFilter* VAGetMufflingResult(VAEmitter* handle, const AVAWorld* world)
+VALowPassFilter* VAGetListenerMuffling(VAEmitter* handle, const AVAWorld* world)
 {
 	if (!world || !handle)
 		return nullptr;
@@ -81,6 +81,65 @@ VALowPassFilter* VAGetMufflingResult(VAEmitter* handle, const AVAWorld* world)
 	VALowPassFilter* filter = nullptr;
 	vaEmitterGetTargetFilter(listener->GetVAEmitter(), handle, &filter);
 	return filter;
+}
+
+const VALowPassFilter* VAGetMufflingResult(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held)
+{
+	const VALowPassFilter* heldFilter = held.bHasFilter ? &held.Filter : nullptr;
+
+	if (held.bSuspended)
+		return heldFilter;
+
+	const VALowPassFilter* live = VAGetListenerMuffling(handle, world);
+	return live ? live : heldFilter;
+}
+
+void VASuspendHandle(VAEmitter* handle, const AVAWorld* world, FVAHeldMuffling& held)
+{
+	vaEmitterSetSuspended(handle, true);
+
+	if (held.bSuspended)
+		return;
+
+	// Null if it was resumed and suspended again before the listener raytraced it, so the muffling held from before is kept
+	if (const VALowPassFilter* live = VAGetListenerMuffling(handle, world))
+	{
+		held.Filter = *live;
+		held.bHasFilter = true;
+	}
+
+	held.bSuspended = true;
+
+	AVAListener* listener = world ? world->GetMainListener() : nullptr;
+
+	if (!listener || !listener->GetVAEmitter())
+		return;
+
+	VAResult result = vaEmitterRemoveTarget(listener->GetVAEmitter(), handle);
+
+	if (result != VA_SUCCESS && result != VA_NOT_FOUND)
+		VAReport(ELogVerbosity::Error, listener, VA_CALL_SITE_KEY(listener), TEXT("Failed to remove a suspended emitter from the listener's targets.") + VA_RESULT_SUFFIX(result));
+}
+
+void VAResumeHandle(VAEmitter* handle, const AVAWorld* world, FVAHeldMuffling& held, const FString& name)
+{
+	vaEmitterSetSuspended(handle, false);
+
+	if (!held.bSuspended)
+		return;
+
+	held.bSuspended = false;
+
+	AVAListener* listener = world ? world->GetMainListener() : nullptr;
+
+	if (listener && listener->GetVAEmitter())
+		listener->AddTarget(handle, name);
+}
+
+void VAUpdateHeldMuffling(VAEmitter* handle, const AVAWorld* world, FVAHeldMuffling& held)
+{
+	if (held.bHasFilter && !held.bSuspended && VAGetListenerMuffling(handle, world))
+		held.bHasFilter = false;
 }
 
 bool VAIsHandleOutsideBounds(VAEmitter* handle, const AVAWorld* world)
@@ -112,15 +171,15 @@ bool VAIsListenerReverbReady(const AVAWorld* world)
 	return !listener->ListenerReverbSubmix || !VAIsWaitingForEAX(handle) || VAIsHandleOutsideBounds(handle, world);
 }
 
-bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world)
+bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held)
 {
-	return VAGetMufflingResult(handle, world) && !VAIsWaitingForOwnEAX(handle);
+	return VAGetMufflingResult(handle, world, held) && !VAIsWaitingForOwnEAX(handle);
 }
 
-bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world)
+bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held)
 {
 	// Outside the bounds it isn't raytraced, so it would never get its own EAX. It plays with no reverb until it's back inside
-	return VAGetMufflingResult(handle, world) && (!VAIsWaitingForOwnEAX(handle) || VAIsHandleOutsideBounds(handle, world));
+	return VAGetMufflingResult(handle, world, held) && (!VAIsWaitingForOwnEAX(handle) || VAIsHandleOutsideBounds(handle, world));
 }
 
 bool VAResolveReverbSend(VAEmitter* handle, const AVAWorld* world, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext, USoundSubmix*& outSubmix, float& outSendLevel)
@@ -177,10 +236,10 @@ bool VAResolveReverbSend(VAEmitter* handle, const AVAWorld* world, int32 grouped
 	return true;
 }
 
-void VAApplyHandleResults(FVASourcePlayback& playback, VAEmitter* handle, const AVAWorld* world, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext)
+void VAApplyHandleResults(FVASourcePlayback& playback, VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext)
 {
 	// Null until the listener has raytraced the handle. The last result is kept
-	if (VALowPassFilter* lowPassFilter = VAGetMufflingResult(handle, world))
+	if (const VALowPassFilter* lowPassFilter = VAGetMufflingResult(handle, world, held))
 		playback.SetFilter(lowPassFilter->gainLF, lowPassFilter->gainHF);
 
 	USoundSubmix* submix = nullptr;

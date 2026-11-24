@@ -709,7 +709,7 @@ bool AVAWorld::IsOneShotReady(const FVAOneShot& oneShot) const
 		return VAIsListenerReverbReady(this);
 
 	if (oneShot.Handle)
-		return VAIsHandleReadyToPlay(oneShot.Handle, this);
+		return VAIsHandleReadyToPlay(oneShot.Handle, this, oneShot.HeldMuffling);
 
 	AVAEmitter* emitter = oneShot.Emitter.Get();
 	return emitter && emitter->IsReadyToPlay();
@@ -734,7 +734,7 @@ void AVAWorld::ApplyOneShotResults(FVAOneShot& oneShot)
 	else if (oneShot.Handle)
 	{
 		const int32 groupedEAXIndex = oneShot.bAffectsGroupedEAX ? vaEmitterGetGroupedEAXIndex(oneShot.Handle) : -1;
-		VAApplyHandleResults(oneShot.Playback, oneShot.Handle, this, groupedEAXIndex, oneShot.bUseListenerReverb, this);
+		VAApplyHandleResults(oneShot.Playback, oneShot.Handle, this, oneShot.HeldMuffling, groupedEAXIndex, oneShot.bUseListenerReverb, this);
 	}
 	// A leech keeps its emitter's last results once the emitter is destroyed
 	else if (AVAEmitter* emitter = oneShot.Emitter.Get())
@@ -743,11 +743,11 @@ void AVAWorld::ApplyOneShotResults(FVAOneShot& oneShot)
 	}
 }
 
-// Its results stay once suspended, and its reverb tail keeps feeding grouped EAX. One playing outside the bounds has no EAX yet, so it waits to be raytraced inside first
-static void VASuspendIfRaytracedOnce(const FVAOneShot& oneShot, const AVAWorld* world)
+// Its results and muffling stay once suspended, and its reverb tail keeps feeding grouped EAX. One playing outside the bounds has no EAX yet, so it waits to be raytraced inside first
+static void VASuspendIfRaytracedOnce(FVAOneShot& oneShot, const AVAWorld* world)
 {
-	if (oneShot.Handle && oneShot.bRaytraceOnce && !vaEmitterGetSuspended(oneShot.Handle) && VAHasHandleResults(oneShot.Handle, world))
-		vaEmitterSetSuspended(oneShot.Handle, true);
+	if (oneShot.Handle && oneShot.bRaytraceOnce && !vaEmitterGetSuspended(oneShot.Handle) && VAHasHandleResults(oneShot.Handle, world, oneShot.HeldMuffling))
+		VASuspendHandle(oneShot.Handle, world, oneShot.HeldMuffling);
 }
 
 void AVAWorld::PlayPendingOneShot(FVAOneShot& oneShot)
@@ -1430,13 +1430,13 @@ void AVAWorld::WirePendingTargets()
 
 	for (AVAEmitter* emitter : RegisteredEmitters)
 	{
-		if (emitter->GetVAEmitter())
+		if (emitter->GetVAEmitter() && emitter->IsListenerTarget())
 			MainListener->AddTarget(emitter);
 	}
 
 	for (const FVAOneShot& oneShot : OneShots)
 	{
-		if (oneShot.Handle)
+		if (oneShot.Handle && !oneShot.HeldMuffling.bSuspended)
 			MainListener->AddTarget(oneShot.Handle, oneShot.Name);
 	}
 }

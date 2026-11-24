@@ -307,6 +307,7 @@ void AVAEmitter::ReleaseEmitter()
 	// Cleared first, as this actor may be gone by the time OnRemoved fires, so the world takes over the handle
 	VAEmitter* handle = Emitter;
 	Emitter = nullptr;
+	HeldMuffling.Reset();
 
 	// BeginFinalRemoval already removed it
 	if (AudioWorld)
@@ -351,7 +352,10 @@ void AVAEmitter::OnEmitterRemoved(VAEmitter* handle)
 	AudioWorld->DeferEmitterDestroy(handle);
 
 	if (Emitter == handle)
+	{
 		Emitter = nullptr;
+		HeldMuffling.Reset();
+	}
 }
 
 void AVAEmitter::QueueRaytracingComplete()
@@ -396,9 +400,11 @@ void AVAEmitter::Tick(float DeltaTime)
 
 	TickTypeSpecific(DeltaTime);
 
-	// Waits for its results, as an emitter suspended before them has no reverb to keep. Unlike IsReadyToPlay, that includes its own EAX outside the bounds
-	if ((bRaytraceOnce || suspendRequested) && VAHasHandleResults(Emitter, AudioWorld))
-		vaEmitterSetSuspended(Emitter, true);
+	VAUpdateHeldMuffling(Emitter, AudioWorld, HeldMuffling);
+
+	// Waits for its results, as an emitter suspended before them has no reverb or muffling to keep. Unlike IsReadyToPlay, that includes its own EAX outside the bounds
+	if ((bRaytraceOnce || suspendRequested) && !vaEmitterGetSuspended(Emitter) && VAHasHandleResults(Emitter, AudioWorld, HeldMuffling))
+		VASuspendHandle(Emitter, AudioWorld, HeldMuffling);
 }
 
 void AVAEmitter::SetSuspended(bool bSuspended)
@@ -422,7 +428,7 @@ void AVAEmitter::SetSuspended(bool bSuspended)
 	bRaytraceOnce = false;
 
 	if (Emitter)
-		vaEmitterSetSuspended(Emitter, false);
+		VAResumeHandle(Emitter, AudioWorld, HeldMuffling, VAActorName(this));
 }
 
 bool AVAEmitter::IsSuspended() const
@@ -448,7 +454,7 @@ bool AVAEmitter::IsRaytraced() const
 
 bool AVAEmitter::IsReadyToPlay() const
 {
-	return !finalRemoval && VAIsHandleReadyToPlay(Emitter, AudioWorld);
+	return !finalRemoval && VAIsHandleReadyToPlay(Emitter, AudioWorld, HeldMuffling);
 }
 
 int32 AVAEmitter::GetGroupedEAXIndex() const
@@ -532,14 +538,14 @@ void AVAEmitter::GetAmbientFilterResult(bool& bSuccess, float& GainLF, float& Ga
 	GainHF = AmbientFilter->gainHF;
 }
 
-VALowPassFilter* AVAEmitter::GetMufflingResult() const
+const VALowPassFilter* AVAEmitter::GetMufflingResult() const
 {
-	return VAGetMufflingResult(Emitter, AudioWorld);
+	return VAGetMufflingResult(Emitter, AudioWorld, HeldMuffling);
 }
 
 void AVAEmitter::GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const
 {
-	VALowPassFilter* MufflingFilter = GetMufflingResult();
+	const VALowPassFilter* MufflingFilter = GetMufflingResult();
 
 	// Raytracing has not completed at least once yet
 	if (!MufflingFilter)
@@ -567,7 +573,7 @@ bool AVAEmitter::ResolveReverbSend(USoundSubmix*& OutSubmix, float& OutSendLevel
 
 void AVAEmitter::ApplyResultsToPlayback(FVASourcePlayback& playback) const
 {
-	VAApplyHandleResults(playback, Emitter, AudioWorld, GetReverbSendGroupedEAXIndex(), bUseListenerReverb, this);
+	VAApplyHandleResults(playback, Emitter, AudioWorld, HeldMuffling, GetReverbSendGroupedEAXIndex(), bUseListenerReverb, this);
 }
 
 #if WITH_EDITOR

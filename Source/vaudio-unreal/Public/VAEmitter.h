@@ -4,14 +4,13 @@
 #include "GameFramework/Actor.h"
 #include "Components/BillboardComponent.h"
 #include "VAEAXReverbResult.h"
+#include "VAHeldMuffling.h"
 #include "VAEmitter.generated.h"
 
-struct VAEmitter;
 class AVAWorld;
 class UVAVisualisation;
 class UVAWorldSubsystem;
 class USoundSubmix;
-struct VALowPassFilter;
 struct FVASourcePlayback;
 
 // Broadcast after this emitter casts its rays for the first time (mirrors the SDK's vaEmitterSetOnRaytracingCompleteCallback)
@@ -56,7 +55,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Muffling")
 	void GetMufflingFilterResult(bool& bSuccess, float& GainLF, float& GainHF) const;
 
-	VALowPassFilter* GetMufflingResult() const;
+	const VALowPassFilter* GetMufflingResult() const;
 
 	// True once this emitter has cast its reverb rays for the first time
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
@@ -68,13 +67,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsReadyToPlay() const;
 
-	// Stops this emitter casting rays, from the first tick where it has its results (as IsReadyToPlay, but outside the bounds it also waits for its own EAX), as it keeps the reverb and ambient results it has then. The listener still raytraces it, so its muffling stays up to date. Passing false re-casts all of its rays and clears bRaytraceOnce, so it keeps casting them. Does nothing on a listener, or once this emitter is being removed
+	// Stops all raytracing of this emitter, from the first tick where it has its results (as IsReadyToPlay, but outside the bounds it also waits for its own EAX). It stops casting its own rays and keeps the reverb and ambient results it has then, and the listener stops raytracing it and keeps its muffling at the last result, even as the listener moves. Passing false re-casts all of its rays, makes it a listener target again (keeping the last muffling until the listener has raytraced it) and clears bRaytraceOnce, so it keeps being raytraced. Does nothing on a listener, or once this emitter is being removed
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetSuspended(bool bSuspended);
 
-	// True while this emitter casts no rays, because of SetSuspended or bRaytraceOnce
+	// True while this emitter isn't raytraced, because of SetSuspended or bRaytraceOnce
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsSuspended() const;
+
+	// False while it's suspended, so a new listener handle doesn't raytrace it
+	bool IsListenerTarget() const { return !HeldMuffling.bSuspended; }
 
 	// The grouped EAX reverb this emitter contributes to, or -1 if it has none
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
@@ -117,7 +119,7 @@ public:
 	// Called from the OnRemoved callback once the SDK has removed handle from the world. The world destroys it later
 	void OnEmitterRemoved(VAEmitter* handle);
 
-	// Stops casting rays once this emitter is ready to play, and keeps its reverb and ambient results from then on. The listener still raytraces it, so its muffling stays up to date. For short sounds that don't move
+	// Raytraces this emitter once, then suspends it (see SetSuspended) as soon as it's ready to play, so its reverb, ambience and muffling results are reused for the rest of its lifetime and its reverb tail. Its muffling doesn't follow the listener once it's suspended. For short sounds
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	bool bRaytraceOnce = false;
 
@@ -341,6 +343,9 @@ private:
 
 	// Kept separate from the handle, which doesn't exist before this emitter joins a VAWorld and is replaced if it joins another
 	bool suspendRequested = false;
+
+	// Belongs to the handle, so it's reset when the handle is released
+	FVAHeldMuffling HeldMuffling;
 
 	// Set while this emitter waits for the level's VAWorld to begin play
 	FDelegateHandle WorldRegisteredHandle;

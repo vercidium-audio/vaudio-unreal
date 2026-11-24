@@ -61,7 +61,7 @@ Nothing holds a reference to the `AVAWorld`. It registers with the map's `UVAWor
 
 `bAutoDestroy` on `AVASource` uses `BeginFinalRemoval`, which keeps the handle so `OnRemoved` reaches the actor, which then destroys itself. If it ends play during that wait, `ReleaseEmitter` must not call `vaWorldRemoveEmitter` again (it returns `VA_NOT_FOUND`).
 
-`bRaytraceOnce` and `SetSuspended(true)` are applied in `AVAEmitter::Tick` on the first tick where `IsReadyToPlay()` is true, never earlier, or the emitter has no reverb to keep. `SetSuspended(false)` also clears `bRaytraceOnce`.
+`bRaytraceOnce` and `SetSuspended(true)` are applied in `AVAEmitter::Tick` on the first tick where `IsReadyToPlay()` is true, never earlier, or the emitter has no reverb or muffling to keep. Suspending (`VASuspendHandle`) also removes the handle from the listener's targets and holds its last muffling in an `FVAHeldMuffling`, which `VAGetMufflingResult` returns instead of the live filter. `SetSuspended(false)` (`VAResumeHandle`) re-adds the target, keeps the held muffling until the listener has raytraced it again so `IsReadyToPlay()` never drops, and clears `bRaytraceOnce`. `WirePendingTargets` skips suspended handles. `PlaySoundAtLocation` one-shots do the same through `FVAOneShot::HeldMuffling`.
 
 SDK callbacks run inside `vaWorldUpdate`. They only set flags or queue, and `AVAWorld::Tick` broadcasts the Blueprint delegates after `vaWorldUpdate` returns, so a handler can't re-enter the SDK.
 

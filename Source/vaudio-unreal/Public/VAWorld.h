@@ -8,6 +8,7 @@
 #include "Components/BoxComponent.h"
 #include "Engine/EngineTypes.h"
 #include "VASourcePlayback.h"
+#include "VAHeldMuffling.h"
 #include "VAWorld.generated.h"
 
 struct VAWorld;
@@ -164,7 +165,7 @@ struct VAUDIOUNREAL_API FVAOneShotSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	USoundAttenuation* AttenuationSettings = nullptr;
 
-	// Stops casting rays after the first result. Only used by PlaySoundAtLocation and SpawnSoundAtLocation, as an attached sound moves and keeps raytracing
+	// Raytraces the sound once, then reuses its reverb, ambience and muffling for the rest of its lifetime and its reverb tail, so its muffling doesn't follow the listener. Only used by PlaySoundAtLocation and SpawnSoundAtLocation, as an attached sound moves and keeps raytracing
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bRaytraceOnce = true;
 
@@ -256,6 +257,9 @@ struct FVAOneShot
 	bool bAffectsGroupedEAX = false;
 	bool bUseListenerReverb = false;
 	bool bRaytraceOnce = true;
+
+	// A location sound's muffling once bRaytraceOnce has suspended it
+	FVAHeldMuffling HeldMuffling;
 };
 
 UCLASS(DisplayName = "VAWorld", HideCategories = (Shape, Collision, Rendering, Physics, HLOD, Navigation, VirtualTexture, Tags, Cooking, LOD, AssetUserData, Mobile, RayTracing))

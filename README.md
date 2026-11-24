@@ -156,8 +156,8 @@ Every source is muffled relative to the current listener automatically. Sounds s
 
 Useful emitter properties, shared by the listener and the raytraced sources:
 - `bAffectsGroupedEAX`: this emitter's reverb is blended into the world's grouped reverbs (on by default for sources). When off, `bUseListenerReverb` chooses between the listener's reverb and none.
-- `bRaytraceOnce`: stop casting rays once the first results are in, for short sounds. The emitter keeps its reverb and ambience, and its muffling keeps updating as the listener moves.
-- `SetSuspended`: stop casting rays on demand, and start again later, e.g. for a sound that's paused or too far away. Its reverb and ambience don't update while suspended, even if it moves.
+- `bRaytraceOnce`: stop raytracing once the first results are in, for short sounds. The emitter keeps its reverb, ambience and muffling for the rest of its lifetime, so its muffling doesn't change as the listener moves.
+- `SetSuspended`: stop raytracing on demand, and start again later, e.g. for a sound that's paused or too far away. Its reverb, ambience and muffling don't update while suspended, even if it or the listener moves.
 - `bKeepReverbTailAlive`: keep contributing to the reverb after the actor is destroyed, until its reverb tail has faded away.
 - `GetMufflingFilterResult`, `GetReverbResult` and `GetAmbientFilterResult` expose the raytraced results to Blueprints.
 
@@ -205,7 +205,7 @@ AVASource* source = AVAWorld::SpawnSoundAtLocation(this, Sound, SoundLocation, s
 AVASource* attached = AVAWorld::SpawnSoundAttached(Sound, AttachComp, AttachBone, FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, bStopWhenAttachedToDestroyed, settings);
 ```
 
-- `PlaySoundAtLocation` and `SpawnSoundAtLocation` raytrace once by default, as the sound doesn't move. Its muffling still updates as the listener moves, and its reverb tail starts when the sound finishes. Set `settings.bRaytraceOnce = false` to keep raytracing for the sound's whole lifetime, e.g. for a long sound while doors open and close around it.
+- `PlaySoundAtLocation` and `SpawnSoundAtLocation` raytrace once by default, as the sound doesn't move. Its muffling is held from then on, even as the listener moves, and its reverb tail starts when the sound finishes. Set `settings.bRaytraceOnce = false` to keep raytracing for the sound's whole lifetime, e.g. for a long sound while doors open and close around it.
 - `SpawnSoundAttached` ignores `bRaytraceOnce` and keeps raytracing as it moves, so it's the expensive choice for frequent sounds.
 - The sound starts after the first raytracing result, not straight away, so it's muffled correctly from the beginning.
 - A one-shot needs a `VAListener` that has begun play. Without one, `PlaySoundAtLocation`, `PlaySoundLeech`, `PlaySoundRelative` and the `Spawn*` functions log a warning and play nothing, rather than waiting for a listener. This includes sounds played from a `BeginPlay` that runs before the listener's.

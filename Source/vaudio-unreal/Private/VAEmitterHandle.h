@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "VAConstants.h"
+#include "VAHeldMuffling.h"
 
 class AVAWorld;
 class USoundSubmix;
@@ -76,17 +77,29 @@ void VAPushEmitterProperties(VAEmitter* handle, const TSource& source)
 	VAPushNonOneShotProperties(handle, source);
 }
 
-// The main listener's muffling filter for this handle, or null until the listener has raytraced it
-VALowPassFilter* VAGetMufflingResult(VAEmitter* handle, const AVAWorld* world);
+// The main listener's live muffling filter for this handle, or null until the listener has raytraced it or while it isn't a target
+VALowPassFilter* VAGetListenerMuffling(VAEmitter* handle, const AVAWorld* world);
+
+// The muffling held while the handle is suspended, otherwise the live filter, falling back to the held one until the listener has raytraced it again
+const VALowPassFilter* VAGetMufflingResult(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held);
+
+// Stops the handle casting rays and takes it out of the listener's targets, holding its last muffling. Call once it has its results
+void VASuspendHandle(VAEmitter* handle, const AVAWorld* world, FVAHeldMuffling& held);
+
+// Casts its rays again and makes it a listener target again, keeping the held muffling until the listener has raytraced it. With no listener, WirePendingTargets adds it when one begins play
+void VAResumeHandle(VAEmitter* handle, const AVAWorld* world, FVAHeldMuffling& held, const FString& name);
+
+// Drops the held muffling once a resumed handle has been raytraced by the listener again. Call every tick
+void VAUpdateHeldMuffling(VAEmitter* handle, const AVAWorld* world, FVAHeldMuffling& held);
 
 // AVAWorld::IsOutsideBounds at the handle's position and bClampPosition
 bool VAIsHandleOutsideBounds(VAEmitter* handle, const AVAWorld* world);
 
 // Muffled by the listener and, if it affects grouped EAX with reverb rays, has its own EAX
-bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world);
+bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held);
 
 // VAHasHandleResults, except a handle outside the bounds doesn't wait for its own EAX, as it isn't raytraced there
-bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world);
+bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held);
 
 // True once the current listener has its EAX, so a relative sound never plays through the default reverb of its ListenerReverbSubmix. Also true if the listener has no submix, casts no reverb rays or is outside the bounds, as there's nothing to wait for. False with no listener
 bool VAIsListenerReverbReady(const AVAWorld* world);
@@ -95,4 +108,4 @@ bool VAIsListenerReverbReady(const AVAWorld* world);
 bool VAResolveReverbSend(VAEmitter* handle, const AVAWorld* world, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext, USoundSubmix*& outSubmix, float& outSendLevel);
 
 // Pushes the muffling filter, then the reverb send, to playback. The last result is kept while either is unavailable
-void VAApplyHandleResults(FVASourcePlayback& playback, VAEmitter* handle, const AVAWorld* world, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext);
+void VAApplyHandleResults(FVASourcePlayback& playback, VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext);
