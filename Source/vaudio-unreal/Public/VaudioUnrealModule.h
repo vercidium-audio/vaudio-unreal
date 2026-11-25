@@ -18,5 +18,6 @@ private:
 	void OnPostEngineInit();
 
 	FDelegateHandle PostEngineInitHandle;
+	FDelegateHandle ObjectPropertyChangedHandle;
 	void* SdkHandle = nullptr;
 };

@@ -20,12 +20,26 @@ UVAMeshMaterialUserData* UVAMeshMaterialUserData::Find(const UStaticMesh* mesh)
 void UVAMeshMaterialUserData::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
+	RefreshRunningWorlds(GetTypedOuter<UStaticMesh>());
+}
 
-	// Editing the mesh during PIE. Every running world is rebuilt rather than tracking which ones use this mesh, as it's an editor-only, one-off cost
+void UVAMeshMaterialUserData::OnObjectPropertyChanged(UObject* object, FPropertyChangedEvent& event)
+{
+	static const FName assetUserDataName(TEXT("AssetUserData"));
+
+	if (event.GetMemberPropertyName() == assetUserDataName)
+		RefreshRunningWorlds(Cast<UStaticMesh>(object));
+}
+
+void UVAMeshMaterialUserData::RefreshRunningWorlds(const UStaticMesh* mesh)
+{
+	if (!mesh)
+		return;
+
 	for (const TWeakObjectPtr<AVAWorld>& weakWorld : AVAWorld::RunningWorlds)
 	{
 		if (AVAWorld* world = weakWorld.Get())
-			world->RebuildPrimitives();
+			world->RefreshMeshDefaults(mesh);
 	}
 }
 #endif

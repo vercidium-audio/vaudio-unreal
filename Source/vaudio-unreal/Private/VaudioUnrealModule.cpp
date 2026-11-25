@@ -3,6 +3,7 @@
 #include "VaudioUnrealModule.h"
 #include "VAEngineCompat.h"
 #include "VALog.h"
+#include "VAMeshMaterialUserData.h"
 
 #include "Engine/Engine.h"
 #include "HAL/PlatformProcess.h"
@@ -25,6 +26,10 @@ void FVaudioUnrealModule::StartupModule()
 
 	// GEngine is not guaranteed to be valid yet at module startup, so defer until the engine has finished initialising
 	PostEngineInitHandle = VAOnPostEngineInit().AddRaw(this, &FVaudioUnrealModule::OnPostEngineInit);
+
+#if WITH_EDITOR
+	ObjectPropertyChangedHandle = FCoreUObjectDelegates::OnObjectPropertyChanged.AddStatic(&UVAMeshMaterialUserData::OnObjectPropertyChanged);
+#endif
 }
 
 void FVaudioUnrealModule::LoadSdk()
@@ -113,6 +118,10 @@ void FVaudioUnrealModule::ShutdownModule()
 	VA_LOG(TEXT("Shutdown"));
 
 	VAOnPostEngineInit().Remove(PostEngineInitHandle);
+
+#if WITH_EDITOR
+	FCoreUObjectDelegates::OnObjectPropertyChanged.Remove(ObjectPropertyChangedHandle);
+#endif
 
 	if (GEngine)
 	{

@@ -47,5 +47,11 @@ public:
 
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+
+	// Refresh the mesh's components in running worlds when a VAMeshMaterial is added or removed
+	static void OnObjectPropertyChanged(UObject* object, FPropertyChangedEvent& event);
+
+private:
+	static void RefreshRunningWorlds(const UStaticMesh* mesh);
 #endif
 };

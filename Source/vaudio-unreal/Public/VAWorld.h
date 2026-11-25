@@ -579,6 +579,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	int32 GetPrimitiveCount() const { return PrimitiveBindings.Num(); }
 
+	const TArray<FVAPrimitiveBinding>& GetPrimitiveBindings() const { return PrimitiveBindings; }
+
+	// Re-adds only the mesh components using this mesh, after its VAMeshMaterial was added, removed or edited
+	void RefreshMeshDefaults(const UStaticMesh* mesh);
+
 	// How many distinct meshes the mesh primitives were built from. Every placement of the same static mesh shares one
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	int32 GetSharedMeshCount() const { return SharedMeshes.Num(); }
@@ -847,6 +852,7 @@ private:
 	void AddSpawnedMeshDefaults();
 	// source is the VAMaterialComponent the actor uses, its own or inherited from an attach parent or level instance. Null adds only its mesh components whose mesh has a VAMeshMaterial
 	void AddActorPrimitives(AActor* actor, UVAMaterialComponent* source);
+	void AddComponentPrimitives(UActorComponent* component, UVAMaterialComponent* source);
 	// Picks the component's own VAMaterialComponent, its mesh's VAMeshMaterial, or the inherited source, in that order. Owner is null if there's nothing to add (no source and no mesh default). Returns false if the material is invalid
 	bool ResolvePrimitiveSettings(UVAMaterialComponent* source, UActorComponent* component, FVAPrimitiveSettings& outSettings) const;
 	// Forgets the source and removes its bindings, plus every binding on the tree's actors

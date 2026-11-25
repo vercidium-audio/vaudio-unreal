@@ -630,63 +630,116 @@ void AVAWorld::AddActorPrimitives(AActor* actor, UVAMaterialComponent* source)
 	actor->OnEndPlay.AddUniqueDynamic(this, &AVAWorld::OnGeometryActorEndPlay);
 
 	for (UActorComponent* component : actor->GetComponents())
+		AddComponentPrimitives(component, source);
+}
+
+void AVAWorld::AddComponentPrimitives(UActorComponent* component, UVAMaterialComponent* source)
+{
+	FVAPrimitiveSettings settings;
+
+	if (UShapeComponent* shape = Cast<UShapeComponent>(component))
 	{
-		FVAPrimitiveSettings settings;
+		// Shapes only ever use a VAMaterialComponent, so this is checked before resolving their material
+		if (!source || source->PropagateMode == EVAPropagateMode::Visuals || !PassesCollisionFilter(shape))
+			return;
 
-		if (UShapeComponent* shape = Cast<UShapeComponent>(component))
+		if (!ResolvePrimitiveSettings(source, shape, settings))
 		{
-			// Shapes only ever use a VAMaterialComponent, so this is checked before resolving their material
-			if (!source || source->PropagateMode == EVAPropagateMode::Visuals || !PassesCollisionFilter(shape))
-				continue;
-
-			if (!ResolvePrimitiveSettings(source, shape, settings))
-			{
-				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
-				continue;
-			}
-
-			AddShapePrimitive(shape, settings);
+			ActorsWithInvalidMaterials.AddUnique(VAActorName(component->GetOwner()));
+			return;
 		}
-		else if (UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component))
+
+		AddShapePrimitive(shape, settings);
+	}
+	else if (UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component))
+	{
+		if (!ResolvePrimitiveSettings(source, meshComponent, settings))
 		{
-			if (!ResolvePrimitiveSettings(source, meshComponent, settings))
-			{
-				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
-				continue;
-			}
+			ActorsWithInvalidMaterials.AddUnique(VAActorName(component->GetOwner()));
+			return;
+		}
 
-			if (!settings.Owner)
-				continue;
+		if (!settings.Owner)
+			return;
 
-			// Foliage, PCG and other instanced meshes add one copy of the mesh per instance
-			if (UInstancedStaticMeshComponent* instanced = Cast<UInstancedStaticMeshComponent>(meshComponent))
+		// Foliage, PCG and other instanced meshes add one copy of the mesh per instance
+		if (UInstancedStaticMeshComponent* instanced = Cast<UInstancedStaticMeshComponent>(meshComponent))
+		{
+			for (int32 i = 0; i < instanced->GetInstanceCount(); i++)
 			{
-				for (int32 i = 0; i < instanced->GetInstanceCount(); i++)
-				{
-					FTransform instanceTransform;
+				FTransform instanceTransform;
 
-					if (instanced->GetInstanceTransform(i, instanceTransform, false))
-						AddStaticMeshPrimitives(instanced, settings, instanceTransform);
-				}
-			}
-			else
-			{
-				AddStaticMeshPrimitives(meshComponent, settings, FTransform::Identity);
+				if (instanced->GetInstanceTransform(i, instanceTransform, false))
+					AddStaticMeshPrimitives(instanced, settings, instanceTransform);
 			}
 		}
-		else if (ULandscapeHeightfieldCollisionComponent* landscapeComponent = Cast<ULandscapeHeightfieldCollisionComponent>(component))
+		else
 		{
-			if (!source)
-				continue;
-
-			if (!ResolvePrimitiveSettings(source, landscapeComponent, settings))
-			{
-				ActorsWithInvalidMaterials.AddUnique(VAActorName(actor));
-				continue;
-			}
-
-			AddLandscapePrimitive(landscapeComponent, settings);
+			AddStaticMeshPrimitives(meshComponent, settings, FTransform::Identity);
 		}
+	}
+	else if (ULandscapeHeightfieldCollisionComponent* landscapeComponent = Cast<ULandscapeHeightfieldCollisionComponent>(component))
+	{
+		if (!source)
+			return;
+
+		if (!ResolvePrimitiveSettings(source, landscapeComponent, settings))
+		{
+			ActorsWithInvalidMaterials.AddUnique(VAActorName(component->GetOwner()));
+			return;
+		}
+
+		AddLandscapePrimitive(landscapeComponent, settings);
+	}
+}
+
+void AVAWorld::RefreshMeshDefaults(const UStaticMesh* mesh)
+{
+	if (!World || !mesh)
+		return;
+
+	TArray<UStaticMeshComponent*> affected;
+
+	for (ULevel* level : GetWorld()->GetLevels())
+	{
+		if (!level || !level->bIsVisible)
+			continue;
+
+		for (AActor* actor : level->Actors)
+		{
+			if (!IsValid(actor) || actor->IsActorBeingDestroyed())
+				continue;
+
+			for (UActorComponent* component : actor->GetComponents())
+			{
+				UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component);
+
+				if (meshComponent && meshComponent->GetStaticMesh() == mesh)
+					affected.Add(meshComponent);
+			}
+		}
+	}
+
+	if (affected.Num() == 0)
+		return;
+
+	RemoveBindings([&affected](const FVAPrimitiveBinding& binding)
+	{
+		USceneComponent* component = binding.Component.Get();
+		return component && affected.Contains(component);
+	});
+
+	// Each component is added again with whatever now wins: its actor's own VAMaterialComponent, the mesh's VAMeshMaterial, an inherited VAMaterialComponent, or nothing
+	for (UStaticMeshComponent* meshComponent : affected)
+	{
+		AActor* actor = meshComponent->GetOwner();
+		UVAMaterialComponent* source = FindMaterialInChain(actor);
+
+		if (source && source->GetAudioWorld() != this)
+			continue;
+
+		actor->OnEndPlay.AddUniqueDynamic(this, &AVAWorld::OnGeometryActorEndPlay);
+		AddComponentPrimitives(meshComponent, source);
 	}
 }
 
