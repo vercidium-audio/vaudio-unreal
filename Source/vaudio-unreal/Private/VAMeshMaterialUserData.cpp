@@ -3,6 +3,7 @@
 #include "VAMeshMaterialUserData.h"
 #include "VAMaterialConversion.h"
 #include "VAWorld.h"
+#include "VAEngineCompat.h"
 #include "Engine/StaticMesh.h"
 
 bool UVAMeshMaterialUserData::GetMaterialID(const AVAWorld* world, const UObject* reporter, int32& outMaterialId) const
@@ -27,7 +28,7 @@ void UVAMeshMaterialUserData::OnObjectPropertyChanged(UObject* object, FProperty
 {
 	static const FName assetUserDataName(TEXT("AssetUserData"));
 
-	if (event.GetMemberPropertyName() == assetUserDataName)
+	if (VAMemberPropertyName(event) == assetUserDataName)
 		RefreshRunningWorlds(Cast<UStaticMesh>(object));
 }
 

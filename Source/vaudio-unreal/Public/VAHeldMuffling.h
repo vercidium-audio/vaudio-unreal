@@ -20,6 +20,6 @@ struct FVAHeldMuffling
 
 	void Reset()
 	{ 
-		*this = FVAHeldMuffling()
+		*this = FVAHeldMuffling();
 	}
 };
