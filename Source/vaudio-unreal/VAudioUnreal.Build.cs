@@ -1,3 +1,5 @@
+// AI-created
+
 using System.IO;
 using UnrealBuildTool;
 

@@ -1,3 +1,5 @@
+// Human-created
+
 using UnrealBuildTool;
 
 public class VaudioUnrealEditor : ModuleRules

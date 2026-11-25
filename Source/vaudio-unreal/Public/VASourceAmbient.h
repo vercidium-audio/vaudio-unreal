@@ -1,3 +1,5 @@
+// Human-created
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -9,15 +11,12 @@ class AVAWorld;
 class AVAListener;
 class USoundSubmix;
 
-// Where an AVASourceAmbient's reverb is sent
 UENUM(BlueprintType)
 enum class EVAAmbientReverbSend : uint8
 {
-	None,
-	// The current listener's ListenerReverbSubmix. Waits for the listener's first EAX before playing
-	ListenerReverbSubmix,
-	// CustomReverbSubmix, e.g. a hand-tuned reverb. Plays straight away
-	Custom,
+	None, // No reverb	
+	ListenerReverbSubmix, // The current listener's ListenerReverbSubmix. Waits for the listener's first EAX before playing	
+	Custom, // CustomReverbSubmix, e.g. grouped EAX, or a manually configured submix
 };
 
 UCLASS(DisplayName = "VASourceAmbient")
@@ -35,37 +34,37 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
-	// The sound file to play (2D - rain/wind/room-tone has no meaningful position)
+	// The sound file to play
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	USoundBase* SourceSound = nullptr;
 
-	// Multiplies the volume set by the listener's ambient filter
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.0", UIMax = "1.0"))
 	float VolumeMultiplier = 1.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source", meta = (ClampMin = "0.01", UIMax = "4.0"))
 	float PitchMultiplier = 1.0f;
 
-	// Silences this source's direct audio but keeps its reverb send. With ReverbSend set to None this silences it entirely. The VAWorld's bReverbOnly does this for every source
+	// Only play reverb
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bReverbOnly = false;
 
-	// Where this source's reverb is sent. The send is muffled by the listener's ambient filter's gainLF, like Godot's use_listener_reverb
+	// Reverb type. The send is muffled by the listener's ambient filter's gainLF. TODO - custom LF/HF muffling in Unreal?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb")
 	EVAAmbientReverbSend ReverbSend = EVAAmbientReverbSend::None;
 
-	// The submix this source's reverb is sent to when ReverbSend is Custom
+	// Which reverb submix to use
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Reverb", meta = (EditCondition = "ReverbSend == EVAAmbientReverbSend::Custom", EditConditionHides))
 	USoundSubmix* CustomReverbSubmix = nullptr;
 
-	// True once the listener has its first ambient filter and, with ReverbSend set to ListenerReverbSubmix, its first EAX (see AVASourceRelative::IsReadyToPlay)
+	// True when the listener has cast its ambient and reverb rays
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsReadyToPlay() const;
 
-	// The submix this source's reverb is sent to, or null. Resolved every tick once the listener has its ambient filter, even with no audio device
+	// Get the current reverb submix that this source is sending to. Updates every tick
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
 	USoundSubmix* GetReverbSubmix() const { return Playback.GetReverbSubmix(); }
 
+	// TODO - mention if this is pre-muffling or affected by attenuation / etc
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
 	float GetReverbSendLevel() const { return Playback.GetReverbSendLevel(); }
 

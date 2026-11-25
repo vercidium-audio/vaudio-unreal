@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VAEditorSprite.h"
 
 #include "Components/BillboardComponent.h"
@@ -8,7 +10,7 @@
 #if WITH_EDITORONLY_DATA
 void VASetEditorSprite(UBillboardComponent* billboard, const UClass* actorClass)
 {
-	// Like the engine's own sprites, so cooking doesn't pull the editor-only textures in
+	// Skip when cooking, so we don't include editor-only textures
 	if (!billboard || IsRunningCommandlet())
 		return;
 

@@ -1,3 +1,5 @@
+// Human-created
+
 #include "VAListenerDetails.h"
 #include "DetailLayoutBuilder.h"
 #include "VAEmitter.h"
@@ -9,7 +11,7 @@ TSharedRef<IDetailCustomization> FVAListenerDetails::MakeInstance()
 
 void FVAListenerDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 {
-	// Grouped EAX and occlusion/permeation energy caps only apply to emitters the listener raytraces, bRaytraceOnce suspends an emitter once the listener has raytraced it, and the listener never shares a cluster with its own targets
+	// Hide VAListener properties that the user should not be able to customise
 	const FName hidden[] =
 	{
 		GET_MEMBER_NAME_CHECKED(AVAEmitter, bClusteringEnabled),

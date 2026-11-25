@@ -1,3 +1,5 @@
+// Human-created
+
 #include "VARaytracedSource.h"
 #include "VAWorld.h"
 
@@ -7,7 +9,7 @@ extern "C" {
 
 AVARaytracedSource::AVARaytracedSource()
 {
-	// Default value
+	// Set defaults
 	bAffectsGroupedEAX = true;
 	bClampPosition = false;
 }
@@ -30,6 +32,7 @@ void AVARaytracedSource::TickTypeSpecific(float DeltaTime)
 
 void AVARaytracedSource::UpdatePlayback()
 {
+	// TODO - why set every frame? Can we get a callback when these properties change, or just invoke these Playback.* methods when the properties change?
 	Playback.SetVolumeMultiplier(VolumeMultiplier);
 	Playback.SetPitchMultiplier(PitchMultiplier);
 	Playback.SetDryOutputEnabled(!AVAWorld::IsReverbOnly(GetAudioWorld(), bReverbOnly));

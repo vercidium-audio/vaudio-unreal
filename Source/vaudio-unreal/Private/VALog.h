@@ -1,3 +1,5 @@
+// Human-created
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -83,7 +85,5 @@ inline const TCHAR* VANeverDestroyedSuffix(bool bAutoDestroy)
 	return bAutoDestroy ? TEXT(". bAutoDestroy won't destroy this actor, as it hasn't played") : TEXT("");
 }
 
-#define VA_WARN_PLAY_BEFORE_READY() VA_WARN_NAMED(TEXT("Play() was called before this source was ready to play, so nothing played. bAutoDestroy won't destroy this actor until it has played, so set bAutoPlay, or call Play() once IsReadyToPlay() returns true"))
-
-// Same as VA_WARN_NAMED, but keyed by an explicit slot so the message can be cleared later with VAClearMessage(VAMessageKey(this, Slot))
+// Same as VA_WARN_NAMED, but keyed so the message can be cleared later with VAClearMessage
 #define VA_WARN_NAMED_SLOT(Slot, Format, ...) VAReport(ELogVerbosity::Warning, this, VAMessageKey(this, Slot), FString::Printf(Format, ##__VA_ARGS__))

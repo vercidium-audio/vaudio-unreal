@@ -51,11 +51,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bReverbOnly = false;
 
-	// Plays a random sound from SourceSounds, starting StartTime seconds in. Each call starts a new sound, so calls overlap. While paused it starts paused. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while the leeched emitter's IsSilencedByBounds is true, like AVASource::Play (any looping SourceSound counts as looping)
+	// Plays a random sound from SourceSounds, starting StartTime seconds in. Each call starts a new sound, so calls overlap. While paused it starts paused. Before IsReadyToPlay() is true it returns true and waits, then plays once ready (several calls while waiting play once, from the last StartTime). Returns false if this actor failed validation, if the sound couldn't be created (e.g. there's no audio device), or while the leeched emitter's IsSilencedByBounds is true, like AVASource::Play (any looping SourceSound counts as looping)
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	bool Play(float StartTime = 0.0f);
 
-	// Stops every sound started by Play(), and cancels a play that's waiting (bAutoPlay, or a loop waiting for the bounds), as if it had played
+	// Stops every sound started by Play(), and cancels a play that's waiting (bAutoPlay, a Play() before ready, or a loop waiting for the bounds), as if it had played
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	void Stop();
 
@@ -105,15 +105,14 @@ private:
 
 	bool bValidConfig = false;
 
-	// Cleared by the first Play(), whether bAutoPlay or the user called it
-	bool bAutoPlayPending = false;
+	// A bAutoPlay or Play() waiting for IsReadyToPlay() (or a loop waiting for the bounds), started from PendingStartTime by Tick
+	bool bPlayPending = false;
+	float PendingStartTime = 0.0f;
 
 	// Set by the first Play() once this source is ready, whether or not a sound could be created
 	bool bPlayAttempted = false;
 
 	bool bWarnedNoEmitter = false;
-
-	bool bWarnedPlayBeforeReady = false;
 
 	// Pushes the multipliers and dry output toggle to Playback
 	void UpdateMultipliers();

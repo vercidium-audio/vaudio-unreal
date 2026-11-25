@@ -38,7 +38,8 @@ void AVASource::InitializeTypeSpecific()
 		VA_WARN_NAMED(TEXT("SourceSound '%s' has no Sound Attenuation - it will not fall off with distance"), *SourceSound->GetName());
 	}
 
-	bAutoPlayPending = bAutoPlay;
+	// Keeps a Play() made before this source joined its VAWorld
+	bPlayPending = bPlayPending || bAutoPlay;
 }
 
 void AVASource::DeinitializeTypeSpecific()
@@ -86,17 +87,17 @@ void AVASource::TickTypeSpecific(float DeltaTime)
 	Super::TickTypeSpecific(DeltaTime);
 
 	// Like the actor-free one-shots, a spawned source doesn't wait for a listener. A user's source does
-	if (bSpawnedAsOneShot && bAutoPlayPending && !GetAudioWorld()->GetMainListener())
+	if (bSpawnedAsOneShot && bPlayPending && !GetAudioWorld()->GetMainListener())
 	{
-		bAutoPlayPending = false;
+		bPlayPending = false;
 		bPlayAttempted = true;
 	}
 
-	if (VAApplyBoundsRules(Playback, IsSilencedByBounds(), SourceSound && SourceSound->IsLooping(), bAutoPlayPending, bPlayAttempted))
+	if (VAApplyBoundsRules(Playback, IsSilencedByBounds(), SourceSound && SourceSound->IsLooping(), bPlayPending, bPlayAttempted))
 		return;
 
-	if (bAutoPlayPending && IsReadyToPlay())
-		Play();
+	if (bPlayPending && IsReadyToPlay())
+		Play(PendingStartTime);
 }
 
 void AVASource::DestroyWithComponent(USceneComponent* component)
@@ -107,32 +108,30 @@ void AVASource::DestroyWithComponent(USceneComponent* component)
 
 void AVASource::Stop()
 {
-	VACancelPendingPlay(bAutoPlayPending, bPlayAttempted);
+	VACancelPendingPlay(bPlayPending, bPlayAttempted);
+	PendingStartTime = 0.0f;
 	Super::Stop();
 }
 
 bool AVASource::Play(float StartTime)
 {
-	if (!SourceSound)
+	// A source that bAutoDestroy is removing can't play again
+	if (!SourceSound || !HasActorBegunPlay() || IsFinalRemovalStarted())
 		return false;
 
-	if (VAApplyBoundsRulesOnPlay(this, Playback, IsSilencedByBounds(), SourceSound->IsLooping(), bAutoPlayPending, bPlayAttempted))
+	if (VAApplyBoundsRulesOnPlay(this, Playback, IsSilencedByBounds(), SourceSound->IsLooping(), bPlayPending, bPlayAttempted))
 		return false;
 
-	// Wait for the muffling and reverb results, so the sound never starts unmuffled or without reverb
+	// Waits for the muffling and reverb results, so the sound never starts unmuffled or without reverb. TickTypeSpecific plays it once ready, like VASourceRelative
 	if (!IsReadyToPlay())
 	{
-		// bAutoPlay plays it once it's ready, and a source that has played or is leaving will still be destroyed
-		if (bAutoDestroy && !bAutoPlayPending && !bPlayAttempted && !IsFinalRemovalStarted() && !bWarnedPlayBeforeReady)
-		{
-			bWarnedPlayBeforeReady = true;
-			VA_WARN_PLAY_BEFORE_READY();
-		}
-
-		return false;
+		bPlayPending = true;
+		PendingStartTime = StartTime;
+		return true;
 	}
 
-	bAutoPlayPending = false;
+	bPlayPending = false;
+	PendingStartTime = 0.0f;
 	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update

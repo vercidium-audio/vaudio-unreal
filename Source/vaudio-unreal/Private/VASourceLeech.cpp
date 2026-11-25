@@ -63,7 +63,7 @@ void AVASourceLeech::BeginPlay()
 
 	// The emitter is resolved in Tick, since this actor may be attached to it after spawning
 	bValidConfig = true;
-	bAutoPlayPending = bAutoPlay;
+	bPlayPending = bAutoPlay;
 }
 
 void AVASourceLeech::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -129,12 +129,12 @@ void AVASourceLeech::Tick(float DeltaTime)
 
 	UpdatePlayback(emitter);
 
-	if (VAApplyBoundsRules(Playback, emitter->IsSilencedByBounds(), IsLooping(), bAutoPlayPending, bPlayAttempted))
+	if (VAApplyBoundsRules(Playback, emitter->IsSilencedByBounds(), IsLooping(), bPlayPending, bPlayAttempted))
 		return;
 
 	// Waits for the emitter's reverb results too, so the sound never starts without reverb
-	if (bAutoPlayPending && emitter->IsReadyToPlay())
-		Play();
+	if (bPlayPending && emitter->IsReadyToPlay())
+		Play(PendingStartTime);
 }
 
 void AVASourceLeech::UpdateMultipliers()
@@ -159,23 +159,19 @@ bool AVASourceLeech::Play(float StartTime)
 
 	AVAEmitter* emitter = GetLeechedEmitter();
 
-	if (VAApplyBoundsRulesOnPlay(this, Playback, emitter && emitter->IsSilencedByBounds(), IsLooping(), bAutoPlayPending, bPlayAttempted))
+	if (VAApplyBoundsRulesOnPlay(this, Playback, emitter && emitter->IsSilencedByBounds(), IsLooping(), bPlayPending, bPlayAttempted))
 		return false;
 
-	// Wait for the emitter's muffling and reverb results, so the sound never starts unmuffled or without reverb
+	// Waits for the emitter's muffling and reverb results, so the sound never starts unmuffled or without reverb. Tick plays it once ready, like VASourceRelative
 	if (!IsReadyToPlay())
 	{
-		// bAutoPlay plays it once it's ready, and a source that has played will still be destroyed
-		if (bAutoDestroy && !bAutoPlayPending && !bPlayAttempted && !bWarnedPlayBeforeReady)
-		{
-			bWarnedPlayBeforeReady = true;
-			VA_WARN_PLAY_BEFORE_READY();
-		}
-
-		return false;
+		bPlayPending = true;
+		PendingStartTime = StartTime;
+		return true;
 	}
 
-	bAutoPlayPending = false;
+	bPlayPending = false;
+	PendingStartTime = 0.0f;
 	bPlayAttempted = true;
 
 	// Play() may be called before this tick's update
@@ -210,7 +206,8 @@ bool AVASourceLeech::Play(float StartTime)
 
 void AVASourceLeech::Stop()
 {
-	VACancelPendingPlay(bAutoPlayPending, bPlayAttempted);
+	VACancelPendingPlay(bPlayPending, bPlayAttempted);
+	PendingStartTime = 0.0f;
 	Playback.Stop();
 }
 

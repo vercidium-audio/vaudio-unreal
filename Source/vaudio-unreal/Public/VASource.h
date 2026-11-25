@@ -36,11 +36,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Source")
 	bool bAutoDestroy = true;
 
-	// Plays SourceSound, starting StartTime seconds in. Each call starts a new sound, so calls overlap. While paused (see SetPaused) it starts paused. Returns false until IsReadyToPlay() is true, if the sound couldn't be created (e.g. there's no audio device), or while IsSilencedByBounds is true, where a looping sound plays once back inside the bounds and any other is dropped with a warning (as if it had played, for bAutoDestroy). Sounds are stopped when they leave the bounds, and a looping one plays again from the start once back inside
+	// Plays SourceSound, starting StartTime seconds in. Each call starts a new sound, so calls overlap. While paused (see SetPaused) it starts paused. Before IsReadyToPlay() is true it returns true and waits, then plays once ready (several calls while waiting play once, from the last StartTime). Returns false before BeginPlay, once bAutoDestroy has started removing this source, if the sound couldn't be created (e.g. there's no audio device), or while IsSilencedByBounds is true, where a looping sound plays once back inside the bounds and any other is dropped with a warning (as if it had played, for bAutoDestroy). Sounds are stopped when they leave the bounds, and a looping one plays again from the start once back inside
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Source")
 	bool Play(float StartTime = 0.0f);
 
-	// Also cancels a play that's waiting (bAutoPlay, or a loop waiting for the bounds), as if it had played
+	// Also cancels a play that's waiting (bAutoPlay, a Play() before ready, or a loop waiting for the bounds), as if it had played
 	virtual void Stop() override;
 
 	// Destroys this actor once the component is destroyed, or its actor is. Unreal detaches attached actors rather than destroying them, so AVAWorld::SpawnSoundAttached uses this for bStopWhenAttachedToDestroyed
@@ -52,13 +52,12 @@ public:
 private:
 	bool bSpawnedAsOneShot = false;
 
-	// Cleared by the first Play(), whether bAutoPlay or the user called it
-	bool bAutoPlayPending = false;
+	// A bAutoPlay or Play() waiting for IsReadyToPlay() (or a loop waiting for the bounds), started from PendingStartTime by TickTypeSpecific
+	bool bPlayPending = false;
+	float PendingStartTime = 0.0f;
 
 	// Set by the first Play() once this source is ready, whether or not a sound could be created
 	bool bPlayAttempted = false;
-
-	bool bWarnedPlayBeforeReady = false;
 
 	bool bDestroyWithComponent = false;
 	TWeakObjectPtr<USceneComponent> DestroyWithComponentTarget;

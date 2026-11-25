@@ -117,6 +117,7 @@ The automation tests live in a separate host project (`vaudio-unreal-devproject`
 
 # Coding guidelines
 
+- Prefer uppercase ID over Id, e.g. `GetMaterialId` should be `GetMaterialID`
 - Log with the macros in `Private/VALog.h` (`VA_LOG`, `VA_WARN`, `VA_ERROR`, plus `_NAMED` and `_RESULT` variants). On-screen messages don't exist in Shipping, so never use `GEngine->AddOnScreenDebugMessage` as the only channel
 - Messages are read by someone working in the editor, so say what's wrong and what to change rather than naming internal functions
 - Use camelCase for variable names, not capitalised names (`listener`, not `Listener`) or single acronyms (`position`, not `P`)

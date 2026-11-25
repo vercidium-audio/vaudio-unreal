@@ -1,3 +1,5 @@
+// AI-created
+
 #include "VAEmitterHandle.h"
 #include "VAEmitter.h"
 #include "VAWorld.h"
