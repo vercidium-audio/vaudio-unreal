@@ -1,3 +1,5 @@
+// AI-created
+
 #pragma once
 
 #include "CoreMinimal.h"

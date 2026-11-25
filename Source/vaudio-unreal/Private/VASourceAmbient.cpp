@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VASourceAmbient.h"
 #include "VASourceRelative.h"
 #include "VAEmitterHandle.h"
@@ -79,6 +81,7 @@ void AVASourceAmbient::Tick(float DeltaTime)
 		if (!vaEmitterGetAmbientOcclusionEnabled(vaListener) && !vaEmitterGetAmbientPermeationEnabled(vaListener))
 			VA_WARN_NAMED(TEXT("Will not be muffled as the listener does not cast ambient occlusion or ambient permeation rays"));
 	}
+
 	VALowPassFilter* AmbientFilter = vaEmitterGetAmbientFilter(vaListener);
 
 	// Raytracing has not completed yet - don't play the sound
@@ -90,15 +93,15 @@ void AVASourceAmbient::Tick(float DeltaTime)
 	// Set after the filter, as the send level is compensated by gainLF. Sending gainLF muffles the send's volume like the dry path
 	switch (ReverbSend)
 	{
-	case EVAAmbientReverbSend::ListenerReverbSubmix:
-		AVASourceRelative::ApplyListenerReverbSend(Playback, audioWorld, this, WarnedListener, AmbientFilter->gainLF);
-		break;
-	case EVAAmbientReverbSend::Custom:
-		Playback.SetReverbSend(CustomReverbSubmix, CustomReverbSubmix ? AmbientFilter->gainLF : 0.0f);
-		break;
-	default:
-		Playback.SetReverbSend(nullptr, 0.0f);
-		break;
+		case EVAAmbientReverbSend::ListenerReverbSubmix:
+			AVASourceRelative::ApplyListenerReverbSend(Playback, audioWorld, this, WarnedListener, AmbientFilter->gainLF);
+			break;
+		case EVAAmbientReverbSend::Custom:
+			Playback.SetReverbSend(CustomReverbSubmix, CustomReverbSubmix ? AmbientFilter->gainLF : 0.0f);
+			break;
+		default:
+			Playback.SetReverbSend(nullptr, 0.0f);
+			break;
 	}
 
 	if (bSourcePendingSpawn && IsReadyToPlay())

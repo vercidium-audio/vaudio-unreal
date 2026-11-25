@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VAEditorStyle.h"
 #include "Brushes/SlateImageBrush.h"
 #include "Interfaces/IPluginManager.h"

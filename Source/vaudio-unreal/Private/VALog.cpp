@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VALog.h"
 #include "VAEngineCompat.h"
 

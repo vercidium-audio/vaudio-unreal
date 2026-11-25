@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VASubmixEffectDirectionalPan.h"
 
 FVASubmixEffectDirectionalPan::FVASubmixEffectDirectionalPan()

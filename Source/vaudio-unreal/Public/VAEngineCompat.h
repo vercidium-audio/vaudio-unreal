@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #pragma once
 
 #include "GameFramework/Actor.h"

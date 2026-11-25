@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VARaytracedSourceDetails.h"
 #include "DetailLayoutBuilder.h"
 #include "VAEmitter.h"

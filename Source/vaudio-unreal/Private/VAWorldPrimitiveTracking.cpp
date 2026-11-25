@@ -1,3 +1,5 @@
+// AI-created
+
 #include "VAWorld.h"
 #include "VAEngineCompat.h"
 #include "VAConstants.h"

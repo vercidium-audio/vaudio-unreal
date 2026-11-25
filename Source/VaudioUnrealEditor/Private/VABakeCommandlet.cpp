@@ -1,3 +1,5 @@
+// AI-created
+
 #include "VABakeCommandlet.h"
 #include "VAWorld.h"
 #include "AssetRegistry/AssetRegistryModule.h"

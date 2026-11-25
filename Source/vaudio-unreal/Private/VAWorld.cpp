@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VAWorld.h"
 #include "VAEngineCompat.h"
 #include "VAWorldSubsystem.h"

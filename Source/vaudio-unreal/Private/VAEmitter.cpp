@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VAEmitter.h"
 #include "VAEngineCompat.h"
 #include "VAWorld.h"

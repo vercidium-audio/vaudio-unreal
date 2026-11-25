@@ -1,3 +1,5 @@
+// AI-created
+
 #include "VAReverbConversion.h"
 
 // UE's plate reverb (FSubmixEffectReverb + FLateReflectionsFast) doesn't treat DecayTime as an RT60, so the EAX fields can't be passed through as-is. Its Density and Diffusion drive the plate's allpass diffusers, and vaudio's low values (e.g. 0.03-0.3 for concrete) turn the tail into discrete repeats ~100 ms apart, so both are held at PlateDiffusion. DecayTime is then picked from a measured table so the plate's RT60 matches vaudio's, and DecayHFRatio from the HF decay ratio. The reverb_tail_rt60 automation test checks this

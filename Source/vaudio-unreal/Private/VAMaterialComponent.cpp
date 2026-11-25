@@ -1,3 +1,5 @@
+// AI-created
+
 #include "VAMaterialComponent.h"
 #include "VAMaterial.h"
 #include "VAWorld.h"

@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #pragma once
 
 #include "Modules/ModuleManager.h"

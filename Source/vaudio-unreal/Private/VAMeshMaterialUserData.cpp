@@ -1,3 +1,5 @@
+// AI-created
+
 #include "VAMeshMaterialUserData.h"
 #include "VAMaterialConversion.h"
 #include "VAWorld.h"

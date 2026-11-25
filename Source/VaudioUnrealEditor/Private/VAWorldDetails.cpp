@@ -1,3 +1,5 @@
+// AI-created
+
 #include "VAWorldDetails.h"
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
@@ -21,13 +23,9 @@ void FVAWorldDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 	TArray<UObject*> roots;
 
 	for (const TWeakObjectPtr<UObject>& selected : DetailBuilder.GetSelectedObjects())
-	{
 		if (AVAWorld* world = Cast<AVAWorld>(selected.Get()))
-		{
 			if (USceneComponent* root = world->GetRootComponent())
 				roots.Add(root);
-		}
-	}
 
 	if (roots.Num() == 0)
 		return;

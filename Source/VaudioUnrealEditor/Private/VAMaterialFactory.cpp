@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VAMaterialFactory.h"
 #include "VAMaterial.h"
 

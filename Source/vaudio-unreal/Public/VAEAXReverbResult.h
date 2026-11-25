@@ -1,3 +1,5 @@
+// Human-created
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -13,7 +15,7 @@ struct FVAEAXReverbResult
 	UPROPERTY(BlueprintReadOnly, Category = "Vercidium Audio|Reverb")
 	float OutsidePercent = 0.0f;
 
-	// Percentage of reverb ray energy that returned to the emitter
+	// Percentage of reverb energy that returned to the emitter
 	UPROPERTY(BlueprintReadOnly, Category = "Vercidium Audio|Reverb")
 	float ReturnedPercent = 0.0f;
 
@@ -112,4 +114,6 @@ struct FVAEAXReverbResult
 	// Whether to limit high-frequency decay time to the air absorption limit
 	UPROPERTY(BlueprintReadOnly, Category = "Vercidium Audio|Reverb")
 	bool bDecayHFLimit = false;
+
+	// TODO - add new FMOD variables here (`HighCut`, `LowShelfGain`, `WetLevel` and `EarlyLateMix`)
 };

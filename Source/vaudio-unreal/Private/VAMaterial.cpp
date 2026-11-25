@@ -1,3 +1,5 @@
+// AI-created
+
 #include "VAMaterial.h"
 #include "VAWorld.h"
 #include "VAMaterialConversion.h"

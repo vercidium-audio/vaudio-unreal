@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VASource.h"
 #include "AudioDevice.h"
 #include "Components/AudioComponent.h"

@@ -1,3 +1,5 @@
+// Human-reviewed
+
 #include "VAVisualisation.h"
 #include "VAEmitter.h"
 
