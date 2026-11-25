@@ -36,7 +36,7 @@ VAMaterialType EVAMaterialToVA(EVAMaterial Material)
 	}
 }
 
-bool VAResolveMaterialId(const UVAMaterialBase* asset, EVAMaterial material, const AVAWorld* world, const UObject* reporter, const FString& context, int32& outMaterialId)
+bool VAResolveMaterialID(const UVAMaterialBase* asset, EVAMaterial material, const AVAWorld* world, const UObject* reporter, const FString& context, int32& outMaterialId)
 {
 	if (!asset)
 	{
@@ -50,5 +50,5 @@ bool VAResolveMaterialId(const UVAMaterialBase* asset, EVAMaterial material, con
 		return false;
 	}
 
-	return asset->GetMaterialId(world, outMaterialId);
+	return asset->GetMaterialID(world, outMaterialId);
 }

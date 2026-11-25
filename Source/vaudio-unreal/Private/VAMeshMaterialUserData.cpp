@@ -5,9 +5,9 @@
 #include "VAWorld.h"
 #include "Engine/StaticMesh.h"
 
-bool UVAMeshMaterialUserData::GetMaterialId(const AVAWorld* world, const UObject* reporter, int32& outMaterialId) const
+bool UVAMeshMaterialUserData::GetMaterialID(const AVAWorld* world, const UObject* reporter, int32& outMaterialId) const
 {
-	return VAResolveMaterialId(MaterialAsset, Material, world, reporter, FString::Printf(TEXT(" (VAMeshMaterial on mesh '%s')"), *GetNameSafe(GetOuter())), outMaterialId);
+	return VAResolveMaterialID(MaterialAsset, Material, world, reporter, FString::Printf(TEXT(" (VAMeshMaterial on mesh '%s')"), *GetNameSafe(GetOuter())), outMaterialId);
 }
 
 UVAMeshMaterialUserData* UVAMeshMaterialUserData::Find(const UStaticMesh* mesh)

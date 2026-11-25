@@ -40,7 +40,7 @@ public:
 	int32 MeshLOD = 0;
 
 	// The SDK material ID in the world. Returns false and warns if it isn't in the world's Materials array
-	bool GetMaterialId(const AVAWorld* world, const UObject* reporter, int32& outMaterialId) const;
+	bool GetMaterialID(const AVAWorld* world, const UObject* reporter, int32& outMaterialId) const;
 
 	// Get the mesh's VAMeshMaterial, or null if it has none
 	static UVAMeshMaterialUserData* Find(const UStaticMesh* mesh);

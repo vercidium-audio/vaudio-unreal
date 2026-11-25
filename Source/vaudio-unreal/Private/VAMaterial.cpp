@@ -100,7 +100,7 @@ void UVAMaterialBase::ApplyToWorld(AVAWorld* Owner) const
 		return;
 
 	int32 MaterialId;
-	if (!GetMaterialId(Owner, MaterialId))
+	if (!GetMaterialID(Owner, MaterialId))
 		return;
 
 	SetWorldMaterial(World, MaterialId, GetMaterialName(), AbsorptionLF, AbsorptionHF, Scattering, TransmissionLF, TransmissionHF, FlatTransmissionLF, FlatTransmissionHF, FColorToVA(Color));
@@ -122,7 +122,7 @@ void UVAMaterialBase::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 }
 #endif
 
-bool UVADefaultMaterial::GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const
+bool UVADefaultMaterial::GetMaterialID(const AVAWorld* Owner, int32& OutMaterialId) const
 {
 	OutMaterialId = (int32)EVAMaterialToVA(MaterialType);
 	return true;
@@ -161,7 +161,7 @@ void UVADefaultMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
 }
 #endif
 
-bool UVACustomMaterial::GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const
+bool UVACustomMaterial::GetMaterialID(const AVAWorld* Owner, int32& OutMaterialId) const
 {
 	OutMaterialId = Owner ? Owner->GetCustomMaterialId(this) : 0;
 

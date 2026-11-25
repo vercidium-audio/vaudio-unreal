@@ -49,7 +49,7 @@ public:
 	FColor Color = FColor::White;
 
 	// The SDK material ID this asset applies to in Owner. Custom materials only have one once Owner has applied them. Returns false (and logs why) otherwise
-	virtual bool GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const PURE_VIRTUAL(UVAMaterialBase::GetMaterialId, return false;);
+	virtual bool GetMaterialID(const AVAWorld* Owner, int32& OutMaterialId) const PURE_VIRTUAL(UVAMaterialBase::GetMaterialID, return false;);
 
 	// The name used in log messages
 	virtual FString GetMaterialName() const { return GetName(); }
@@ -79,7 +79,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
 	EVAMaterial MaterialType = EVAMaterial::Concrete;
 
-	virtual bool GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const override;
+	virtual bool GetMaterialID(const AVAWorld* Owner, int32& OutMaterialId) const override;
 
 	// Reads defaults from the SDK for MaterialType and applies them to this asset's properties.
 	// Call this from the editor to reset to built-in defaults.
@@ -106,6 +106,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Material")
 	FString MaterialName;
 
-	virtual bool GetMaterialId(const AVAWorld* Owner, int32& OutMaterialId) const override;
+	virtual bool GetMaterialID(const AVAWorld* Owner, int32& OutMaterialId) const override;
 	virtual FString GetMaterialName() const override { return MaterialName.IsEmpty() ? GetName() : MaterialName; }
 };

@@ -17,4 +17,4 @@ VAMaterialType EVAMaterialToVA(EVAMaterial Material);
 
 // Get the SDK material ID for the asset (if provided), or the default material.
 // Returns false and warns if the asset isn't in the world's Materials array
-bool VAResolveMaterialId(const UVAMaterialBase* asset, EVAMaterial material, const AVAWorld* world, const UObject* reporter, const FString& context, int32& outMaterialId);
+bool VAResolveMaterialID(const UVAMaterialBase* asset, EVAMaterial material, const AVAWorld* world, const UObject* reporter, const FString& context, int32& outMaterialId);

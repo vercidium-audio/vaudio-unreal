@@ -103,7 +103,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
 	TArray<FVAMaterialOverride> MaterialOverrides;
 
-	bool GetMaterialId(int32& OutMaterialId);
+	bool GetMaterialID(int32& OutMaterialId);
 
 	// The material for one component, taking MaterialOverrides into account. Returns false (and logs why) if the material can't be resolved
 	bool GetMaterialFor(const UActorComponent* component, int32& outMaterialId, bool& outUseFlatTransmission);

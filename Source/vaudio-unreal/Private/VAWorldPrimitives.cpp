@@ -748,7 +748,7 @@ bool AVAWorld::ResolvePrimitiveSettings(UVAMaterialComponent* source, UActorComp
 	if (const UVAMeshMaterialUserData* meshDefault = ResolvePrimitiveOwner(source, component, outSettings))
 	{
 		outSettings.bUseFlatTransmission = meshDefault->bUseFlatTransmission;
-		return meshDefault->GetMaterialId(this, component->GetOwner(), outSettings.MaterialId);
+		return meshDefault->GetMaterialID(this, component->GetOwner(), outSettings.MaterialId);
 	}
 
 	// No source and no mesh default, so nothing is added

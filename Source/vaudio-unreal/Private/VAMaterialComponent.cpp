@@ -1,4 +1,4 @@
-// AI-created
+// Human-created
 
 #include "VAMaterialComponent.h"
 #include "VAMaterial.h"
@@ -16,28 +16,35 @@ UVAMaterialComponent::UVAMaterialComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-bool UVAMaterialComponent::GetMaterialId(int32& OutMaterialId)
+// Get the SDK ID of this material
+bool UVAMaterialComponent::GetMaterialID(int32& OutMaterialId)
 {
-	return VAResolveMaterialId(MaterialAsset, Material, AudioWorld, this, FString(), OutMaterialId);
+	return VAResolveMaterialID(MaterialAsset, Material, AudioWorld, this, FString(), OutMaterialId);
 }
 
 bool UVAMaterialComponent::GetMaterialFor(const UActorComponent* component, int32& outMaterialId, bool& outUseFlatTransmission)
 {
-	// Overrides name this actor's own components, not those of child actors inheriting this material
-	if (component && component->GetOwner() == GetOwner())
+	// component must be provided
+	check(component);
+
+	if (component->GetOwner() == GetOwner())
 	{
+		// Multiple overrides can be provided for each StaticMeshComponent on this actor
 		for (const FVAMaterialOverride& materialOverride : MaterialOverrides)
 		{
-			if (materialOverride.Component != component->GetFName())
-				continue;
-
-			outUseFlatTransmission = materialOverride.bUseFlatTransmission;
-			return VAResolveMaterialId(materialOverride.MaterialAsset, materialOverride.Material, AudioWorld, this, FString::Printf(TEXT(" (override for component '%s')"), *component->GetName()), outMaterialId);
+			if (materialOverride.Component == component->GetFName())
+			{
+				// If a materialOverride is provided for this component, use it instead
+				// TODO - remove overrides. Material refactor needed
+				outUseFlatTransmission = materialOverride.bUseFlatTransmission;
+				return VAResolveMaterialID(materialOverride.MaterialAsset, materialOverride.Material, AudioWorld, this, FString::Printf(TEXT(" (override for component '%s')"), *component->GetName()), outMaterialId);
+			}
 		}
 	}
 
+	// Use our own material
 	outUseFlatTransmission = bUseFlatTransmission;
-	return GetMaterialId(outMaterialId);
+	return GetMaterialID(outMaterialId);
 }
 
 TArray<FString> UVAMaterialComponent::GetComponentNames() const
