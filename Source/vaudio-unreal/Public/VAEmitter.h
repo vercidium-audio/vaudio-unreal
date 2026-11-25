@@ -62,7 +62,8 @@ public:
 	bool IsRaytraced() const;
 
 	// True once the listener has raytraced this emitter, and this emitter has cast its own reverb rays.
-	// If this emitter is outside the world bounds, it does not cast reverb rays and this field does not wait for the reverb rays to be cast.
+	// With bUseListenerReverb and no grouped EAX, it also waits for the listener's first EAX, so it never plays through the default reverb of the listener's ListenerReverbSubmix.
+	// If this emitter is outside the world bounds, it does not cast reverb rays and this field does not wait for either.
 	// Sources don't play until this field is true
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	bool IsReadyToPlay() const;

@@ -98,8 +98,8 @@ bool VAIsHandleOutsideBounds(VAEmitter* handle, const AVAWorld* world);
 // Muffled by the listener and, if it affects grouped EAX with reverb rays, has its own EAX
 bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held);
 
-// VAHasHandleResults, except a handle outside the bounds doesn't wait for its own EAX, as it isn't raytraced there
-bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held);
+// VAHasHandleResults, plus with useListenerReverb and no grouped EAX (groupedEAXIndex -1), the listener's first EAX (VAIsListenerReverbReady). A handle outside the bounds waits for neither, as it isn't raytraced there and has no reverb send
+bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held, int32 groupedEAXIndex, bool useListenerReverb);
 
 // True once the current listener has its EAX, so a relative sound never plays through the default reverb of its ListenerReverbSubmix. Also true if the listener has no submix, casts no reverb rays or is outside the bounds, as there's nothing to wait for. False with no listener
 bool VAIsListenerReverbReady(const AVAWorld* world);

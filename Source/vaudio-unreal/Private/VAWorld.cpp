@@ -709,7 +709,7 @@ bool AVAWorld::IsOneShotReady(const FVAOneShot& oneShot) const
 		return VAIsListenerReverbReady(this);
 
 	if (oneShot.Handle)
-		return VAIsHandleReadyToPlay(oneShot.Handle, this, oneShot.HeldMuffling);
+		return VAIsHandleReadyToPlay(oneShot.Handle, this, oneShot.HeldMuffling, oneShot.bAffectsGroupedEAX ? vaEmitterGetGroupedEAXIndex(oneShot.Handle) : -1, oneShot.bUseListenerReverb);
 
 	AVAEmitter* emitter = oneShot.Emitter.Get();
 	return emitter && emitter->IsReadyToPlay();

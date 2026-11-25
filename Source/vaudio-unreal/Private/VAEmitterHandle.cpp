@@ -176,10 +176,17 @@ bool VAHasHandleResults(VAEmitter* handle, const AVAWorld* world, const FVAHeldM
 	return VAGetMufflingResult(handle, world, held) && !VAIsWaitingForOwnEAX(handle);
 }
 
-bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held)
+bool VAIsHandleReadyToPlay(VAEmitter* handle, const AVAWorld* world, const FVAHeldMuffling& held, int32 groupedEAXIndex, bool useListenerReverb)
 {
+	if (!VAGetMufflingResult(handle, world, held))
+		return false;
+
 	// Outside the bounds it isn't raytraced, so it would never get its own EAX. It plays with no reverb until it's back inside
-	return VAGetMufflingResult(handle, world, held) && (!VAIsWaitingForOwnEAX(handle) || VAIsHandleOutsideBounds(handle, world));
+	if (VAIsHandleOutsideBounds(handle, world))
+		return true;
+
+	// Sent to the listener's ListenerReverbSubmix (see VAResolveReverbSend), so it waits for the listener's first EAX too
+	return !VAIsWaitingForOwnEAX(handle) && !(useListenerReverb && groupedEAXIndex < 0 && !VAIsListenerReverbReady(world));
 }
 
 bool VAResolveReverbSend(VAEmitter* handle, const AVAWorld* world, int32 groupedEAXIndex, bool useListenerReverb, const UObject* logContext, USoundSubmix*& outSubmix, float& outSendLevel)

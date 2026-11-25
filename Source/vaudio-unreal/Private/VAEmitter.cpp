@@ -454,7 +454,7 @@ bool AVAEmitter::IsRaytraced() const
 
 bool AVAEmitter::IsReadyToPlay() const
 {
-	return !finalRemoval && VAIsHandleReadyToPlay(Emitter, AudioWorld, HeldMuffling);
+	return !finalRemoval && VAIsHandleReadyToPlay(Emitter, AudioWorld, HeldMuffling, GetReverbSendGroupedEAXIndex(), bUseListenerReverb);
 }
 
 int32 AVAEmitter::GetGroupedEAXIndex() const
