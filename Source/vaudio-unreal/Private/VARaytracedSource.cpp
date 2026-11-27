@@ -32,7 +32,7 @@ void AVARaytracedSource::TickTypeSpecific(float DeltaTime)
 
 void AVARaytracedSource::UpdatePlayback()
 {
-	// TODO - why set every frame? Can we get a callback when these properties change, or just invoke these Playback.* methods when the properties change?
+	// Set every tick, as Blueprints and C++ write these UPROPERTYs directly, and IsReverbOnly also follows the VAWorld's setting. Each setter returns early if the value is the same
 	Playback.SetVolumeMultiplier(VolumeMultiplier);
 	Playback.SetPitchMultiplier(PitchMultiplier);
 	Playback.SetDryOutputEnabled(!AVAWorld::IsReverbOnly(GetAudioWorld(), bReverbOnly));

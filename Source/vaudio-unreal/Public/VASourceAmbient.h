@@ -64,7 +64,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
 	USoundSubmix* GetReverbSubmix() const { return Playback.GetReverbSubmix(); }
 
-	// TODO - mention if this is pre-muffling or affected by attenuation / etc
+	// Volume multiplied by muffling gainLF, before distance attenuation
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Reverb")
 	float GetReverbSendLevel() const { return Playback.GetReverbSendLevel(); }
 
