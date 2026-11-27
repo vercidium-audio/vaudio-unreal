@@ -22,6 +22,8 @@ void FVAListenerDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuilder)
 		GET_MEMBER_NAME_CHECKED(AVAEmitter, OcclusionEnergyCap),
 		GET_MEMBER_NAME_CHECKED(AVAEmitter, PermeationEnergyCap),
 		GET_MEMBER_NAME_CHECKED(AVAEmitter, bRaytraceOnce),
+		GET_MEMBER_NAME_CHECKED(AVAEmitter, bUseListenerReverb),
+		GET_MEMBER_NAME_CHECKED(AVAEmitter, MaxVolume),
 	};
 
 	for (const FName& name : hidden)
