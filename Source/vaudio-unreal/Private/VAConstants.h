@@ -1,4 +1,4 @@
-// Human-reviewed
+// AI-created
 
 #pragma once
 
@@ -84,9 +84,24 @@ static VAMatrix MakeScaleRotTransMatrix(const FTransform& T)
 	return vaMatrixMultiply(&ScaleMat, &RotTrans);
 }
 
+// Swaps the axes around (local X to Unreal Y, Y to Z, Z to X), so a Y-up SDK primitive stands up in Unreal's Z-up space. It's a rotation rather than a mirror, so it can go in the transform
+static VAMatrix MakeYUpToZUpRotTransMatrix(const FTransform& transform)
+{
+	VAMatrix axes = vaMatrixCreate(
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		1, 0, 0, 0,
+		0, 0, 0, 1
+	);
+
+	VAMatrix rotTrans = MakeRotTransMatrix(transform);
+	return vaMatrixMultiply(&axes, &rotTrans);
+}
+
+// The SDK capsule runs along its local Y, an Unreal capsule along its local Z
 static inline void vaCapsulePrimitiveSetTransformUnreal(VACapsulePrimitive* capsule, const FTransform& transform)
 {
-	VAMatrix matrix = MakeRotTransMatrix(transform);
+	VAMatrix matrix = MakeYUpToZUpRotTransMatrix(transform);
 	vaCapsulePrimitiveSetTransform(capsule, &matrix);
 }
 
@@ -119,18 +134,10 @@ static inline void vaPlanePrimitiveSetFromBoxUnreal(VAPlanePrimitive* plane, con
 	vaPlanePrimitiveSetTransform(plane, &matrix);
 }
 
-// A heightmap is Y-up with its grid along local X and Z. Swapping the axes around (local X to Unreal Y, Y to Z, Z to X) stands it up in Unreal's Z-up space, and is a rotation rather than a mirror, so it can go in the transform. Scale goes in the heightmap's own scale instead
+// A heightmap is Y-up with its grid along local X and Z. Scale goes in the heightmap's own scale rather than the transform
 static inline void vaHeightmapPrimitiveSetTransformUnreal(VAHeightmapPrimitive* heightmap, const FTransform& transform)
 {
-	VAMatrix axes = vaMatrixCreate(
-		0, 1, 0, 0,
-		0, 0, 1, 0,
-		1, 0, 0, 0,
-		0, 0, 0, 1
-	);
-
-	VAMatrix rotTrans = MakeRotTransMatrix(transform);
-	VAMatrix matrix = vaMatrixMultiply(&axes, &rotTrans);
+	VAMatrix matrix = MakeYUpToZUpRotTransMatrix(transform);
 	vaHeightmapPrimitiveSetTransform(heightmap, &matrix);
 }
 
