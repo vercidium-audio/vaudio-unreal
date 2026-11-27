@@ -18,8 +18,12 @@
 #include "PhysicsEngine/AggregateGeom.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/LevelStreaming.h"
+#include "Materials/MaterialInterface.h"
 #include "LandscapeHeightfieldCollisionComponent.h"
 #include "LandscapeDataAccess.h"
+#include "LandscapeProxy.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
+#include "Engine/Engine.h"
 
 #if UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS
 #include "DynamicMeshBuilder.h"
@@ -45,13 +49,6 @@ extern "C" {
 #include "vaudio.h"
 }
 
-// The VAMeshMaterial of the component's static mesh, or null if it isn't a static mesh component or its mesh has none
-static const UVAMeshMaterialUserData* FindMeshDefault(const UActorComponent* component)
-{
-	const UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component);
-	return meshComponent ? UVAMeshMaterialUserData::Find(meshComponent->GetStaticMesh()) : nullptr;
-}
-
 // True if this mesh would use its simple collision rather than its render triangles
 static bool HasSimpleCollision(UStaticMesh* Mesh)
 {
@@ -64,8 +61,8 @@ static bool HasSimpleCollision(UStaticMesh* Mesh)
 	return Agg.SphylElems.Num() > 0 || Agg.SphereElems.Num() > 0 || Agg.BoxElems.Num() > 0 || Agg.ConvexElems.Num() > 0;
 }
 
-// One LOD's triangle-list vertices in mesh space, i.e. vertices[i] is triangle-list index i. False if the mesh has no CPU render data, e.g. in a cooked build
-static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVAVector3f>& vertices)
+// One LOD's triangle-list vertices in mesh space, section by section, and the material slot (StaticMaterials index) of each triangle. False if the mesh has no CPU render data, e.g. in a cooked build
+static bool GetRenderTriangles(UStaticMesh* mesh, int32 lod, TArray<FVAVector3f>& vertices, TArray<int32>& triangleSlots)
 {
 	FStaticMeshRenderData* renderData = mesh->GetRenderData();
 
@@ -84,11 +81,23 @@ static bool GetRenderVertices(UStaticMesh* mesh, int32 lod, TArray<FVAVector3f>&
 		return false;
 
 	vertices.Reset(indices.Num());
+	triangleSlots.Reset(indices.Num() / 3);
 
-	for (uint32 index : indices)
-		vertices.Add(lodResources.VertexBuffers.PositionVertexBuffer.VertexPosition(index));
+	// Each section is one material slot's slice of the index buffer
+	for (const FStaticMeshSection& section : lodResources.Sections)
+	{
+		int32 end = FMath::Min((int32)section.FirstIndex + (int32)section.NumTriangles * 3, indices.Num());
 
-	return true;
+		for (int32 i = section.FirstIndex; i + 2 < end; i += 3)
+		{
+			for (int32 corner = 0; corner < 3; corner++)
+				vertices.Add(lodResources.VertexBuffers.PositionVertexBuffer.VertexPosition(indices[i + corner]));
+
+			triangleSlots.Add(section.MaterialIndex);
+		}
+	}
+
+	return vertices.Num() > 0;
 }
 
 const FVABakedMesh* AVAWorld::FindBakedMesh(const UStaticMesh* mesh, int32 lod) const
@@ -100,8 +109,8 @@ const FVABakedMesh* AVAWorld::FindBakedMesh(const UStaticMesh* mesh, int32 lod) 
 #if WITH_EDITOR
 using FVABakeVisitor = TFunctionRef<void(AActor*, UStaticMeshComponent*, UStaticMesh*, int32)>;
 
-// Calls visit for each of the actor's mesh components that add their render triangles, with the LOD they use
-static void ForEachBakeTargetOnActor(AActor* actor, FVABakeVisitor visit)
+// Calls visit for each of the actor's mesh components that add their render triangles, with the LOD they use. Every triangle is baked, whichever slots are ignored, so cooked builds can resolve the slots again
+static void ForEachBakeTargetOnActor(const AVAWorld* vaWorld, AActor* actor, FVABakeVisitor visit)
 {
 	TArray<UStaticMeshComponent*> meshComponents;
 	actor->GetComponents<UStaticMeshComponent>(meshComponents);
@@ -109,21 +118,21 @@ static void ForEachBakeTargetOnActor(AActor* actor, FVABakeVisitor visit)
 	for (UStaticMeshComponent* meshComponent : meshComponents)
 	{
 		UStaticMesh* mesh = meshComponent->GetStaticMesh();
-		const UVAMeshMaterialUserData* meshDefault = FindMeshDefault(meshComponent);
+		FVAPrimitiveSettings settings;
 
-		if (!meshDefault || meshDefault->PropagateMode == EVAPropagateMode::Colliders)
+		if (!vaWorld->ResolvePrimitiveSettings(meshComponent, settings) || settings.PropagateMode == EVAPropagateMode::Colliders)
 			continue;
 
 		// Meshes with simple collision use it instead of their triangles, unless only visuals are added
-		if (HasSimpleCollision(mesh) && meshDefault->PropagateMode != EVAPropagateMode::Visuals)
+		if (HasSimpleCollision(mesh) && settings.PropagateMode != EVAPropagateMode::Visuals)
 			continue;
 
-		visit(actor, meshComponent, mesh, meshDefault->MeshLOD);
+		visit(actor, meshComponent, mesh, settings.MeshLOD);
 	}
 }
 
 // Calls visit for every mesh component BakeGeometry bakes, in every loaded actor, including those in sublevels hidden in the editor. With loadAll, level instances that aren't loaded are loaded for the call and unloaded after, and so is every World Partition actor
-static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
+static void ForEachBakeTarget(const AVAWorld* vaWorld, UWorld* world, bool loadAll, FVABakeVisitor visit)
 {
 #if !UE_VERSION_OLDER_THAN(5, 0, 0)
 	ULevelInstanceSubsystem* levelInstances = world->GetSubsystem<ULevelInstanceSubsystem>();
@@ -131,7 +140,7 @@ static void ForEachBakeTarget(UWorld* world, bool loadAll, FVABakeVisitor visit)
 
 	TFunction<void(AActor*)> visitActor = [&](AActor* actor)
 	{
-		ForEachBakeTargetOnActor(actor, visit);
+		ForEachBakeTargetOnActor(vaWorld, actor, visit);
 
 #if !UE_VERSION_OLDER_THAN(5, 0, 0)
 		// A loaded level instance's actors are already in the world's levels
@@ -202,7 +211,7 @@ void AVAWorld::BakeGeometry()
 	TSet<TPair<FSoftObjectPath, int32>> visited;
 	int32 placements = 0;
 
-	ForEachBakeTarget(world, true, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
+	ForEachBakeTarget(this, world, true, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
 	{
 		placements++;
 
@@ -216,7 +225,7 @@ void AVAWorld::BakeGeometry()
 		baked.Mesh = mesh;
 		baked.LOD = lod;
 
-		if (!GetRenderVertices(mesh, lod, baked.Vertices))
+		if (!GetRenderTriangles(mesh, lod, baked.Vertices, baked.TriangleSlots))
 		{
 			VA_WARN_NAMED(TEXT("Mesh '%s' (first used by '%s') has no render data in-editor, skipping"), *mesh->GetPathName(), *VAActorName(actor));
 			return;
@@ -241,13 +250,14 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 	TSet<TPair<FSoftObjectPath, int32>> used;
 	FString reason;
 
-	ForEachBakeTarget(world, false, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
+	ForEachBakeTarget(this, world, false, [&](AActor* actor, UStaticMeshComponent* meshComponent, UStaticMesh* mesh, int32 lod)
 	{
 		used.Add(MakeTuple(FSoftObjectPath(mesh), lod));
 		TArray<FVAVector3f> vertices;
+		TArray<int32> triangleSlots;
 
 		// A mesh with no render data can't be baked or compared, and is what the bake is for
-		if (reason.IsEmpty() && !FindBakedMesh(mesh, lod) && GetRenderVertices(mesh, lod, vertices))
+		if (reason.IsEmpty() && !FindBakedMesh(mesh, lod) && GetRenderTriangles(mesh, lod, vertices, triangleSlots))
 			reason = FString::Printf(TEXT("'%s' LOD %d (used by '%s'.'%s') isn't baked"), *mesh->GetPathName(), lod, *VAActorName(actor), *meshComponent->GetName());
 	});
 
@@ -256,9 +266,10 @@ bool AVAWorld::IsBakedGeometryStale(FString* OutReason) const
 	{
 		UStaticMesh* mesh = baked.Mesh.Get();
 		TArray<FVAVector3f> vertices;
+		TArray<int32> triangleSlots;
 
-		if (reason.IsEmpty() && mesh && GetRenderVertices(mesh, baked.LOD, vertices) && vertices != baked.Vertices)
-			reason = FString::Printf(TEXT("'%s' LOD %d has changed since it was baked (%d baked triangles, %d now)"), *mesh->GetPathName(), baked.LOD, baked.Vertices.Num() / 3, vertices.Num() / 3);
+		if (reason.IsEmpty() && mesh && GetRenderTriangles(mesh, baked.LOD, vertices, triangleSlots) && (vertices != baked.Vertices || triangleSlots != baked.TriangleSlots))
+			reason = FString::Printf(TEXT("'%s' LOD %d has changed since it was baked (%d baked triangles, %d now, or its material slots changed)"), *mesh->GetPathName(), baked.LOD, baked.Vertices.Num() / 3, vertices.Num() / 3);
 	}
 
 	// World Partition only checks loaded actors, so an unused entry may just be in an unloaded cell
@@ -320,6 +331,7 @@ void AVAWorld::RebuildPrimitives()
 		return;
 
 	RemoveBindings([](const FVAPrimitiveBinding&) { return true; });
+	ClearMaterialCache();
 	AddWorldGeometry();
 }
 
@@ -358,6 +370,9 @@ void AVAWorld::SyncPrimitive(AActor* actor)
 		USceneComponent* component = binding.Component.Get();
 		return component && tree.Contains(component->GetOwner());
 	});
+
+	// It's the explicit way to apply changes, e.g. a map entry set from a Blueprint, so nothing stale is reused
+	ClearMaterialCache();
 
 	for (AActor* member : tree)
 		AddActorGeometry(member);
@@ -413,12 +428,13 @@ void AVAWorld::AddActorGeometry(AActor* actor)
 	for (UActorComponent* component : actor->GetComponents())
 	{
 		UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component);
+		bool isGeometry = (meshComponent && meshComponent->GetStaticMesh()) || Cast<UShapeComponent>(component) || Cast<ULandscapeHeightfieldCollisionComponent>(component);
 
-		if (!meshComponent || !FindMeshDefault(meshComponent))
+		if (!isGeometry)
 			continue;
 
 		// Already added by an earlier scan
-		if (PrimitiveBindingsByComponent.Contains(meshComponent))
+		if (PrimitiveBindingsByComponent.Contains(Cast<USceneComponent>(component)))
 			return;
 
 		hasGeometry = true;
@@ -430,27 +446,51 @@ void AVAWorld::AddActorGeometry(AActor* actor)
 
 void AVAWorld::AddActorPrimitives(AActor* actor)
 {
-	// Destroyed or streamed-out geometry stops affecting raytracing
-	actor->OnEndPlay.AddUniqueDynamic(this, &AVAWorld::OnGeometryActorEndPlay);
+	int32 previousCount = PrimitiveBindings.Num();
 
 	for (UActorComponent* component : actor->GetComponents())
 		AddComponentPrimitives(component);
+
+	// Destroyed or streamed-out geometry stops affecting raytracing
+	if (PrimitiveBindings.Num() > previousCount)
+		actor->OnEndPlay.AddUniqueDynamic(this, &AVAWorld::OnGeometryActorEndPlay);
 }
 
 void AVAWorld::AddComponentPrimitives(UActorComponent* component)
 {
-	// Only static meshes with a VAMeshMaterial have a material. Shapes and landscapes have no material source yet
-	UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component);
-	const UVAMeshMaterialUserData* meshDefault = FindMeshDefault(meshComponent);
-
-	if (!meshDefault)
-		return;
-
 	FVAPrimitiveSettings settings;
 
-	if (!ResolvePrimitiveSettings(meshDefault, meshComponent, settings))
+	// Shapes are colliders whose material is their physical material
+	if (UShapeComponent* shape = Cast<UShapeComponent>(component))
 	{
-		ActorsWithInvalidMaterials.AddUnique(VAActorName(component->GetOwner()));
+		if (PassesCollisionFilter(shape) && ResolveCollisionMaterial(shape->BodyInstance, shape->GetBodySetup(), settings.MaterialId))
+			AddShapePrimitive(shape, settings);
+
+		return;
+	}
+
+	// One heightmap per landscape component, with the landscape's default physical material, as a heightmap has one material and can't follow its painted layers
+	if (ULandscapeHeightfieldCollisionComponent* landscapeComponent = Cast<ULandscapeHeightfieldCollisionComponent>(component))
+	{
+		ALandscapeProxy* landscape = landscapeComponent->GetLandscapeProxy();
+
+		if (landscape && ResolveBodyMaterial(landscape->DefaultPhysMaterial, settings.MaterialId))
+		{
+			settings.PropagateMode = EVAPropagateMode::All;
+			AddLandscapePrimitive(landscapeComponent, settings);
+		}
+
+		return;
+	}
+
+	UStaticMeshComponent* meshComponent = Cast<UStaticMeshComponent>(component);
+	bool invalid = false;
+
+	if (!meshComponent || !ResolvePrimitiveSettings(meshComponent, settings, &invalid))
+	{
+		if (invalid)
+			ActorsWithInvalidMaterials.AddUnique(VAActorName(component->GetOwner()));
+
 		return;
 	}
 
@@ -507,20 +547,257 @@ void AVAWorld::RefreshMeshDefaults(const UStaticMesh* mesh)
 		return component && affected.Contains(component);
 	});
 
-	// Added again with the mesh's current VAMeshMaterial, or not at all if it no longer has one
+	// Added again with the mesh's current VAMeshMaterial and material slots, or not at all if nothing matches any more
 	for (UStaticMeshComponent* meshComponent : affected)
 	{
-		meshComponent->GetOwner()->OnEndPlay.AddUniqueDynamic(this, &AVAWorld::OnGeometryActorEndPlay);
+		int32 previousCount = PrimitiveBindings.Num();
 		AddComponentPrimitives(meshComponent);
+
+		if (PrimitiveBindings.Num() > previousCount)
+			meshComponent->GetOwner()->OnEndPlay.AddUniqueDynamic(this, &AVAWorld::OnGeometryActorEndPlay);
 	}
 }
 
-bool AVAWorld::ResolvePrimitiveSettings(const UVAMeshMaterialUserData* meshDefault, UActorComponent* component, FVAPrimitiveSettings& outSettings) const
+int32 AVAWorld::ResolveSlotMaterial(const UMaterialInterface* renderMaterial, int32 fallbackID) const
 {
-	outSettings.PropagateMode = meshDefault->PropagateMode;
-	outSettings.MeshLOD = meshDefault->MeshLOD;
-	outSettings.bUseFlatTransmission = meshDefault->bUseFlatTransmission;
-	return meshDefault->GetMaterialID(this, component->GetOwner(), outSettings.MaterialId);
+	if (!renderMaterial)
+		return fallbackID;
+
+	// Before play, custom materials only have a placeholder ID, so nothing is cached
+	const int32* cached = World ? RenderMaterialCache.Find(TObjectKey<UMaterialInterface>(renderMaterial)) : nullptr;
+	int32 materialID = INDEX_NONE;
+
+	if (cached)
+	{
+		materialID = *cached;
+	}
+	else
+	{
+		// Instances without their own physical material use their parent's
+		if (!ResolveRenderMaterial(renderMaterial, materialID) && !ResolveBodyMaterial(renderMaterial->GetPhysicalMaterial(), materialID))
+			materialID = INDEX_NONE;
+
+		if (World)
+			RenderMaterialCache.Add(TObjectKey<UMaterialInterface>(renderMaterial), materialID);
+	}
+
+	return materialID != INDEX_NONE ? materialID : fallbackID;
+}
+
+bool AVAWorld::ResolveBodyMaterial(const UPhysicalMaterial* physicalMaterial, int32& outMaterialID) const
+{
+	if (!physicalMaterial)
+		return false;
+
+	const int32* cached = World ? PhysicalMaterialCache.Find(TObjectKey<UPhysicalMaterial>(physicalMaterial)) : nullptr;
+	int32 materialID = INDEX_NONE;
+
+	if (cached)
+		materialID = *cached;
+	else if (!ResolvePhysicalMaterial(physicalMaterial, materialID))
+		materialID = INDEX_NONE;
+
+	if (!cached && World)
+		PhysicalMaterialCache.Add(TObjectKey<UPhysicalMaterial>(physicalMaterial), materialID);
+
+	if (materialID == INDEX_NONE)
+		return false;
+
+	outMaterialID = materialID;
+	return true;
+}
+
+bool AVAWorld::ResolveCollisionMaterial(const FBodyInstance& bodyInstance, const UBodySetup* bodySetup, int32& outMaterialID) const
+{
+#if UE_VERSION_OLDER_THAN(5, 0, 0)
+	// 4.27 has no getter for the override. With no owner or body setup, the engine's lookup returns the override, else the default physical material, which is never matched
+	UPhysicalMaterial* overrideMaterial = FBodyInstance::GetSimplePhysicalMaterial(&bodyInstance, nullptr, nullptr);
+
+	if (GEngine && overrideMaterial == GEngine->DefaultPhysMaterial)
+		overrideMaterial = nullptr;
+#else
+	UPhysicalMaterial* overrideMaterial = bodyInstance.GetPhysMaterialOverride();
+#endif
+
+	if (overrideMaterial)
+		return ResolveBodyMaterial(overrideMaterial, outMaterialID);
+
+	return bodySetup && ResolveBodyMaterial(bodySetup->PhysMaterial, outMaterialID);
+}
+
+bool AVAWorld::ResolvePrimitiveSettings(const UStaticMeshComponent* meshComponent, FVAPrimitiveSettings& outSettings, bool* outInvalid) const
+{
+	if (outInvalid)
+		*outInvalid = false;
+
+	UStaticMesh* mesh = meshComponent ? meshComponent->GetStaticMesh() : nullptr;
+
+	if (!mesh)
+		return false;
+
+	const UVAMeshMaterialUserData* meshDefault = UVAMeshMaterialUserData::Find(mesh);
+	const UObject* reporter = meshComponent->GetOwner();
+	int32 defaultID = INDEX_NONE;
+	outSettings = FVAPrimitiveSettings();
+
+	if (meshDefault)
+	{
+		outSettings.PropagateMode = meshDefault->PropagateMode;
+		outSettings.MeshLOD = meshDefault->MeshLOD;
+		outSettings.bUseFlatTransmission = meshDefault->bUseFlatTransmission;
+
+		if (!meshDefault->GetMaterialID(this, reporter, defaultID) || !meshDefault->GetPermeationMaterialID(this, reporter, outSettings.PermeationMaterialID))
+		{
+			if (outInvalid)
+				*outInvalid = true;
+
+			return false;
+		}
+	}
+	else
+	{
+		outSettings.PropagateMode = EVAPropagateMode::All;
+	}
+
+	for (const FStaticMaterial& staticMaterial : mesh->GetStaticMaterials())
+	{
+		bool overridden = false;
+		int32 materialID = INDEX_NONE;
+
+		if (meshDefault && !meshDefault->FindSlotMaterialID(this, reporter, staticMaterial.MaterialSlotName, overridden, materialID))
+		{
+			if (outInvalid)
+				*outInvalid = true;
+
+			return false;
+		}
+
+		outSettings.SlotMaterialIDs.Add(overridden ? materialID : ResolveSlotMaterial(staticMaterial.MaterialInterface, defaultID));
+	}
+
+	if (meshDefault)
+	{
+		outSettings.MaterialId = defaultID;
+		return true;
+	}
+
+	// Untagged meshes use their simple collision (PropagateMode All), which is one body with one physical material, so that beats the slots. A mesh matched only by it is raytraced by its collision alone
+	if (HasSimpleCollision(mesh) && ResolveCollisionMaterial(meshComponent->BodyInstance, mesh->GetBodySetup(), outSettings.MaterialId))
+		return true;
+
+	// Simple collision and convex hulls use the primitive's material directly, so it's the material most slots use (the first on a tie), never Air
+	TMap<int32, int32> slotCounts;
+	int32 bestCount = 0;
+
+	for (int32 materialID : outSettings.SlotMaterialIDs)
+	{
+		if (materialID == INDEX_NONE)
+			continue;
+
+		int32& count = slotCounts.FindOrAdd(materialID);
+
+		if (++count > bestCount)
+		{
+			bestCount = count;
+			outSettings.MaterialId = materialID;
+		}
+	}
+
+	// Untagged geometry is ignored
+	return bestCount > 0;
+}
+
+bool AVAWorld::MakeRenderMeshKey(UStaticMesh* staticMesh, const FVAPrimitiveSettings& settings, FVAMeshKey& outKey)
+{
+	outKey = FVAMeshKey{ staticMesh, settings.MeshLOD, INDEX_NONE };
+	bool anyAdded = settings.SlotMaterialIDs.Num() == 0;
+
+	// Slots with the primitive's own material are Air, so placements whose defaults differ but whose overrides match still share the mesh
+	for (int32 materialID : settings.SlotMaterialIDs)
+	{
+		outKey.SlotMaterials.Add(materialID == settings.MaterialId ? (int32)VAMaterialAir : materialID);
+		anyAdded |= materialID != INDEX_NONE;
+	}
+
+	return anyAdded;
+}
+
+bool AVAWorld::ReadRenderTriangles(UStaticMesh* staticMesh, const FVAMeshKey& key, TArray<FVector>& outVertices, TArray<int32>& outTriangleMaterials) const
+{
+	// Render vertices are float, both baked and live
+	TArray<FVAVector3f> liveVertices;
+	TArray<int32> liveSlots;
+	const TArray<FVAVector3f>* renderVertices = nullptr;
+
+	// One per triangle, or null for every triangle in slot 0
+	const TArray<int32>* triangleSlots = nullptr;
+
+	if (GetRenderTriangles(staticMesh, key.LOD, liveVertices, liveSlots))
+	{
+		renderVertices = &liveVertices;
+		triangleSlots = &liveSlots;
+	}
+	else if (const FVABakedMesh* bakedMesh = FindBakedMesh(staticMesh, key.LOD))
+	{
+		renderVertices = &bakedMesh->Vertices;
+		triangleSlots = bakedMesh->TriangleSlots.Num() == bakedMesh->Vertices.Num() / 3 ? &bakedMesh->TriangleSlots : nullptr;
+	}
+
+	if (!renderVertices)
+	{
+		VA_WARN_NAMED(TEXT("Mesh '%s' will not affect raytracing as it has no baked geometry and no render mesh data. Run 'Bake Geometry For Shipping' on the VAWorld and save the level."), *staticMesh->GetName());
+		return false;
+	}
+
+	int32 triangleCount = renderVertices->Num() / 3;
+	bool anyOwnMaterial = false;
+	outVertices.Reset(renderVertices->Num());
+	outTriangleMaterials.Reset(triangleCount);
+
+	for (int32 triangle = 0; triangle < triangleCount; triangle++)
+	{
+		// A slot the mesh doesn't list, e.g. from a stale bake, uses the primitive's material
+		int32 slot = triangleSlots ? (*triangleSlots)[triangle] : 0;
+		int32 material = key.SlotMaterials.IsValidIndex(slot) ? key.SlotMaterials[slot] : (int32)VAMaterialAir;
+
+		if (material == INDEX_NONE)
+			continue;
+
+		for (int32 corner = 0; corner < 3; corner++)
+			outVertices.Add(FVector((*renderVertices)[triangle * 3 + corner]));
+
+		outTriangleMaterials.Add(material);
+		anyOwnMaterial |= material != (int32)VAMaterialAir;
+	}
+
+	// Every triangle uses the primitive's material, so the SDK needs no per-triangle materials
+	if (!anyOwnMaterial)
+		outTriangleMaterials.Reset();
+
+	return outVertices.Num() > 0;
+}
+
+bool AVAWorld::GetMeshTriangles(UStaticMeshComponent* meshComponent, TArray<FVector>& outVertices, TArray<int32>& outTriangleMaterials) const
+{
+	UStaticMesh* staticMesh = meshComponent ? meshComponent->GetStaticMesh() : nullptr;
+	FVAPrimitiveSettings settings;
+	FVAMeshKey key;
+
+	if (!ResolvePrimitiveSettings(meshComponent, settings) || settings.PropagateMode == EVAPropagateMode::Colliders)
+		return false;
+
+	if ((settings.PropagateMode != EVAPropagateMode::Visuals && HasSimpleCollision(staticMesh)) || !MakeRenderMeshKey(staticMesh, settings, key) || !ReadRenderTriangles(staticMesh, key, outVertices, outTriangleMaterials))
+		return false;
+
+	// Air means the primitive's material
+	if (outTriangleMaterials.Num() == 0)
+		outTriangleMaterials.Init(VAMaterialAir, outVertices.Num() / 3);
+
+	for (int32& material : outTriangleMaterials)
+		if (material == (int32)VAMaterialAir)
+			material = settings.MaterialId;
+
+	return true;
 }
 
 bool AVAWorld::PassesCollisionFilter(const UPrimitiveComponent* component) const
@@ -627,12 +904,11 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, cons
 		// Convex hulls are closed, so they become watertight mesh primitives with the element transform baked into mesh space
 		for (int32 convexIndex = 0; convexIndex < agg.ConvexElems.Num(); convexIndex++)
 		{
-			auto readHull = [&](TArray<FVector>& vertices)
+			auto readHull = [&](TArray<FVector>& vertices, TArray<int32>&)
 			{
-				FKConvexElem convexElem = agg.ConvexElems[convexIndex];
-
 #if UE_VERSION_OLDER_THAN(5, 0, 0) && !WITH_CHAOS
-				// 4.27's PhysX build has no hull indices, so the cooked PhysX hull is triangulated instead. It's already in body space (element transform applied, mirroring undone) and has render winding
+				// 4.27's PhysX build has no hull indices, so the cooked PhysX hull is triangulated instead. It's already in body space (element transform applied, mirroring undone) and has render winding. A copy of the element doesn't keep the cooked hull, so this reads the body setup's own
+				const FKConvexElem& convexElem = agg.ConvexElems[convexIndex];
 				TArray<FDynamicMeshVertex> hullVertices;
 				TArray<uint32> hullIndices;
 				convexElem.AddCachedSolidConvexGeom(hullVertices, hullIndices, FColor::White);
@@ -647,6 +923,8 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, cons
 
 				return true;
 #else
+				FKConvexElem convexElem = agg.ConvexElems[convexIndex];
+
 				if (convexElem.IndexData.Num() == 0)
 					convexElem.ComputeChaosConvexIndices();
 
@@ -691,33 +969,19 @@ void AVAWorld::AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, cons
 	if (addedSimple || settings.PropagateMode == EVAPropagateMode::Colliders)
 		return;
 
+	// One shared mesh per mesh, LOD and slot materials. A mesh whose slots are all ignored adds nothing
+	FVAMeshKey key;
+
+	if (!MakeRenderMeshKey(staticMesh, settings, key))
+		return;
+
 	// The live render data, or the baked copy if a cooked build has dropped it
-	auto readTriangles = [&](TArray<FVector>& vertices)
+	auto readTriangles = [&](TArray<FVector>& vertices, TArray<int32>& triangleMaterials)
 	{
-		// Render vertices are float, both baked and live
-		TArray<FVAVector3f> liveVertices;
-		const TArray<FVAVector3f>* renderVertices = nullptr;
-
-		if (GetRenderVertices(staticMesh, settings.MeshLOD, liveVertices))
-			renderVertices = &liveVertices;
-		else if (const FVABakedMesh* bakedMesh = FindBakedMesh(staticMesh, settings.MeshLOD))
-			renderVertices = &bakedMesh->Vertices;
-
-		if (!renderVertices)
-		{
-			VA_WARN_NAMED(TEXT("Mesh '%s' will not affect raytracing as it has no baked geometry and no render mesh data. Run 'Bake Geometry For Shipping' on the VAWorld and save the level."), *staticMesh->GetName());
-			return false;
-		}
-
-		vertices.Reserve(renderVertices->Num());
-
-		for (const FVAVector3f& vertex : *renderVertices)
-			vertices.Add(FVector(vertex));
-
-		return true;
+		return ReadRenderTriangles(staticMesh, key, vertices, triangleMaterials);
 	};
 
-	AddMeshPrimitive(FVAMeshKey{ staticMesh, settings.MeshLOD, INDEX_NONE }, readTriangles, meshComponent, settings, meshTransform, settings.bUseFlatTransmission);
+	AddMeshPrimitive(key, readTriangles, meshComponent, settings, meshTransform, settings.bUseFlatTransmission);
 }
 
 // The samples and hole flags of a landscape component's collision heightfield, in component space. The only part of AddLandscapePrimitive that depends on the physics engine
@@ -902,7 +1166,7 @@ int32 AVAWorld::GetHeightmapTriangleCount() const
 	return triangles;
 }
 
-VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, const UPrimitiveComponent* meshComponent)
+VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&, TArray<int32>&)> readVertices, const UPrimitiveComponent* meshComponent)
 {
 	if (FVASharedMesh* shared = SharedMeshes.Find(key))
 	{
@@ -911,8 +1175,9 @@ VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TAr
 	}
 
 	TArray<FVector> vertices;
+	TArray<int32> triangleMaterials;
 
-	if (!readVertices(vertices))
+	if (!readVertices(vertices, triangleMaterials))
 		return nullptr;
 
 	TArray<VAVector> vaVertices;
@@ -930,8 +1195,14 @@ VAMesh* AVAWorld::AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TAr
 		maxBounds = vaVectorMax(maxBounds, vaPosition);
 	}
 
+	// Null when every triangle uses the primitive's material
+	TArray<VAMaterialType> vaMaterials;
+
+	for (int32 material : triangleMaterials)
+		vaMaterials.Add((VAMaterialType)material);
+
 	VAMesh* mesh;
-	VAResult result = vaMeshCreate(vaVertices.GetData(), vaVertices.Num(), minBounds, maxBounds, &mesh);
+	VAResult result = vaMeshCreateWithMaterials(vaVertices.GetData(), vaMaterials.Num() > 0 ? vaMaterials.GetData() : nullptr, vaVertices.Num(), minBounds, maxBounds, &mesh);
 
 	if (result != VA_SUCCESS)
 	{
@@ -959,7 +1230,7 @@ void AVAWorld::ReleaseSharedMesh(const FVAMeshKey& key)
 	SharedMeshes.Remove(key);
 }
 
-bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform, bool useFlatTransmission)
+bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&, TArray<int32>&)> readVertices, UPrimitiveComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform, bool useFlatTransmission)
 {
 	VAMesh* sharedMesh = AcquireSharedMesh(key, readVertices, meshComponent);
 
@@ -980,6 +1251,20 @@ bool AVAWorld::AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<
 	}
 
 	vaMeshPrimitiveSetUseFlatTransmission(mesh, useFlatTransmission);
+
+	// Checked against the world's materials when the primitive is added
+	result = vaMeshPrimitiveSetPermeationMaterial(mesh, (VAMaterialType)settings.PermeationMaterialID);
+
+	switch (result)
+	{
+		case VA_SUCCESS:
+		case VA_UNCHANGED:
+			break;
+
+		default:
+			VA_ERROR_NAMED_RESULT(result, TEXT("Failed to set the permeation material of the mesh primitive for '%s' on '%s'."), *meshComponent->GetName(), *VAActorName(meshComponent->GetOwner()));
+			break;
+	}
 
 	FVAPrimitiveBinding binding;
 	binding.Component = meshComponent;

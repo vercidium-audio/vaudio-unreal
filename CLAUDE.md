@@ -35,8 +35,8 @@ Reflected names are exactly the Godot node names. There is no backward compatibi
 | `AVASourceLeech` | `VASourceLeech` | A spatialised sound that reuses another emitter's muffling and reverb |
 | `AVASourceAmbient` | `VASourceAmbient` | A 2D sound filtered by the listener's ambient filter |
 | `UVAVisualisation` | `VAVisualisation` | Scene component on an emitter that draws where its rays land |
-| `UVAMaterialComponent` | `vercidium_audio_material` metadata | Makes an actor's geometry part of the raytraced scene |
-| `UVAMeshMaterialUserData` ("VAMeshMaterial") | none | Asset User Data on a `UStaticMesh`, a default material for every placement of the mesh |
+| `UVAMeshMaterialUserData` ("VAMeshMaterial") | none (Godot tags nodes with `vercidium_audio_material` metadata) | Asset User Data on a `UStaticMesh`: a default material, per-slot materials, permeation material, `PropagateMode` and `MeshLOD` for every placement of the mesh |
+| `FVAMaterialChoice` (`VAMaterialTypes.h`) | none | A built-in `EVAMaterial` or a material asset, used by VAMeshMaterial and the VAWorld's material maps |
 | `UVADefaultMaterial`, `UVACustomMaterial` | `VADefaultMaterial`, `VACustomMaterial` | DataAssets listed in `AVAWorld::Materials` |
 | `UVAWorldSubsystem` | `find_va_world()` | Tracks the map's `AVAWorld` |
 | `FVASourcePlayback` | `ALSource` | Owns a source's audio components, filter and reverb send |
@@ -47,9 +47,9 @@ Property names are the Godot names in PascalCase (`b` prefix for bools), in the 
 
 ## Finding the world
 
-Nothing holds a reference to the `AVAWorld`. It registers with the map's `UVAWorldSubsystem` on BeginPlay, and everything else calls `AVAWorld::Find`. An emitter or material component that begins play first binds `OnWorldRegistered` and joins when the world arrives. A second `AVAWorld` in the same map logs an error and is ignored.
+Nothing holds a reference to the `AVAWorld`. It registers with the map's `UVAWorldSubsystem` on BeginPlay, and everything else calls `AVAWorld::Find`. An emitter that begins play first binds `OnWorldRegistered` and joins when the world arrives. A second `AVAWorld` in the same map logs an error and is ignored. Geometry doesn't register at all, the `AVAWorld` finds it (see "Geometry").
 
-`OnWorldUnregistered` is broadcast last, after `vaWorldDestroy`, and emitters and material components wait for the next `AVAWorld`. Seamless travel moves kept actors with no EndPlay or BeginPlay, so both rebind through `BoundSubsystem` (`AVAEmitter::PostRename`, `UVAMaterialComponent::OnRegister`).
+`OnWorldUnregistered` is broadcast last, after `vaWorldDestroy`, and emitters wait for the next `AVAWorld`. Seamless travel moves kept actors with no EndPlay or BeginPlay, so emitters rebind through `BoundSubsystem` (`AVAEmitter::PostRename`). The new `AVAWorld` finds kept geometry through the new level's `Actors`.
 
 ## Emitter lifecycle
 
@@ -73,13 +73,28 @@ Every listener in a world shares one SDK emitter, held by the current listener (
 
 ## Geometry
 
-`UVAMaterialComponent` is the registration point: `AVAWorld::AddMaterialPrimitives` adds its actor and every attached child actor without its own material component, which covers spawned actors, streamed levels, World Partition cells and level instances. A level instance's actors aren't attached to its `ALevelInstance`, so they're reached through `ULevelInstanceSubsystem` (`AddLevelInstanceContents`, `OnLevelAddedToWorld`). Only add the contents of a visible level, as `AddBinding` doesn't dedupe.
+There is no registration point: the `AVAWorld` scans for geometry itself (`VAWorldPrimitives.cpp`). `AddWorldGeometry` (BeginPlay and `RebuildPrimitives`, every visible level) -> `AddLevelGeometry` (also from `OnLevelAddedToWorld`, which covers streamed sublevels, World Partition cells and level instances, as a level instance's level is added like any other) -> `AddActorGeometry` -> `AddActorPrimitives` -> `AddComponentPrimitives`. Only add the contents of a visible level, as `AddBinding` doesn't dedupe.
+- `AddActorGeometry` considers actors with a static mesh, shape or landscape collision component, and skips an actor if any of its static mesh components is already bound. `OnEndPlay` is only bound once a binding was actually added, so untagged actors don't all get the delegate
+- `SetStaticMesh` has no event and usually runs after `SpawnActor`, so the `AddOnActorSpawnedHandler` callback only queues actors (`PendingSpawnedActors`), added in `AVAWorld::Tick` (`AddSpawnedGeometry`). Tests that spawn and count primitives need a `Tick()` first
+- `SyncPrimitive(actor)` removes and re-adds the actor and every actor attached below it (`CollectActorTree`, which doesn't look into level instances)
+- Untagged geometry (no material from any source below) is ignored. There's no actor-level material, no inheritance down attach chains or into level instances, and no per-placement override
 
-A Static Mesh can also carry a `UVAMeshMaterialUserData` (`UVAMeshMaterialUserData::Find(mesh)`), so its actors need no `UVAMaterialComponent`. Precedence is per mesh component, in the file-static `ResolvePrimitiveOwner` in `VAWorldPrimitives.cpp`: own `MaterialOverrides` entry > own component > mesh default > component inherited from an attach parent or level instance. `AVAWorld::ResolvePrimitiveSettings` wraps it and fills an `FVAPrimitiveSettings` (owner, material id, flat transmission, `PropagateMode`, `MeshLOD`), which is what the `Add*Primitive(s)` functions take. The bake (`ForEachBakeTargetOnActor`) uses `ResolvePrimitiveOwner` too.
-- The binding owner (`FVAPrimitiveBinding::Source`, a `TWeakObjectPtr<UObject>`) is the mesh component for mesh-default geometry, not a material component, so removing an inherited parent's component doesn't drop it. Removing an actor's own component re-adds its mesh defaults
-- `AddActorPrimitives(actor, nullptr)` adds only an actor's mesh-default components. Actors with no material component in their chain are discovered by `AddMeshDefaultActor`/`AddMeshDefaultLevel`: at `AVAWorld::BeginPlay` (`AddWorldMeshDefaults`, every visible level), in `OnLevelAddedToWorld` for every streamed level, and at the end of `RebuildPrimitives`. An actor with a mesh-default component already bound is skipped
-- `SetStaticMesh` has no event and usually runs after `SpawnActor`, so the `AddOnActorSpawnedHandler` callback only queues actors (`PendingSpawnedActors`), resolved in `AVAWorld::Tick`
-- `UVAMeshMaterialUserData::PostEditChangeProperty` rebuilds every running `AVAWorld`, so PIE edits apply
+Materials are resolved per static mesh component by `AVAWorld::ResolvePrimitiveSettings(meshComponent, outSettings, outInvalid)`, which fills an `FVAPrimitiveSettings` (material id, `SlotMaterialIDs`, `PermeationMaterialID`, flat transmission, `PropagateMode`, `MeshLOD`) for the `Add*Primitive(s)` functions. The bake (`ForEachBakeTargetOnActor`) uses it too. Each `StaticMaterials` slot resolves to the first of:
+1. The VAMeshMaterial's `SlotMaterials` entry by `MaterialSlotName` (`FindSlotMaterialID`). `bIgnore` gives `INDEX_NONE`
+2. The slot's render material (`ResolveRenderMaterial`): `RenderMaterialMap` over the `UMaterialInstance::Parent` chain, then (if `bMatchMaterialNames`) names over the chain, child first. Component `OverrideMaterials` aren't read
+3. That render material's `GetPhysicalMaterial()` (`ResolvePhysicalMaterial`): `PhysicalMaterialMap`, then its name. The engine's `DefaultPhysicalMaterial` never matches
+4. The VAMeshMaterial's `Material`
+5. Otherwise `INDEX_NONE` (ignored). A mesh with every slot ignored adds nothing
+
+The primitive's material (`MaterialId`, used by simple collision and convex hulls, and by the SDK for Air triangles) is the VAMeshMaterial's `Material`. Without a VAMeshMaterial it's the collision physical material if the mesh has simple collision and that's matched (`ResolveCollisionMaterial`: the BodyInstance override if set, even if unmatched, else the BodySetup's `PhysMaterial`), else the material most slots resolve to (ties go to the earliest slot). Untagged meshes use `PropagateMode All`, LOD 0 and no flat transmission.
+
+Shapes go through `PassesCollisionFilter` + `ResolveCollisionMaterial(shape->BodyInstance, shape->GetBodySetup())` and ignore `PropagateMode`. Landscape collision components use their proxy's `DefaultPhysMaterial` (layer physical materials can't be represented). 4.27 reads the BodyInstance override through the static `FBodyInstance::GetSimplePhysicalMaterial`, treating the engine default as unset.
+
+Name matching (`VAMaterialTypes.h`): `VASplitMaterialName` splits into lowercase words on punctuation, CamelCase and digits, and `VAMatchMaterialName` finds the candidate whose words appear in a row, preferring the most letters (ties go to the earlier candidate). Custom materials in `Materials` (by `GetMaterialName()`) are checked before the built-ins (`VABuiltInMaterialNames`, the `EVAMaterial` names), and any custom match beats any built-in. A map entry whose asset isn't in `Materials` warns and counts as unmatched. `GetCustomMaterialId` returns a placeholder 1000 before play for custom materials in `Materials`, so the bake can tell what's matched.
+
+`RenderMaterialCache` and `PhysicalMaterialCache` (`TObjectKey` -> material ID or `INDEX_NONE`) cache slot and body resolves, only while `World` exists. `ClearMaterialCache()` runs in `RebuildPrimitives`, `SyncMaterials`, `SyncPrimitive` and EndPlay, so a Blueprint that edits a map must call `SyncPrimitive` or `RebuildPrimitives`. Editing the maps or `bMatchMaterialNames` in the Details panel calls `RebuildPrimitives`. The public `ResolveRenderMaterial`/`ResolvePhysicalMaterial` aren't cached. `UVAMeshMaterialUserData::OnObjectPropertyChanged` refreshes running worlds when a VAMeshMaterial is edited, added or removed, a mesh's `StaticMaterials` change, a render material's `Parent`/`PhysMaterial`, a `UBodySetup`'s `PhysMaterial`, a component's `BodyInstance` or a landscape's `DefaultPhysMaterial` change.
+
+Per-triangle materials: `GetRenderTriangles` reads the LOD's index buffer section by section and returns each triangle's `FStaticMeshSection::MaterialIndex`. `FVAMeshKey` includes `SlotMaterials` (Air for slots equal to the primitive's material, `INDEX_NONE` for ignored), built by `MakeRenderMeshKey`, so placements with the same overrides share one `VAMesh`. `ReadRenderTriangles` drops ignored slots' triangles, and `AcquireSharedMesh` always calls `vaMeshCreateWithMaterials` (NULL materials when every kept triangle is Air). The permeation material is set per primitive with `vaMeshPrimitiveSetPermeationMaterial`. `AVAWorld::GetMeshTriangles` returns a component's mesh-space triangles plus each triangle's effective material, as the SDK has no per-triangle material getter. `FVABakedMesh::TriangleSlots` stores a slot per triangle (empty or mismatched means slot 0), and cooked builds re-resolve slots from `StaticMaterials[i].MaterialSlotName`.
 
 - Shape components and simple collision become SDK prisms, spheres and capsules. Convex hulls and render triangles become mesh primitives, sharing triangle data through `AVAWorld::SharedMeshes`
 - A zero-thickness simple collision box (e.g. `/Engine/BasicShapes/Plane`) becomes an SDK plane, as a thin prism leaks bouncing rays. Planes always use flat transmission
@@ -104,10 +119,9 @@ Don't "fix" these:
 - Grouped EAX reverbs map to `GroupedEAXSubmixes`. `FSubmixEffectReverbSettings` has no echo, modulation, LF decay ratio or reference frequency, so those are dropped, and reverb can only be panned left/right
 - Reverb sends are pre distance attenuation, clamped to [0, 1] by the engine
 - Sounds must use the "Play When Silent" virtualization mode, or a fully muffled sound stops
-- `BakeGeometry` and the bake commandlet exist because cooked builds drop CPU mesh data. `FVABakedMesh` is keyed by soft mesh path + `MeshLOD`, and `AddStaticMeshPrimitives` falls back to `FindBakedMesh` when there's no live render data. Don't set `bAllowCPUAccess` on meshes at runtime instead, it doesn't survive cooking and dirties users' assets
+- `BakeGeometry` and the bake commandlet exist because cooked builds drop CPU mesh data. `FVABakedMesh` is keyed by soft mesh path + `MeshLOD` and stores a material slot per triangle, and `AddStaticMeshPrimitives` falls back to `FindBakedMesh` when there's no live render data. Don't set `bAllowCPUAccess` on meshes at runtime instead, it doesn't survive cooking and dirties users' assets
 - Units are cm (`MetersPerUnit = 0.01`) with `VACoordinateSystemUnreal`
-- Materials are DataAssets plus a component rather than scene nodes and metadata
-- `UVAMeshMaterialUserData` (a default material on a Static Mesh asset) has no Godot equivalent yet
+- Materials are DataAssets rather than scene nodes, and geometry is tagged through its assets (VAMeshMaterial, render material and physical material matching) rather than per-node metadata. Godot nodes have one material, so per-slot materials, name matching and the material maps have no Godot equivalent yet
 - `bAutoCapture` on `AVAInputStreamSource`, `bAutoFollowCamera` and `ListenerReverbSubmix` on `AVAListener`, `bAirAbsorptionEnabled`, `BoundsFollow` and `BoundsUpdateDistance` on `AVAWorld` are Unreal-only
 - PIE is in-process, so there is no debugger relay: `PostEditChangeProperty` on the PIE actor reaches the running world
 

@@ -35,14 +35,14 @@ enum class EVAMaterial : uint8
 	WoodOutdoor      UMETA(DisplayName = "Wood (Outdoor)"),
 };
 
-// Which of an actor's components become raytracing geometry, matching the Godot vercidium_audio_propagate metadata
+// Which of a static mesh's geometry becomes raytracing geometry, matching the Godot vercidium_audio_propagate metadata
 UENUM(BlueprintType)
 enum class EVAPropagateMode : uint8
 {
-	// Shape components, plus each static mesh's simple collision (or its render triangles if it has none)
+	// The mesh's simple collision, or its render triangles if it has none
 	All,
 
-	// Shape components and static mesh simple collision only
+	// Simple collision only
 	Colliders,
 
 	// Static mesh render triangles only

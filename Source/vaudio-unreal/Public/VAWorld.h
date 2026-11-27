@@ -12,6 +12,7 @@
 #include "VASourcePlayback.h"
 #include "VAHeldMuffling.h"
 #include "VAMaterialTypes.h"
+#include "UObject/ObjectKey.h"
 #include "VAWorld.generated.h"
 
 struct VAWorld;
@@ -33,6 +34,8 @@ class UPrimitiveComponent;
 class ULandscapeHeightfieldCollisionComponent;
 class UMaterialInterface;
 class UPhysicalMaterial;
+class UBodySetup;
+struct FBodyInstance;
 class UVASubmixEffectDirectionalPanPreset;
 
 UCLASS(NotBlueprintType, NotBlueprintable)
@@ -70,8 +73,20 @@ struct FVAMeshKey
 	// A convex hull's index in the mesh's simple collision, or INDEX_NONE for the render triangles
 	int32 ConvexIndex = INDEX_NONE;
 
-	bool operator==(const FVAMeshKey& other) const { return Mesh == other.Mesh && LOD == other.LOD && ConvexIndex == other.ConvexIndex; }
-	friend uint32 GetTypeHash(const FVAMeshKey& key) { return HashCombine(GetTypeHash(key.Mesh), HashCombine(GetTypeHash(key.LOD), GetTypeHash(key.ConvexIndex))); }
+	// The render triangles' SDK material per material slot: 0 (Air) for slots that use the primitive's material, INDEX_NONE for ignored slots. Empty for convex hulls
+	TArray<int32> SlotMaterials;
+
+	bool operator==(const FVAMeshKey& other) const { return Mesh == other.Mesh && LOD == other.LOD && ConvexIndex == other.ConvexIndex && SlotMaterials == other.SlotMaterials; }
+
+	friend uint32 GetTypeHash(const FVAMeshKey& key)
+	{
+		uint32 hash = HashCombine(GetTypeHash(key.Mesh), HashCombine(GetTypeHash(key.LOD), GetTypeHash(key.ConvexIndex)));
+
+		for (int32 material : key.SlotMaterials)
+			hash = HashCombine(hash, GetTypeHash(material));
+
+		return hash;
+	}
 };
 
 struct FVASharedMesh
@@ -84,7 +99,15 @@ struct FVASharedMesh
 // What one component's primitives are added with, resolved per component by AVAWorld::ResolvePrimitiveSettings
 struct FVAPrimitiveSettings
 {
+	// The primitive's material, used by simple collision and by render triangles in slots without their own
 	int32 MaterialId = 0;
+
+	// The SDK material of each material slot (StaticMaterials order), or INDEX_NONE if the slot is ignored
+	TArray<int32> SlotMaterialIDs;
+
+	// The material permeation rays use inside the mesh, or 0 (Air) for MaterialId
+	int32 PermeationMaterialID = 0;
+
 	bool bUseFlatTransmission = false;
 	EVAPropagateMode PropagateMode{};
 	int32 MeshLOD = 0;
@@ -133,6 +156,10 @@ struct FVABakedMesh
 	UPROPERTY()
 	TArray<FVector3f> Vertices;
 #endif // VA_UE4
+
+	// The material slot (StaticMaterials index) of each triangle, so a cooked build can resolve the VAMeshMaterial's slot materials. Empty means every triangle is in slot 0
+	UPROPERTY()
+	TArray<int32> TriangleSlots;
 };
 
 UENUM(BlueprintType)
@@ -541,7 +568,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetMaterials(const TArray<UVAMaterialBase*>& newMaterials);
 
-	// The SDK ID this world assigned to a custom material, or 0 if it hasn't applied it
+	// The SDK ID this world assigned to a custom material, or 0 if it hasn't applied it. Before play, a custom material in Materials returns a placeholder ID (1000), so the bake can tell which geometry it matches
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio")
 	int32 GetCustomMaterialId(const UVACustomMaterial* material) const;
 
@@ -589,7 +616,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetLandscapeLOD(int32 lod);
 
-	// Rebuilds the geometry of every mesh with a VAMeshMaterial in this world
+	// Rebuilds all of this world's raytracing geometry
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void RebuildPrimitives();
 
@@ -598,7 +625,7 @@ public:
 
 	const TArray<FVAPrimitiveBinding>& GetPrimitiveBindings() const { return PrimitiveBindings; }
 
-	// Re-adds only the mesh components using this mesh, after its VAMeshMaterial was added, removed or edited
+	// Re-adds only the mesh components using this mesh, after its VAMeshMaterial or material slots were added, removed or edited
 	void RefreshMeshDefaults(const UStaticMesh* mesh);
 
 	// How many distinct meshes the mesh primitives were built from. Every placement of the same static mesh shares one
@@ -607,6 +634,12 @@ public:
 
 	// The triangles in every shared mesh, each counted once however many primitives use it
 	int32 GetSharedMeshTriangleCount() const;
+
+	// The mesh-space render triangles this component's mesh primitive is built from, with the SDK material of each triangle (its slot's material, else the primitive's). Ignored slots are left out. False if the component's render triangles aren't raytraced or can't be read
+	bool GetMeshTriangles(UStaticMeshComponent* meshComponent, TArray<FVector>& outVertices, TArray<int32>& outTriangleMaterials) const;
+
+	// What a static mesh component's primitives would be added with. Each material slot is its VAMeshMaterial SlotMaterials entry, else its render material (RenderMaterialMap, then its name), else that render material's physical material (PhysicalMaterialMap, then its name), else the VAMeshMaterial's Material, else ignored. The primitive's material is the VAMeshMaterial's Material. For a mesh without one, it's its simple collision's physical material if the mesh has simple collision and that's matched (BodyInstance override, then the body setup's), else the material most of its slots use. Returns false if nothing would be added, with outInvalid true if that's because a VAMeshMaterial names a material asset missing from Materials (which warns)
+	bool ResolvePrimitiveSettings(const UStaticMeshComponent* meshComponent, FVAPrimitiveSettings& outSettings, bool* outInvalid = nullptr) const;
 
 	// The triangles in every landscape component's heightmap, including holes
 	int32 GetHeightmapTriangleCount() const;
@@ -833,6 +866,13 @@ private:
 	// Custom material IDs (1000 and up) assigned by this world, like Godot's VAWorld.custom_materials. Removed custom materials keep their ID, so re-adding one reuses it
 	TMap<TWeakObjectPtr<const UVACustomMaterial>, int32> CustomMaterialIds;
 
+	// ResolveSlotMaterial's result per render material, and ResolveBodyMaterial's per physical material, INDEX_NONE for no match. Only filled during play (custom IDs are placeholders before it), and cleared by ClearMaterialCache
+	mutable TMap<TObjectKey<UMaterialInterface>, int32> RenderMaterialCache;
+	mutable TMap<TObjectKey<UPhysicalMaterial>, int32> PhysicalMaterialCache;
+
+	// After anything that can change what a render or physical material resolves to: the maps, bMatchMaterialNames, Materials, a render material's parent or physical material
+	void ClearMaterialCache();
+
 	// The materials applied by the last SyncMaterials, to find removed ones
 	UPROPERTY(Transient)
 	TArray<UVAMaterialBase*> AppliedMaterials;
@@ -858,15 +898,23 @@ private:
 	void AddSpawnedGeometry();
 	void AddActorPrimitives(AActor* actor);
 	void AddComponentPrimitives(UActorComponent* component);
-	// Fills the settings from the mesh's VAMeshMaterial. Returns false if the material is invalid
-	bool ResolvePrimitiveSettings(const UVAMeshMaterialUserData* meshDefault, UActorComponent* component, FVAPrimitiveSettings& outSettings) const;
+	// A slot's material from its render material, then that render material's physical material, else fallbackID
+	int32 ResolveSlotMaterial(const UMaterialInterface* renderMaterial, int32 fallbackID) const;
+	// ResolvePhysicalMaterial through PhysicalMaterialCache
+	bool ResolveBodyMaterial(const UPhysicalMaterial* physicalMaterial, int32& outMaterialID) const;
+	// The material of a shape's or a static mesh's simple collision, from its physical material: the component's BodyInstance override, else its body setup's. False if neither is matched
+	bool ResolveCollisionMaterial(const FBodyInstance& bodyInstance, const UBodySetup* bodySetup, int32& outMaterialID) const;
 	// The actor and every actor attached below it
 	static void CollectActorTree(AActor* actor, TSet<AActor*>& tree);
 	void AddShapePrimitive(UShapeComponent* shape, const FVAPrimitiveSettings& settings);
 	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform);
 	void AddLandscapePrimitive(ULandscapeHeightfieldCollisionComponent* landscapeComponent, const FVAPrimitiveSettings& settings);
-	// readVertices is only called when no placement of this mesh exists yet. It fills the triangle list in mesh space, or returns false if there is none
-	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, UPrimitiveComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform, bool useFlatTransmission);
+	// Fills one material per triangle, from the material of each triangle's slot in key.SlotMaterials. Left empty if every triangle uses the primitive's material. Returns false if there are no render triangles, warning if the mesh has no render data or bake
+	bool ReadRenderTriangles(UStaticMesh* staticMesh, const FVAMeshKey& key, TArray<FVector>& outVertices, TArray<int32>& outTriangleMaterials) const;
+	// The render triangles' key, or false if every slot is ignored
+	static bool MakeRenderMeshKey(UStaticMesh* staticMesh, const FVAPrimitiveSettings& settings, FVAMeshKey& outKey);
+	// readVertices is only called when no placement of this mesh exists yet. It fills the triangle list in mesh space and optionally one SDK material per triangle (empty for none), or returns false if there is none
+	bool AddMeshPrimitive(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&, TArray<int32>&)> readVertices, UPrimitiveComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform, bool useFlatTransmission);
 	bool PassesCollisionFilter(const UPrimitiveComponent* component) const;
 
 	// Sets the primitive's transform, adds it to the vaWorld and tracks its component's movement. Destroys it if the SDK rejects it
@@ -874,7 +922,7 @@ private:
 
 	void RemoveBindings(TFunctionRef<bool(const FVAPrimitiveBinding&)> predicate);
 	void DestroyPrimitive(const FVAPrimitiveBinding& binding);
-	VAMesh* AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&)> readVertices, const UPrimitiveComponent* meshComponent);
+	VAMesh* AcquireSharedMesh(const FVAMeshKey& key, TFunctionRef<bool(TArray<FVector>&, TArray<int32>&)> readVertices, const UPrimitiveComponent* meshComponent);
 	void ReleaseSharedMesh(const FVAMeshKey& key);
 	static void RefreshPrimitiveTransform(const FVAPrimitiveBinding& Binding);
 

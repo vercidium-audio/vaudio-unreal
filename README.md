@@ -131,7 +131,7 @@ export CCC_OVERRIDE_OPTIONS="# +-Wno-error +-Wno-deprecated-builtins +-fno-acces
 
 1. Place one **VAWorld** in the level. Its location is the minimum corner of the raytraced box and `BoundsSize` is the box's size, so move and size it to cover the playable area.
 2. For reverb to work, add at least one submix to `VAWorld.GroupedEAXSubmixes` (I recommend at least three)
-3. Add a **VAMaterialComponent** to every actor that should affect raytracing (walls, floors, props) and select its `Material` (brick, concrete, dirt, etc), or give a Static Mesh asset a [VAMeshMaterial](#static-mesh-materials) so every placement of it is raytraced.
+3. Give the geometry that should affect raytracing (walls, floors, props) a material. Render materials and physical materials named after a material (e.g. `M_Brick`, `MI_Glass_Dirty`, `PM_Concrete`) are matched automatically, others can be added to the `VAWorld`'s `RenderMaterialMap` or `PhysicalMaterialMap`, or the mesh can be given a [VAMeshMaterial](#static-mesh-materials). Geometry without a material is ignored, see [Geometry and materials](#geometry-and-materials).
 4. Place one **VAListener**. By default it follows the player's camera (`bAutoFollowCamera`). For muffling to work, enable its occlusion and permeation rays (e.g. `OcclusionRayCount=1024`, `OcclusionBounceCount=8`, `PermeationRayCount=128`, `PermeationBounceCount=2`)
 5. Place a **VASource** for each sound, set its `SourceSound` and `bAutoPlay`, and give it reverb rays (e.g. `ReverbRayCount=64`, `ReverbBounceCount=64`) so it has reverb.
 
@@ -241,71 +241,102 @@ AVAWorld::PlaySoundRelative(this, FootstepSound, Volume, Pitch);
 
 ### Geometry and materials
 
-A **VAMaterialComponent** (`UVAMaterialComponent`) makes its actor part of the raytraced scene, along with any attached child actors that don't have their own. Shape components and simple collision are used where they exist, and render triangles otherwise.
+> [!NOTE]
+> 1.12.0 removed `VAMaterialComponent`. See the [migration guide](https://vercidium.com/docs/unreal/migration-guide) for upgrading from 1.11.
 
-- `Material` picks a built-in material (concrete, wood, glass, ...). `MaterialAsset` uses a material asset instead.
-- `PropagateMode` chooses between colliders, render triangles or both, and `MeshLOD` picks which LOD is raytraced.
-- `MaterialOverrides` gives individual components another material, e.g. a glass window in a brick wall.
-- `CollisionObjectTypes` on the `VAWorld` limits colliders to certain object types.
+The `VAWorld` finds raytracing geometry by itself, so there's nothing to add to your actors. It looks at every static mesh, shape component and landscape in its level when it begins play, in streamed sublevels, World Partition cells and level instances as they load, and in actors spawned during play (on its next tick, so a mesh set right after spawning is still found).
 
-Geometry is added and removed as actors spawn, are destroyed or stream in and out, and follows them when they move. Hidden actors and actors with collision disabled still affect raytracing.
+Geometry is only raytraced if it has a material. Geometry with no material is ignored.
 
-Call `SyncPrimitive(Actor)` on the `VAWorld` after:
-- attaching an actor to one that has a material component
-- changing an actor's meshes
-- adding instances to an instanced static mesh
+| Geometry | Where its material comes from |
+|---|---|
+| Static mesh render triangles | Each material slot, see [Material slots](#material-slots) |
+| Static mesh simple collision | The mesh's `VAMeshMaterial` `Material`. Without a `VAMeshMaterial`: the collision's physical material, else the material most slots use |
+| Shape components (box, sphere, capsule) | The component's `Phys Material Override` |
+| Landscapes | The landscape's `Default Phys Material` |
+
+Geometry follows its actor when it moves, and is removed when the actor is destroyed or streams out. Hidden actors and actors with collision disabled still affect raytracing. `CollisionObjectTypes` on the `VAWorld` limits colliders to certain object types. Skeletal meshes, BSP brushes and dynamic meshes aren't supported, and neither is spline mesh deformation.
 
 Geometry and sources in an unloaded streaming level don't affect sound, as their actors don't exist yet. Stream levels in before they're within earshot, e.g. with a larger streaming volume, or keep walls that matter for sound in the persistent level. Otherwise the muffling changes the moment the level loads.
 
+#### Material slots
+
+Each material slot of a static mesh's render triangles uses the first of these that gives it a material:
+1. The slot's `SlotMaterials` entry on the mesh's [VAMeshMaterial](#static-mesh-materials). `bIgnore` leaves the slot out
+2. The slot's render material: the `VAWorld`'s `RenderMaterialMap`, then its name. Material instances also check their parent materials
+3. That render material's physical material: the `VAWorld`'s `PhysicalMaterialMap`, then its name
+4. The `VAMeshMaterial`'s `Material`
+5. Otherwise the slot is ignored. A mesh with every slot ignored isn't raytraced
+
+So a building mesh with `M_Brick` and `M_Glass` slots is raytraced as brick and glass with no setup, as one primitive with a material per triangle. Render materials are read from the Static Mesh asset's slots, and a placed component's `Override Materials` aren't used.
+
+A mesh without a `VAMeshMaterial` is raytraced like one with `PropagateMode = All` and `MeshLOD = 0`, without flat transmission. If it has simple collision, that's what's raytraced, with the collision's physical material (the component's `Phys Material Override`, else the mesh's `Simple Collision Physical Material`) if it's matched, else the material most of its slots use. So a mesh matched only by its collision's physical material is still raytraced.
+
+#### Name matching
+
+With `bMatchMaterialNames` on the `VAWorld` (on by default), render materials and physical materials are matched by their asset name:
+- Names are split into lowercase words on `_`, `-`, spaces, CamelCase and digits, so `MI_ConcretePolished01` is `mi`, `concrete`, `polished`, `01`
+- A material matches if all of its words appear in a row, e.g. `M_Brick`, `MI_Glass_Dirty` and `PM_ConcretePolished`. Only whole words match, so `M_Bricks` and `M_Glassy` don't
+- The longest match wins, so `M_ConcretePolished` is ConcretePolished rather than Concrete
+- `VACustomMaterial`s in the `VAWorld`'s `Materials` match by their `MaterialName` (or their asset name if it's empty), and beat every built-in name
+- The built-in names are the `EVAMaterial` names, so plain `Wood` or `Stone` match nothing. Use `RenderMaterialMap` for those
+- The engine's default physical material is never matched
+
+`RenderMaterialMap` and `PhysicalMaterialMap` on the `VAWorld` give a render material or physical material asset a specific material, ahead of name matching. An entry for a parent material also applies to all of its material instances. An entry whose `MaterialAsset` isn't in `Materials` logs a warning and isn't used. With `bMatchMaterialNames` off, only the map entries and `VAMeshMaterial`s are used.
+
 #### Static Mesh materials
 
-A Static Mesh asset can carry its own material, so every placement of it is raytraced without a `VAMaterialComponent`, e.g. a wall mesh that's always brick. Open the mesh in the Static Mesh editor, add an entry to **Asset User Data** in its Details panel, and choose **VAMeshMaterial** (`UVAMeshMaterialUserData`). Save the mesh, and it applies in every level.
+A Static Mesh asset can carry its own material, so every placement of it is raytraced, e.g. a wall mesh that's always brick. Open the mesh in the Static Mesh editor, add an entry to **Asset User Data** in its Details panel, and choose **VAMeshMaterial** (`UVAMeshMaterialUserData`). Save the mesh, and it applies in every level.
 
-- `Material`, `MaterialAsset`, `bUseFlatTransmission`, `PropagateMode` and `MeshLOD` work the same as on a `VAMaterialComponent`. `MaterialAsset` must still be in the `VAWorld`'s `Materials` array.
-- It only applies to that mesh's static mesh components (instanced and foliage meshes included). The rest of the actor, such as shape components, isn't raytraced unless the actor has a `VAMaterialComponent`.
-- Placed actors, streamed sublevels, World Partition cells and level instances are picked up when they load. Actors spawned during play are picked up on the `VAWorld`'s next tick, so a mesh set right after spawning is still found.
-- Editing a `VAMeshMaterial` during Play In Editor rebuilds the geometry straight away. Adding or removing the entry itself takes effect the next time you play.
-- Meshes raytraced by their render triangles still need baking for shipping builds (see below), and the bake includes them.
+- `Material` picks a built-in material (concrete, wood, glass, ...), or `MaterialAsset` a material asset, which must be in the `VAWorld`'s `Materials` array. It's used by simple collision, and by slots that have no `SlotMaterials` entry and whose render material and physical material aren't matched.
+- `SlotMaterials` gives individual material slots (by Material Slot Name) their own material, e.g. Glass for a building's window slot, ahead of the `VAWorld`'s matching. `bIgnore` leaves a slot's triangles out, e.g. decals or foliage cards. Simple collision has no slots, so a mesh that needs per-slot materials should use `PropagateMode = Visuals`.
+- `bUseFlatTransmission` makes permeation rays lose a flat percentage of energy when they touch the mesh, using the material of the triangle they touch.
+- `PermeationMaterial` (with its checkbox ticked) is the material inside the mesh, which permeation rays lose energy to based on the distance they travel inside it, e.g. Concrete inside a building whose surfaces are brick and glass. It defaults to `Material`, and isn't used with flat transmission.
+- `PropagateMode` chooses between simple collision, render triangles or both, and `MeshLOD` picks which LOD is raytraced.
+- It applies to every static mesh component using the mesh, including instanced and foliage meshes.
+- Editing, adding or removing a `VAMeshMaterial` during Play In Editor rebuilds the geometry straight away.
 
-When a mesh component could get its material from more than one place, the first of these wins:
-1. A `MaterialOverrides` entry for that component, on the actor's own `VAMaterialComponent`
-2. The actor's own `VAMaterialComponent`
-3. The mesh's `VAMeshMaterial`
-4. A `VAMaterialComponent` on an attach parent or Level Instance
+#### Shape components
 
-So a glass window mesh attached to a brick building stays glass, while a `VAMaterialComponent` on the window actor itself overrides the mesh. Removing an actor's `VAMaterialComponent` during play returns its meshes to their `VAMeshMaterial`.
+Box, sphere and capsule components are raytraced if their `Phys Material Override` (under Collision) is matched by `PhysicalMaterialMap` or by name, e.g. `PM_Concrete`. They're always colliders, filtered by `CollisionObjectTypes`.
 
 #### Planes
 
 A mesh whose box collision has no thickness, like `/Engine/BasicShapes/Plane`, is an open sheet that always uses flat transmission (`bUseFlatTransmission` is ignored). It reflects rays from both sides, but flat transmission on the built-in materials is too low to muffle sound passing through it. Give it a `VACustomMaterial` with `FlatTransmissionLF` and `FlatTransmissionHF` near 1 to muffle that sound.
 
-#### Level Instances
-
-Putting a `VAMaterialComponent` on a **Level Instance** actor also adds the actors inside the instance's level (except those with their own `VAMaterialComponent`), once that level has loaded.
-
-In World Partition maps, level instances with the default "Partitioned" Level Behavior are merged into the map's cells when played, so the Level Instance actor no longer exists. For those, put the `VAMaterialComponent` on the actors inside the instance's level instead.
-
 #### Landscapes
 
-Add a `VAMaterialComponent` to the landscape actor, and to each streaming proxy, as each is its own actor.
+Set the landscape's `Default Phys Material` to a physical material the `VAWorld` matches, e.g. `PM_Dirt`. Each streaming proxy reads its own `Default Phys Material`. The layers' physical materials aren't used, as each landscape component is raytraced with one material.
 - Each landscape component becomes one heightmap built from its collision, so collision must be enabled on the landscape. It works in cooked builds without baking.
 - Holes painted with the visibility layer are left open.
 - A landscape with a negative or zero scale on any axis is skipped with a warning.
 - Landscapes always use flat transmission (`bUseFlatTransmission` is ignored), so sound crossing it is muffled from either side, however deep the source is (e.g. a cave far below). The built-in materials' flat transmission is low, so give landscapes a `VACustomMaterial` with `FlatTransmissionLF` and `FlatTransmissionHF` near 1.
 - `LandscapeLOD` on the `VAWorld` simplifies every landscape for raytracing, without changing its collision. Each LOD halves the number of points, so 1 m quads become 2 m at LOD 1, 4 m at LOD 2, and so on. It defaults to 3 (roughly 8 m quads) to keep memory usage down on large landscapes. Lower it for terrain with sharp features smaller than that, such as narrow ridges or trenches.
-- Call `SyncPrimitive` on the landscape actor after sculpting it during play.
+
+#### Changes during play
+
+What each render material and physical material resolves to is cached. Editing the `VAWorld`'s `RenderMaterialMap`, `PhysicalMaterialMap`, `bMatchMaterialNames` or `Materials` in the Details panel (including during Play In Editor) rebuilds the geometry straight away, and so do `SetMaterials`, `SetCollisionObjectTypes` and `SetLandscapeLOD`. Editing a `VAMeshMaterial`, a render material's parent or physical material, or a mesh's or component's collision physical material during Play In Editor also rebuilds it.
+
+Changing the maps or `bMatchMaterialNames` from Blueprint or C++ doesn't, so call `RebuildPrimitives` (or `SyncPrimitive(Actor)` for one actor) afterwards. Until then, the old results are still used for geometry that spawns or streams in.
+
+Call `SyncPrimitive(Actor)` on the `VAWorld` after:
+- changing an actor's meshes
+- adding instances to an instanced static mesh
+- sculpting a landscape during play
+
+In C++, `AVAWorld::GetMeshTriangles(MeshComponent, OutVertices, OutTriangleMaterials)` returns the mesh-space triangles a component's render triangles are raytraced with, and the SDK material of each triangle (ignored slots are left out), e.g. to check which material each slot got.
 
 #### Materials
 
 Material assets are created in the Content Browser and added to the `VAWorld`'s `Materials` array:
 - **VADefaultMaterial** (`UVADefaultMaterial`) changes the properties of one of the built-in materials everywhere it's used. Pick it with `MaterialType`, and use `Reset To Defaults` to load the SDK's values.
-- **VACustomMaterial** (`UVACustomMaterial`) is a new material. Assign it to a component's `MaterialAsset`.
+- **VACustomMaterial** (`UVACustomMaterial`) is a new material. Use it in a `VAMeshMaterial`'s `MaterialAsset` or a material map entry, or name render materials and physical materials after its `MaterialName`.
 
 Use `SetMaterials` on the `VAWorld` to change the list during play.
 
 ### Shipping builds
 
-Cooked builds drop the CPU copy of a mesh's triangles unless the mesh has `Allow CPU Access` set, so a mesh raytraced by its render triangles (one without simple collision, or under a material component set to `Visuals`) affects nothing in a packaged game until it's baked. Box, sphere, capsule and convex collision, and landscapes, don't need baking.
+Cooked builds drop the CPU copy of a mesh's triangles unless the mesh has `Allow CPU Access` set, so a mesh raytraced by its render triangles (one without simple collision, or with a `VAMeshMaterial` set to `Visuals`) affects nothing in a packaged game until it's baked. Box, sphere, capsule and convex collision, and landscapes, don't need baking.
 
 Click `Bake Geometry For Shipping` on the `VAWorld`, or run the `-run=VABake` commandlet, which bakes and saves every level that has a `VAWorld` (add `-MapPath=/Game/Maps` to only bake the levels under that folder). This stores one copy of the triangles per static mesh and LOD in the level, shared by every placement. The bake includes:
 - the persistent level and its streaming sublevels, whatever their streaming method, and whether or not they're hidden in the editor, as the editor and the commandlet both load every sublevel
@@ -361,7 +392,7 @@ void AMyCharacter::MulticastReceiveVoice_Implementation(const TArray<uint8>& Dat
 
 ### Open worlds
 
-A level can only have one `VAWorld`, and everything else finds it automatically. Geometry (`VAMaterialComponent`), emitters, listeners and sources join it when they begin play and leave it when they end play, so World Partition cells, streamed sublevels and level instances are raytraced while they're loaded, with no extra setup. Placements of the same static mesh share one copy of its triangles, so placing a level instance many times is cheap.
+A level can only have one `VAWorld`, and everything else finds it automatically. Geometry is found by the `VAWorld`, and emitters, listeners and sources join it when they begin play and leave it when they end play, so World Partition cells, streamed sublevels and level instances are raytraced while they're loaded, with no extra setup. Placements of the same static mesh share one copy of its triangles, so placing a level instance many times is cheap.
 
 #### Where to put the VAWorld
 

@@ -1001,6 +1001,7 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		DestroyPrimitives();
 		CustomMaterialIds.Empty();
 		AppliedMaterials.Empty();
+		ClearMaterialCache();
 
 		// Invokes OnRemoved for the emitters whose removal was waiting on raytracing results
 		VAResult result = vaWorldDestroy(World);
@@ -1576,6 +1577,8 @@ bool AVAWorld::SyncMaterials()
 	if (!World)
 		return false;
 
+	// Custom material IDs and names may change, which changes what matches
+	ClearMaterialCache();
 	bool changed = false;
 
 	for (UVAMaterialBase* material : AppliedMaterials)
@@ -1642,6 +1645,10 @@ void AVAWorld::SetMaterials(const TArray<UVAMaterialBase*>& newMaterials)
 
 int32 AVAWorld::GetCustomMaterialId(const UVACustomMaterial* material) const
 {
+	// IDs are only assigned during play, but the bake needs to know what's matched before it
+	if (!World)
+		return material && Materials.Contains(material) ? FirstCustomMaterialId : 0;
+
 	const int32* materialId = CustomMaterialIds.Find(material);
 	return materialId ? *materialId : 0;
 }
@@ -1708,6 +1715,12 @@ bool AVAWorld::ResolveRenderMaterial(const UMaterialInterface* material, int32& 
 	}
 
 	return false;
+}
+
+void AVAWorld::ClearMaterialCache()
+{
+	RenderMaterialCache.Reset();
+	PhysicalMaterialCache.Reset();
 }
 
 bool AVAWorld::ResolvePhysicalMaterial(const UPhysicalMaterial* material, int32& outMaterialID) const
