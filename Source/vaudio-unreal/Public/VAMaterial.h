@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "VAMaterialComponent.h"
+#include "VAMaterialTypes.h"
 #include "VAMaterial.generated.h"
 
 struct VAWorld;

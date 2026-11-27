@@ -1,4 +1,4 @@
-// Human-reviewed
+// AI-created
 
 #pragma once
 
@@ -11,6 +11,7 @@
 #include "Engine/EngineTypes.h"
 #include "VASourcePlayback.h"
 #include "VAHeldMuffling.h"
+#include "VAMaterialTypes.h"
 #include "VAWorld.generated.h"
 
 struct VAWorld;
@@ -24,13 +25,14 @@ class USoundBase;
 class USoundAttenuation;
 class UVAMaterialBase;
 class UVACustomMaterial;
-class UVAMaterialComponent;
+class UVAMeshMaterialUserData;
 class UShapeComponent;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UPrimitiveComponent;
 class ULandscapeHeightfieldCollisionComponent;
-enum class EVAPropagateMode : uint8;
+class UMaterialInterface;
+class UPhysicalMaterial;
 class UVASubmixEffectDirectionalPanPreset;
 
 UCLASS(NotBlueprintType, NotBlueprintable)
@@ -82,9 +84,6 @@ struct FVASharedMesh
 // What one component's primitives are added with, resolved per component by AVAWorld::ResolvePrimitiveSettings
 struct FVAPrimitiveSettings
 {
-	// The VAMaterialComponent the settings came from, or the mesh component when its mesh's VAMeshMaterial won. Becomes each binding's Source
-	UObject* Owner = nullptr;
-
 	int32 MaterialId = 0;
 	bool bUseFlatTransmission = false;
 	EVAPropagateMode PropagateMode{};
@@ -94,9 +93,6 @@ struct FVAPrimitiveSettings
 struct FVAPrimitiveBinding
 {
 	TWeakObjectPtr<USceneComponent> Component;
-
-	// What added this primitive (FVAPrimitiveSettings::Owner), so its geometry can be removed with it
-	TWeakObjectPtr<UObject> Source;
 
 	void* Primitive = nullptr;
 	EVAPrimitiveKind Kind = EVAPrimitiveKind::Mesh;
@@ -125,7 +121,7 @@ struct FVABakedMesh
 	UPROPERTY()
 	TSoftObjectPtr<UStaticMesh> Mesh;
 
-	// The material component's MeshLOD, as requested rather than clamped to the mesh's LOD count
+	// The VAMeshMaterial's MeshLOD, as requested rather than clamped to the mesh's LOD count
 	UPROPERTY()
 	int32 LOD = 0;
 
@@ -525,7 +521,7 @@ public:
 	UFUNCTION(CallInEditor, Category = "Vercidium Audio", meta = (DisplayName = "Bake Geometry For Shipping"))
 	void BakeGeometry();
 
-	// True if BakeGeometry would now produce something different: a mesh was added, removed, swapped or edited, or its material component changed. Always false if nothing is baked. Only looks at loaded actors, so it's checked when the level is saved or cooked without loading World Partition cells
+	// True if BakeGeometry would now produce something different: a mesh was added, removed, swapped or edited, or its VAMeshMaterial changed. Always false if nothing is baked. Only looks at loaded actors, so it's checked when the level is saved or cooked without loading World Partition cells
 	bool IsBakedGeometryStale(FString* OutReason = nullptr) const;
 #endif
 
@@ -552,11 +548,32 @@ public:
 	// Whether geometry can use this material asset: it's in Materials, or it's a custom material this world applied before it was removed
 	bool HasMaterial(const UVAMaterialBase* material) const;
 
+	// Whether render materials and physical materials are matched to a material by their asset name, e.g. M_Brick, MI_Glass_Dirty or PM_ConcretePolished. Custom materials in Materials match by their MaterialName, before the built-in names
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
+	bool bMatchMaterialNames = true;
+
+	// Render materials (or their parent materials) that use a specific material, ahead of name matching
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
+	TMap<UMaterialInterface*, FVAMaterialChoice> RenderMaterialMap;
+
+	// Physical materials that use a specific material, ahead of name matching
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
+	TMap<UPhysicalMaterial*, FVAMaterialChoice> PhysicalMaterialMap;
+
+	// The material whose name appears in name: a custom material from Materials by its MaterialName, else a built-in one, preferring the longest. Ignores bMatchMaterialNames. Returns false if none match
+	bool MatchMaterialName(const FString& name, int32& outMaterialID) const;
+
+	// The material for a render material: RenderMaterialMap for it or a parent, then (if bMatchMaterialNames) its name or a parent's. Returns false if it isn't matched
+	bool ResolveRenderMaterial(const UMaterialInterface* material, int32& outMaterialID) const;
+
+	// The material for a physical material: PhysicalMaterialMap, then (if bMatchMaterialNames) its name. The engine's default physical material is never matched. Returns false if it isn't matched
+	bool ResolvePhysicalMaterial(const UPhysicalMaterial* material, int32& outMaterialID) const;
+
 	// Only colliders (shape components and static mesh simple collision) whose collision object type is listed here become raytracing geometry, like Godot's VAWorld.collision_layers. Empty adds every collider
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
 	TArray<TEnumAsByte<ECollisionChannel>> CollisionObjectTypes;
 
-	// Rebuilds an actor's raytracing geometry and that of its attached children, e.g. after changing its meshes or instances, or attaching it to or detaching it from an actor with a VAMaterialComponent
+	// Rebuilds an actor's raytracing geometry and that of its attached children, e.g. after changing its meshes or instances
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SyncPrimitive(AActor* actor);
 
@@ -572,7 +589,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void SetLandscapeLOD(int32 lod);
 
-	// Rebuilds the geometry of every VAMaterialComponent and mesh with a VAMeshMaterial in this world
+	// Rebuilds the geometry of every mesh with a VAMeshMaterial in this world
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio")
 	void RebuildPrimitives();
 
@@ -593,10 +610,6 @@ public:
 
 	// The triangles in every landscape component's heightmap, including holes
 	int32 GetHeightmapTriangleCount() const;
-
-	// Called by UVAMaterialComponent. Adds the geometry of its actor, and of attached child actors without their own VAMaterialComponent
-	void AddMaterialPrimitives(UVAMaterialComponent* source);
-	void RemoveMaterialPrimitives(UVAMaterialComponent* source);
 
 	static TArray<TWeakObjectPtr<AVAWorld>> RunningWorlds;
 
@@ -742,14 +755,10 @@ private:
 	// One SDK mesh per static mesh LOD or convex hull, shared by every mesh primitive placed from it and destroyed when the last one goes
 	TMap<FVAMeshKey, FVASharedMesh> SharedMeshes;
 
-	// Every material component that has begun play in this world, including those whose geometry was all filtered out, so RebuildPrimitives can re-add them
-	TSet<TWeakObjectPtr<UVAMaterialComponent>> MaterialSources;
-
-	// Level instances reached through a material component's actor tree. Their level's actors aren't attached to them, so they're added once that level is visible, and again whenever it's reloaded
-	TArray<TPair<TWeakObjectPtr<AActor>, TWeakObjectPtr<UVAMaterialComponent>>> LevelInstanceSources;
+	// Streamed sublevels, World Partition cells and level instances add their geometry when their level is added
 	FDelegateHandle LevelAddedToWorldHandle;
 
-	// Actors spawned since the last Tick, checked for mesh defaults then, as a spawned actor's mesh is usually set after spawning
+	// Actors spawned since the last Tick, checked for geometry then, as a spawned actor's mesh is usually set after spawning
 	TArray<TWeakObjectPtr<AActor>> PendingSpawnedActors;
 	FDelegateHandle ActorSpawnedHandle;
 
@@ -839,25 +848,19 @@ private:
 	// Pushes the listener and grouped EAX reverb to their submixes
 	void OnReverbUpdated();
 
-	// Adds the actor's geometry, then recurses into attached children that don't have their own VAMaterialComponent, and into a level instance's actors
-	void AddActorTree(AActor* actor, UVAMaterialComponent* source);
-	void AddLevelInstanceContents(AActor* instance, UVAMaterialComponent* source);
 	void OnLevelAddedToWorld(ULevel* level, UWorld* world);
 	void OnActorSpawned(AActor* actor);
-	// Adds the actor's mesh default components if no VAMaterialComponent in its chain will add them, and they aren't added yet
-	void AddMeshDefaultActor(AActor* actor);
-	void AddMeshDefaultLevel(ULevel* level);
-	// Every visible level's mesh default actors
-	void AddWorldMeshDefaults();
-	void AddSpawnedMeshDefaults();
-	// source is the VAMaterialComponent the actor uses, its own or inherited from an attach parent or level instance. Null adds only its mesh components whose mesh has a VAMeshMaterial
-	void AddActorPrimitives(AActor* actor, UVAMaterialComponent* source);
-	void AddComponentPrimitives(UActorComponent* component, UVAMaterialComponent* source);
-	// Picks the component's own VAMaterialComponent, its mesh's VAMeshMaterial, or the inherited source, in that order. Owner is null if there's nothing to add (no source and no mesh default). Returns false if the material is invalid
-	bool ResolvePrimitiveSettings(UVAMaterialComponent* source, UActorComponent* component, FVAPrimitiveSettings& outSettings) const;
-	// Forgets the source and removes its bindings, plus every binding on the tree's actors
-	void ForgetMaterialSource(UVAMaterialComponent* source, const TSet<AActor*>& tree);
-	// The actor, plus the attached children and level instance actors it would add, i.e. those without their own VAMaterialComponent
+	// Adds the actor's geometry unless it's already added
+	void AddActorGeometry(AActor* actor);
+	void AddLevelGeometry(ULevel* level);
+	// Every visible level's geometry
+	void AddWorldGeometry();
+	void AddSpawnedGeometry();
+	void AddActorPrimitives(AActor* actor);
+	void AddComponentPrimitives(UActorComponent* component);
+	// Fills the settings from the mesh's VAMeshMaterial. Returns false if the material is invalid
+	bool ResolvePrimitiveSettings(const UVAMeshMaterialUserData* meshDefault, UActorComponent* component, FVAPrimitiveSettings& outSettings) const;
+	// The actor and every actor attached below it
 	static void CollectActorTree(AActor* actor, TSet<AActor*>& tree);
 	void AddShapePrimitive(UShapeComponent* shape, const FVAPrimitiveSettings& settings);
 	void AddStaticMeshPrimitives(UStaticMeshComponent* meshComponent, const FVAPrimitiveSettings& settings, const FTransform& meshTransform);

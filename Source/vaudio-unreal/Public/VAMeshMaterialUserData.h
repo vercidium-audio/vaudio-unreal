@@ -1,31 +1,25 @@
-// Human-created
+// Human-reviewed
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/AssetUserData.h"
-#include "VAMaterialComponent.h"
+#include "VAMaterialTypes.h"
 #include "VAMeshMaterialUserData.generated.h"
 
 class AVAWorld;
 class UStaticMesh;
 class UVAMaterialBase;
 
-// Add to a Static Mesh asset, so every actor using it will affect raytracing without needing its own VAMaterialComponent.
-// A VAMaterialComponent on the actor overrides this user data
+// Add to a Static Mesh asset, so every actor using it affects raytracing. Meshes without one are ignored
 UCLASS(BlueprintType, DisplayName = "VAMeshMaterial")
 class VAUDIOUNREAL_API UVAMeshMaterialUserData : public UAssetUserData
 {
 	GENERATED_BODY()
 
 public:
-	// Optional - overrides Material below with a UVADefaultMaterial or UVACustomMaterial asset
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	UVAMaterialBase* MaterialAsset = nullptr;
-
-	// Used when MaterialAsset above is unset (the common case).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")
-	EVAMaterial Material = EVAMaterial::Concrete;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio", meta = (ShowOnlyInnerProperties))
+	FVAMaterialChoice Material;
 
 	// Whether permeation rays should lose a flat percentage of energy when touching this primitive, instead of calculating the distance spent inside it
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio")

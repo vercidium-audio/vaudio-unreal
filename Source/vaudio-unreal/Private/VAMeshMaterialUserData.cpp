@@ -1,14 +1,13 @@
 // AI-created
 
 #include "VAMeshMaterialUserData.h"
-#include "VAMaterialConversion.h"
 #include "VAWorld.h"
 #include "VAEngineCompat.h"
 #include "Engine/StaticMesh.h"
 
 bool UVAMeshMaterialUserData::GetMaterialID(const AVAWorld* world, const UObject* reporter, int32& outMaterialId) const
 {
-	return VAResolveMaterialID(MaterialAsset, Material, world, reporter, FString::Printf(TEXT(" (VAMeshMaterial on mesh '%s')"), *GetNameSafe(GetOuter())), outMaterialId);
+	return Material.GetMaterialID(world, reporter,FString::Printf(TEXT(" (VAMeshMaterial on mesh '%s')"), *GetNameSafe(GetOuter())), outMaterialId);
 }
 
 UVAMeshMaterialUserData* UVAMeshMaterialUserData::Find(const UStaticMesh* mesh)

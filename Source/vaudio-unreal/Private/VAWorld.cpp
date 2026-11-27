@@ -1,4 +1,4 @@
-// Human-reviewed
+// AI-created
 
 #include "VAWorld.h"
 #include "VAEngineCompat.h"
@@ -25,6 +25,8 @@
 #include "HAL/IConsoleManager.h"
 #include "Components/BillboardComponent.h"
 #include "Engine/StaticMeshActor.h"
+#include "Materials/MaterialInstance.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "AudioMixerBlueprintLibrary.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
@@ -278,7 +280,7 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 
 	UpdateVAWorld();
 
-	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, LandscapeLOD))
+	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, LandscapeLOD) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, bMatchMaterialNames) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, RenderMaterialMap) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, PhysicalMaterialMap))
 		RebuildPrimitives();
 	else if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, Materials) && SyncMaterials())
 		RebuildPrimitives();
@@ -312,15 +314,15 @@ void AVAWorld::BeginPlay()
 
 	InitializeVAWorld();
 
-	// A level instance's actors are added once its level is, see AddLevelInstanceContents
+	// Streamed sublevels, World Partition cells and level instances add their geometry once their level is added
 	LevelAddedToWorldHandle = FWorldDelegates::LevelAddedToWorld.AddUObject(this, &AVAWorld::OnLevelAddedToWorld);
 
 	// Actors that began play before this one join it now
 	subsystem->RegisterWorld(this);
 
-	// Actors with no VAMaterialComponent whose meshes have a VAMeshMaterial
+	// Geometry is every mesh with a VAMeshMaterial, in the loaded levels and spawned later
 	ActorSpawnedHandle = GetWorld()->AddOnActorSpawnedHandler(FOnActorSpawned::FDelegate::CreateUObject(this, &AVAWorld::OnActorSpawned));
-	AddWorldMeshDefaults();
+	AddWorldGeometry();
 }
 
 AVAWorld* AVAWorld::Find(const UObject* WorldContextObject)
@@ -997,8 +999,6 @@ void AVAWorld::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		// Blocks until the raytracing threads finish, after which no primitive is in use
 		vaWorldWait(World);
 		DestroyPrimitives();
-		MaterialSources.Empty();
-		LevelInstanceSources.Empty();
 		CustomMaterialIds.Empty();
 		AppliedMaterials.Empty();
 
@@ -1114,7 +1114,7 @@ void AVAWorld::Tick(float DeltaTime)
 			FollowBounds();
 
 		SyncDebugCamera();
-		AddSpawnedMeshDefaults();
+		AddSpawnedGeometry();
 
 		vaWorldUpdate(World);
 
@@ -1653,4 +1653,71 @@ bool AVAWorld::HasMaterial(const UVAMaterialBase* material) const
 
 	const UVACustomMaterial* customMaterial = Cast<UVACustomMaterial>(material);
 	return customMaterial && GetCustomMaterialId(customMaterial) != 0;
+}
+
+bool AVAWorld::MatchMaterialName(const FString& name, int32& outMaterialID) const
+{
+	TArray<FVAMaterialNameCandidate> customs;
+
+	for (const UVAMaterialBase* material : Materials)
+	{
+		const UVACustomMaterial* customMaterial = Cast<UVACustomMaterial>(material);
+		int32 materialID = customMaterial ? GetCustomMaterialId(customMaterial) : 0;
+
+		if (materialID == 0)
+			continue;
+
+		FVAMaterialNameCandidate candidate;
+		candidate.Words = VASplitMaterialName(customMaterial->GetMaterialName());
+		candidate.MaterialID = materialID;
+		customs.Add(MoveTemp(candidate));
+	}
+
+	return VAMatchMaterialName(name, customs, outMaterialID) || VAMatchMaterialName(name, VABuiltInMaterialNames(), outMaterialID);
+}
+
+bool AVAWorld::ResolveRenderMaterial(const UMaterialInterface* material, int32& outMaterialID) const
+{
+	// The material, then its parents up to the base UMaterial
+	TArray<const UMaterialInterface*> chain;
+
+	for (const UMaterialInterface* current = material; current && !chain.Contains(current);)
+	{
+		chain.Add(current);
+		const UMaterialInstance* instance = Cast<UMaterialInstance>(current);
+
+		if (instance)
+			current = instance->Parent;
+		else
+			current = nullptr;
+	}
+
+	for (const UMaterialInterface* current : chain)
+	{
+		if (const FVAMaterialChoice* choice = RenderMaterialMap.Find(const_cast<UMaterialInterface*>(current)))
+			return choice->GetMaterialID(this, this, FString::Printf(TEXT(" (RenderMaterialMap entry for '%s')"), *current->GetName()), outMaterialID);
+	}
+
+	if (!bMatchMaterialNames)
+		return false;
+
+	for (const UMaterialInterface* current : chain)
+	{
+		if (MatchMaterialName(current->GetName(), outMaterialID))
+			return true;
+	}
+
+	return false;
+}
+
+bool AVAWorld::ResolvePhysicalMaterial(const UPhysicalMaterial* material, int32& outMaterialID) const
+{
+	// Unset physical materials fall back to the engine's default, which says nothing about the surface
+	if (!material || (GEngine && material == GEngine->DefaultPhysMaterial))
+		return false;
+
+	if (const FVAMaterialChoice* choice = PhysicalMaterialMap.Find(const_cast<UPhysicalMaterial*>(material)))
+		return choice->GetMaterialID(this, this, FString::Printf(TEXT(" (PhysicalMaterialMap entry for '%s')"), *material->GetName()), outMaterialID);
+
+	return bMatchMaterialNames && MatchMaterialName(material->GetName(), outMaterialID);
 }
