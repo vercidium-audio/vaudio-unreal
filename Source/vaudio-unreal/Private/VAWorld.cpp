@@ -296,7 +296,7 @@ void AVAWorld::BeginPlay()
 	if (!subsystem)
 		return;
 
-	if (!FVaudioUnrealModule::IsSdkLoaded())
+	if (!FVaudioUnrealModule::EnsureSdkLoaded())
 	{
 		VA_ERROR_NAMED(TEXT("Is disabled, as the Vercidium Audio SDK failed to load. Check the log for the reason."));
 		SetActorTickEnabled(false);

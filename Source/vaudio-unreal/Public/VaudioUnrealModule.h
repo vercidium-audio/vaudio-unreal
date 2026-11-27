@@ -1,4 +1,4 @@
-// Human-reviewed
+// HUman-created
 
 #pragma once
 
@@ -13,11 +13,13 @@ public:
 	// False if the SDK's shared library failed to load at startup, in which case no va* function may be called
 	static bool IsSdkLoaded();
 
+	// Retry loading the SDK if it failed at startup, so a library copied in while the editor is running works without a restart
+	static bool EnsureSdkLoaded();
+
 private:
-	void LoadSdk();
+	static void LoadSdk();
 	void OnPostEngineInit();
 
 	FDelegateHandle PostEngineInitHandle;
 	FDelegateHandle ObjectPropertyChangedHandle;
-	void* SdkHandle = nullptr;
 };

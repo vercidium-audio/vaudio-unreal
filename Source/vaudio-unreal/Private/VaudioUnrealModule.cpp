@@ -17,6 +17,7 @@
 #endif
 
 static bool GSdkLoaded = false;
+static void* GSdkHandle = nullptr;
 
 void FVaudioUnrealModule::StartupModule()
 {
@@ -57,9 +58,11 @@ void FVaudioUnrealModule::LoadSdk()
 		return;
 	}
 
-	SdkHandle = FPlatformProcess::GetDllHandle(*libraryPath);
+	// A retry after a version or precision mismatch already has the library mapped, and the file is locked so it can't have changed
+	if (!GSdkHandle)
+		GSdkHandle = FPlatformProcess::GetDllHandle(*libraryPath);
 
-	if (!SdkHandle)
+	if (!GSdkHandle)
 	{
 		VA_ERROR(TEXT("Failed to load the Vercidium Audio SDK from '%s'."), *libraryPath);
 		return;
@@ -105,6 +108,14 @@ bool FVaudioUnrealModule::IsSdkLoaded()
 	return GSdkLoaded;
 }
 
+bool FVaudioUnrealModule::EnsureSdkLoaded()
+{
+	if (!GSdkLoaded)
+		LoadSdk();
+
+	return GSdkLoaded;
+}
+
 void FVaudioUnrealModule::OnPostEngineInit()
 {
 	VA_LOG(TEXT("PostEngineInit - clearing on screen debug messages"));
@@ -131,10 +142,10 @@ void FVaudioUnrealModule::ShutdownModule()
 
 	GSdkLoaded = false;
 
-	if (SdkHandle)
+	if (GSdkHandle)
 	{
-		FPlatformProcess::FreeDllHandle(SdkHandle);
-		SdkHandle = nullptr;
+		FPlatformProcess::FreeDllHandle(GSdkHandle);
+		GSdkHandle = nullptr;
 	}
 }
 
