@@ -29,7 +29,7 @@ struct VAUDIOUNREAL_API FVAMeshMaterialSlot
 	FVAMaterialChoice Material;
 };
 
-// Add to a Static Mesh asset, so every actor using it affects raytracing. Meshes without one are only raytraced where a material slot's render material or physical material is matched by the VAWorld (RenderMaterialMap, PhysicalMaterialMap or bMatchMaterialNames)
+// Add to a Static Mesh asset, so every actor using it affects raytracing. Meshes without one are only raytraced where a material slot's render material or physical material is listed in the VAWorld's RenderMaterialMap or PhysicalMaterialMap
 UCLASS(BlueprintType, DisplayName = "VAMeshMaterial")
 class VAUDIOUNREAL_API UVAMeshMaterialUserData : public UAssetUserData
 {

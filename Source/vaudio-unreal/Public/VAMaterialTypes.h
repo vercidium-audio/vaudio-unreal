@@ -69,19 +69,3 @@ struct VAUDIOUNREAL_API FVAMaterialChoice
 	// The SDK material ID in world. Returns false and warns (on reporter, with context appended) if MaterialAsset isn't in its Materials array
 	bool GetMaterialID(const AVAWorld* world, const UObject* reporter, const FString& context, int32& outMaterialID) const;
 };
-
-// A material that asset names are matched against: its name split into words, and its SDK ID
-struct FVAMaterialNameCandidate
-{
-	TArray<FString> Words;
-	int32 MaterialID = 0;
-};
-
-// Splits a name into lowercase words on '_', '-', spaces, other punctuation, CamelCase and digits, e.g. "MI_ConcretePolished01" is mi, concrete, polished, 01
-VAUDIOUNREAL_API TArray<FString> VASplitMaterialName(const FString& name);
-
-// The candidate whose words appear in a row in name's words, preferring the longest. Returns false if none match
-VAUDIOUNREAL_API bool VAMatchMaterialName(const FString& name, const TArray<FVAMaterialNameCandidate>& candidates, int32& outMaterialID);
-
-// Every built-in material, matched by its enum name (e.g. ConcretePolished is concrete, polished)
-VAUDIOUNREAL_API const TArray<FVAMaterialNameCandidate>& VABuiltInMaterialNames();

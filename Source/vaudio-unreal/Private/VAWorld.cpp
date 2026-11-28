@@ -280,7 +280,7 @@ void AVAWorld::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEven
 
 	UpdateVAWorld();
 
-	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, LandscapeLOD) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, bMatchMaterialNames) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, RenderMaterialMap) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, PhysicalMaterialMap))
+	if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, CollisionObjectTypes) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, LandscapeLOD) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, RenderMaterialMap) || memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, PhysicalMaterialMap))
 		RebuildPrimitives();
 	else if (memberName == GET_MEMBER_NAME_CHECKED(AVAWorld, Materials) && SyncMaterials())
 		RebuildPrimitives();
@@ -1577,7 +1577,7 @@ bool AVAWorld::SyncMaterials()
 	if (!World)
 		return false;
 
-	// Custom material IDs and names may change, which changes what matches
+	// Custom material IDs may change, which changes what the maps resolve to
 	ClearMaterialCache();
 	bool changed = false;
 
@@ -1662,56 +1662,23 @@ bool AVAWorld::HasMaterial(const UVAMaterialBase* material) const
 	return customMaterial && GetCustomMaterialId(customMaterial) != 0;
 }
 
-bool AVAWorld::MatchMaterialName(const FString& name, int32& outMaterialID) const
-{
-	TArray<FVAMaterialNameCandidate> customs;
-
-	for (const UVAMaterialBase* material : Materials)
-	{
-		const UVACustomMaterial* customMaterial = Cast<UVACustomMaterial>(material);
-		int32 materialID = customMaterial ? GetCustomMaterialId(customMaterial) : 0;
-
-		if (materialID == 0)
-			continue;
-
-		FVAMaterialNameCandidate candidate;
-		candidate.Words = VASplitMaterialName(customMaterial->GetMaterialName());
-		candidate.MaterialID = materialID;
-		customs.Add(MoveTemp(candidate));
-	}
-
-	return VAMatchMaterialName(name, customs, outMaterialID) || VAMatchMaterialName(name, VABuiltInMaterialNames(), outMaterialID);
-}
-
 bool AVAWorld::ResolveRenderMaterial(const UMaterialInterface* material, int32& outMaterialID) const
 {
 	// The material, then its parents up to the base UMaterial
-	TArray<const UMaterialInterface*> chain;
+	TArray<const UMaterialInterface*> visited;
 
-	for (const UMaterialInterface* current = material; current && !chain.Contains(current);)
+	for (const UMaterialInterface* current = material; current && !visited.Contains(current);)
 	{
-		chain.Add(current);
+		if (const FVAMaterialChoice* choice = RenderMaterialMap.Find(const_cast<UMaterialInterface*>(current)))
+			return choice->GetMaterialID(this, this, FString::Printf(TEXT(" (RenderMaterialMap entry for '%s')"), *current->GetName()), outMaterialID);
+
+		visited.Add(current);
 		const UMaterialInstance* instance = Cast<UMaterialInstance>(current);
 
 		if (instance)
 			current = instance->Parent;
 		else
 			current = nullptr;
-	}
-
-	for (const UMaterialInterface* current : chain)
-	{
-		if (const FVAMaterialChoice* choice = RenderMaterialMap.Find(const_cast<UMaterialInterface*>(current)))
-			return choice->GetMaterialID(this, this, FString::Printf(TEXT(" (RenderMaterialMap entry for '%s')"), *current->GetName()), outMaterialID);
-	}
-
-	if (!bMatchMaterialNames)
-		return false;
-
-	for (const UMaterialInterface* current : chain)
-	{
-		if (MatchMaterialName(current->GetName(), outMaterialID))
-			return true;
 	}
 
 	return false;
@@ -1732,5 +1699,5 @@ bool AVAWorld::ResolvePhysicalMaterial(const UPhysicalMaterial* material, int32&
 	if (const FVAMaterialChoice* choice = PhysicalMaterialMap.Find(const_cast<UPhysicalMaterial*>(material)))
 		return choice->GetMaterialID(this, this, FString::Printf(TEXT(" (PhysicalMaterialMap entry for '%s')"), *material->GetName()), outMaterialID);
 
-	return bMatchMaterialNames && MatchMaterialName(material->GetName(), outMaterialID);
+	return false;
 }

@@ -575,25 +575,18 @@ public:
 	// Whether geometry can use this material asset: it's in Materials, or it's a custom material this world applied before it was removed
 	bool HasMaterial(const UVAMaterialBase* material) const;
 
-	// Whether render materials and physical materials are matched to a material by their asset name, e.g. M_Brick, MI_Glass_Dirty or PM_ConcretePolished. Custom materials in Materials match by their MaterialName, before the built-in names
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
-	bool bMatchMaterialNames = true;
-
-	// Render materials (or their parent materials) that use a specific material, ahead of name matching
+	// Render materials (or their parent materials) that use a specific material. Render materials that aren't listed here, and have no listed parent, are ignored
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
 	TMap<UMaterialInterface*, FVAMaterialChoice> RenderMaterialMap;
 
-	// Physical materials that use a specific material, ahead of name matching
+	// Physical materials that use a specific material. Physical materials that aren't listed here are ignored
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Materials")
 	TMap<UPhysicalMaterial*, FVAMaterialChoice> PhysicalMaterialMap;
 
-	// The material whose name appears in name: a custom material from Materials by its MaterialName, else a built-in one, preferring the longest. Ignores bMatchMaterialNames. Returns false if none match
-	bool MatchMaterialName(const FString& name, int32& outMaterialID) const;
-
-	// The material for a render material: RenderMaterialMap for it or a parent, then (if bMatchMaterialNames) its name or a parent's. Returns false if it isn't matched
+	// The material for a render material: its RenderMaterialMap entry, else the nearest parent's. Returns false if it isn't matched
 	bool ResolveRenderMaterial(const UMaterialInterface* material, int32& outMaterialID) const;
 
-	// The material for a physical material: PhysicalMaterialMap, then (if bMatchMaterialNames) its name. The engine's default physical material is never matched. Returns false if it isn't matched
+	// The material for a physical material: its PhysicalMaterialMap entry. The engine's default physical material is never matched. Returns false if it isn't matched
 	bool ResolvePhysicalMaterial(const UPhysicalMaterial* material, int32& outMaterialID) const;
 
 	// Only colliders (shape components and static mesh simple collision) whose collision object type is listed here become raytracing geometry, like Godot's VAWorld.collision_layers. Empty adds every collider
@@ -870,7 +863,7 @@ private:
 	mutable TMap<TObjectKey<UMaterialInterface>, int32> RenderMaterialCache;
 	mutable TMap<TObjectKey<UPhysicalMaterial>, int32> PhysicalMaterialCache;
 
-	// After anything that can change what a render or physical material resolves to: the maps, bMatchMaterialNames, Materials, a render material's parent or physical material
+	// After anything that can change what a render or physical material resolves to: the maps, Materials, a render material's parent or physical material
 	void ClearMaterialCache();
 
 	// The materials applied by the last SyncMaterials, to find removed ones

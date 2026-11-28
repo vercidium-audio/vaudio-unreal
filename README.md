@@ -71,7 +71,9 @@ The SDK's platform folders map to these `lib` folders:
 - if using Unreal 5.7 onwards, copy the files of the double-precision native SDK (`3d/native-double`) into the above locations.
 - if using Unreal 4.27, copy the files of the single-precision native SDK (`3d/native`) into the above locations.
 
-You only need the `lib` folders for the platforms you build for. To use the debug window, use the dev SDK and also copy:
+You only need the `lib` folders for the platforms you'll build for.
+
+To use the debug window, use the dev SDK and also copy the files from the SDK's `3d/debug-window/{SDK folder}` folder:
 - For Windows: `vaudio-debug-window.exe` and `glfw3.dll` into `lib/Win64`
 - For Linux: `vaudio-debug-window` and `libglfw.so.3` into `lib/Linux` (and `lib/LinuxArm64`)
 - For Mac: `vaudio-debug-window` and `libglfw.3.dylib` into `lib/Mac`
@@ -131,7 +133,7 @@ export CCC_OVERRIDE_OPTIONS="# +-Wno-error +-Wno-deprecated-builtins +-fno-acces
 
 1. Place one **VAWorld** in the level. Its location is the minimum corner of the raytraced box and `BoundsSize` is the box's size, so move and size it to cover the playable area.
 2. For reverb to work, add at least one submix to `VAWorld.GroupedEAXSubmixes` (I recommend at least three)
-3. Give the geometry that should affect raytracing (walls, floors, props) a material. Render materials and physical materials named after a material (e.g. `M_Brick`, `MI_Glass_Dirty`, `PM_Concrete`) are matched automatically, others can be added to the `VAWorld`'s `RenderMaterialMap` or `PhysicalMaterialMap`, or the mesh can be given a [VAMeshMaterial](#static-mesh-materials). Geometry without a material is ignored, see [Geometry and materials](#geometry-and-materials).
+3. Give the geometry that should affect raytracing (walls, floors, props) a material. Add their render materials or physical materials to the `VAWorld`'s `RenderMaterialMap` or `PhysicalMaterialMap` (e.g. `M_Brick` to Brick, `PM_Dirt` to Dirt), or give the mesh a [VAMeshMaterial](#static-mesh-materials). Geometry without a material is ignored, see [Geometry and materials](#geometry-and-materials).
 4. Place one **VAListener**. By default it follows the player's camera (`bAutoFollowCamera`). For muffling to work, enable its occlusion and permeation rays (e.g. `OcclusionRayCount=1024`, `OcclusionBounceCount=8`, `PermeationRayCount=128`, `PermeationBounceCount=2`)
 5. Place a **VASource** for each sound, set its `SourceSound` and `bAutoPlay`, and give it reverb rays (e.g. `ReverbRayCount=64`, `ReverbBounceCount=64`) so it has reverb.
 
@@ -263,33 +265,28 @@ Geometry and sources in an unloaded streaming level don't affect sound, as their
 
 Each material slot of a static mesh's render triangles uses the first of these that gives it a material:
 1. The slot's `SlotMaterials` entry on the mesh's [VAMeshMaterial](#static-mesh-materials). `bIgnore` leaves the slot out
-2. The slot's render material: the `VAWorld`'s `RenderMaterialMap`, then its name. Material instances also check their parent materials
-3. That render material's physical material: the `VAWorld`'s `PhysicalMaterialMap`, then its name
+2. The slot's render material's entry in the `VAWorld`'s `RenderMaterialMap`. Material instances also check their parent materials
+3. That render material's physical material's entry in the `VAWorld`'s `PhysicalMaterialMap`
 4. The `VAMeshMaterial`'s `Material`
 5. Otherwise the slot is ignored. A mesh with every slot ignored isn't raytraced
 
-So a building mesh with `M_Brick` and `M_Glass` slots is raytraced as brick and glass with no setup, as one primitive with a material per triangle. Render materials are read from the Static Mesh asset's slots, and a placed component's `Override Materials` aren't used.
+So once `M_Brick` and `M_Glass` are in `RenderMaterialMap`, a building mesh with those two slots is raytraced as brick and glass, as one primitive with a material per triangle. Render materials are read from the Static Mesh asset's slots, and a placed component's `Override Materials` aren't used.
 
-A mesh without a `VAMeshMaterial` is raytraced like one with `PropagateMode = All` and `MeshLOD = 0`, without flat transmission. If it has simple collision, that's what's raytraced, with the collision's physical material (the component's `Phys Material Override`, else the mesh's `Simple Collision Physical Material`) if it's matched, else the material most of its slots use. So a mesh matched only by its collision's physical material is still raytraced.
+A mesh without a `VAMeshMaterial` is raytraced like one with `PropagateMode = All` and `MeshLOD = 0`, without flat transmission. If it has simple collision, that's what's raytraced, with the collision's physical material (the component's `Phys Material Override`, else the mesh's `Simple Collision Physical Material`) if it's mapped, else the material most of its slots use. So a mesh matched only by its collision's physical material is still raytraced.
 
-#### Name matching
+#### Material maps
 
-With `bMatchMaterialNames` on the `VAWorld` (on by default), render materials and physical materials are matched by their asset name:
-- Names are split into lowercase words on `_`, `-`, spaces, CamelCase and digits, so `MI_ConcretePolished01` is `mi`, `concrete`, `polished`, `01`
-- A material matches if all of its words appear in a row, e.g. `M_Brick`, `MI_Glass_Dirty` and `PM_ConcretePolished`. Only whole words match, so `M_Bricks` and `M_Glassy` don't
-- The longest match wins, so `M_ConcretePolished` is ConcretePolished rather than Concrete
-- `VACustomMaterial`s in the `VAWorld`'s `Materials` match by their `MaterialName` (or their asset name if it's empty), and beat every built-in name
-- The built-in names are the `EVAMaterial` names, so plain `Wood` or `Stone` match nothing. Use `RenderMaterialMap` for those
-- The engine's default physical material is never matched
-
-`RenderMaterialMap` and `PhysicalMaterialMap` on the `VAWorld` give a render material or physical material asset a specific material, ahead of name matching. An entry for a parent material also applies to all of its material instances. An entry whose `MaterialAsset` isn't in `Materials` logs a warning and isn't used. With `bMatchMaterialNames` off, only the map entries and `VAMeshMaterial`s are used.
+`RenderMaterialMap` and `PhysicalMaterialMap` on the `VAWorld` map render material and physical material assets to materials, e.g. `PM_Dirt` to Dirt. Materials are never matched by their asset name, so render materials and physical materials that aren't in a map are ignored.
+- An entry for a parent material also applies to all of its material instances. An instance's own entry beats its parent's
+- An entry can pick a built-in material, or a `MaterialAsset` from the `VAWorld`'s `Materials`. An entry whose `MaterialAsset` isn't in `Materials` logs a warning and isn't used
+- The engine's default physical material is never matched, even if it's in the map
 
 #### Static Mesh materials
 
 A Static Mesh asset can carry its own material, so every placement of it is raytraced, e.g. a wall mesh that's always brick. Open the mesh in the Static Mesh editor, add an entry to **Asset User Data** in its Details panel, and choose **VAMeshMaterial** (`UVAMeshMaterialUserData`). Save the mesh, and it applies in every level.
 
-- `Material` picks a built-in material (concrete, wood, glass, ...), or `MaterialAsset` a material asset, which must be in the `VAWorld`'s `Materials` array. It's used by simple collision, and by slots that have no `SlotMaterials` entry and whose render material and physical material aren't matched.
-- `SlotMaterials` gives individual material slots (by Material Slot Name) their own material, e.g. Glass for a building's window slot, ahead of the `VAWorld`'s matching. `bIgnore` leaves a slot's triangles out, e.g. decals or foliage cards. Simple collision has no slots, so a mesh that needs per-slot materials should use `PropagateMode = Visuals`.
+- `Material` picks a built-in material (concrete, wood, glass, ...), or `MaterialAsset` a material asset, which must be in the `VAWorld`'s `Materials` array. It's used by simple collision, and by slots that have no `SlotMaterials` entry and whose render material and physical material aren't mapped.
+- `SlotMaterials` gives individual material slots (by Material Slot Name) their own material, e.g. Glass for a building's window slot, ahead of the `VAWorld`'s maps. `bIgnore` leaves a slot's triangles out, e.g. decals or foliage cards. Simple collision has no slots, so a mesh that needs per-slot materials should use `PropagateMode = Visuals`.
 - `bUseFlatTransmission` makes permeation rays lose a flat percentage of energy when they touch the mesh, using the material of the triangle they touch.
 - `PermeationMaterial` (with its checkbox ticked) is the material inside the mesh, which permeation rays lose energy to based on the distance they travel inside it, e.g. Concrete inside a building whose surfaces are brick and glass. It defaults to `Material`, and isn't used with flat transmission.
 - `PropagateMode` chooses between simple collision, render triangles or both, and `MeshLOD` picks which LOD is raytraced.
@@ -298,7 +295,7 @@ A Static Mesh asset can carry its own material, so every placement of it is rayt
 
 #### Shape components
 
-Box, sphere and capsule components are raytraced if their `Phys Material Override` (under Collision) is matched by `PhysicalMaterialMap` or by name, e.g. `PM_Concrete`. They're always colliders, filtered by `CollisionObjectTypes`.
+Box, sphere and capsule components are raytraced if their `Phys Material Override` (under Collision) is in the `VAWorld`'s `PhysicalMaterialMap`. They're always colliders, filtered by `CollisionObjectTypes`.
 
 #### Planes
 
@@ -306,7 +303,7 @@ A mesh whose box collision has no thickness, like `/Engine/BasicShapes/Plane`, i
 
 #### Landscapes
 
-Set the landscape's `Default Phys Material` to a physical material the `VAWorld` matches, e.g. `PM_Dirt`. Each streaming proxy reads its own `Default Phys Material`. The layers' physical materials aren't used, as each landscape component is raytraced with one material.
+Set the landscape's `Default Phys Material` to a physical material in the `VAWorld`'s `PhysicalMaterialMap`, e.g. `PM_Dirt` mapped to Dirt. Each streaming proxy reads its own `Default Phys Material`. The layers' physical materials aren't used, as each landscape component is raytraced with one material.
 - Each landscape component becomes one heightmap built from its collision, so collision must be enabled on the landscape. It works in cooked builds without baking.
 - Holes painted with the visibility layer are left open.
 - A landscape with a negative or zero scale on any axis is skipped with a warning.
@@ -315,9 +312,9 @@ Set the landscape's `Default Phys Material` to a physical material the `VAWorld`
 
 #### Changes during play
 
-What each render material and physical material resolves to is cached. Editing the `VAWorld`'s `RenderMaterialMap`, `PhysicalMaterialMap`, `bMatchMaterialNames` or `Materials` in the Details panel (including during Play In Editor) rebuilds the geometry straight away, and so do `SetMaterials`, `SetCollisionObjectTypes` and `SetLandscapeLOD`. Editing a `VAMeshMaterial`, a render material's parent or physical material, or a mesh's or component's collision physical material during Play In Editor also rebuilds it.
+What each render material and physical material resolves to is cached. Editing the `VAWorld`'s `RenderMaterialMap`, `PhysicalMaterialMap` or `Materials` in the Details panel (including during Play In Editor) rebuilds the geometry straight away, and so do `SetMaterials`, `SetCollisionObjectTypes` and `SetLandscapeLOD`. Editing a `VAMeshMaterial`, a render material's parent or physical material, or a mesh's or component's collision physical material during Play In Editor also rebuilds it.
 
-Changing the maps or `bMatchMaterialNames` from Blueprint or C++ doesn't, so call `RebuildPrimitives` (or `SyncPrimitive(Actor)` for one actor) afterwards. Until then, the old results are still used for geometry that spawns or streams in.
+Changing the maps from Blueprint or C++ doesn't, so call `RebuildPrimitives` (or `SyncPrimitive(Actor)` for one actor) afterwards. Until then, the old results are still used for geometry that spawns or streams in.
 
 Call `SyncPrimitive(Actor)` on the `VAWorld` after:
 - changing an actor's meshes
@@ -330,7 +327,7 @@ In C++, `AVAWorld::GetMeshTriangles(MeshComponent, OutVertices, OutTriangleMater
 
 Material assets are created in the Content Browser and added to the `VAWorld`'s `Materials` array:
 - **VADefaultMaterial** (`UVADefaultMaterial`) changes the properties of one of the built-in materials everywhere it's used. Pick it with `MaterialType`, and use `Reset To Defaults` to load the SDK's values.
-- **VACustomMaterial** (`UVACustomMaterial`) is a new material. Use it in a `VAMeshMaterial`'s `MaterialAsset` or a material map entry, or name render materials and physical materials after its `MaterialName`.
+- **VACustomMaterial** (`UVACustomMaterial`) is a new material. Use it in a `VAMeshMaterial`'s `MaterialAsset` or a material map entry.
 
 Use `SetMaterials` on the `VAWorld` to change the list during play.
 
