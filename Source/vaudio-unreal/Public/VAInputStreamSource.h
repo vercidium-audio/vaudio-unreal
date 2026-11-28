@@ -1,4 +1,4 @@
-// Human-reviewed
+// Human-created
 
 #pragma once
 
@@ -11,7 +11,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FVAOnAudioCaptured, const TArray<uint8>&, Data);
 
-// A stream source fed by a microphone or other capture device. On BeginPlay it opens the capture device and a stream in Format, and plays back what it captures (e.g. to hear yourself, or send it over voice chat via OnAudioCaptured)
+// A source that plays a data stream, either from microphone or networking
 UCLASS(DisplayName = "VAInputStreamSource")
 class VAUDIOUNREAL_API AVAInputStreamSource : public AVAStreamSource
 {
@@ -26,75 +26,75 @@ protected:
 	virtual void TickTypeSpecific(float DeltaTime) override;
 
 public:
-	// Format of the captured data, i.e. what's pushed to the stream and passed to OnAudioCaptured
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture")
 	EVAStreamFormat Format = EVAStreamFormat::Mono16;
 
-	// Requested capture sample rate, 0 for the device's own rate. Most devices only capture at their own rate (WASAPI in shared mode, Mac), in which case the stream uses that instead (see GetCaptureSampleRate)
+	// Requested capture sample rate. Set to 0 to use the device's default rate
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture", meta = (ClampMin = "0", UIMax = "96000"))
 	int32 SampleRate = 0;
 
-	// Capture device to open. Empty or "System Default" uses the system's default device
+	// Name of the capture device. Set to an empty string or "System Default" to use the system default.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture", meta = (GetOptions = "GetCaptureDeviceNames"))
 	FString DeviceName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture", meta = (ClampMin = "1", UIMax = "65536"))
 	int32 BufferSizeFrames = 1024;
 
-	// Minimum peak amplitude (in a 16-bit range, 0-32767, whatever the Format) a captured chunk must reach to be played or passed to OnAudioCaptured. 0 forwards every chunk
+	// If the peak amplitude is below this value, the data will be ignored.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture", meta = (ClampMin = "0", UIMax = "32767"))
 	int32 MicrophoneThreshold = 0;
 
-	// Opens the stream and starts capturing on BeginPlay. Turn off to call OpenStream/OpenCapture/StartCapture yourself, e.g. for push-to-talk
+	// Whether to start capturing on BeginPlay.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Vercidium Audio|Capture")
 	bool bAutoCapture = true;
 
-	// Called on the game thread with each captured chunk that reaches MicrophoneThreshold, in Format. Use it to send the microphone over the network
+	// Callback containing audio data, for sending over networking
 	UPROPERTY(BlueprintAssignable, Category = "Vercidium Audio|Capture")
 	FVAOnAudioCaptured OnAudioCaptured;
 
-	// Opens a capture device, closing any open one first. Captured audio is pushed to this source's stream (if open) and broadcast via OnAudioCaptured. InSampleRate 0 uses the device's own rate, and a rate the device rejects falls back to it. Returns false if the device couldn't be opened
+	// Open a capture device, closing any open one first. Set InSampleRate to 0 to use the device's default rate. Returns false if the device couldn't be opened
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Capture")
 	bool OpenCapture(const FString& InDeviceName, EVAStreamFormat InFormat = EVAStreamFormat::Mono16, int32 InSampleRate = 0, int32 InBufferSizeFrames = 1024);
 
+	// Start capturing, e.g. for push to talk
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Capture")
 	void StartCapture();
 
+	// Stop capturing, e.g. for push to talk
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Capture")
 	void StopCapture();
 
-	// Safe to call when no capture device is open
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Capture")
 	void CloseCapture();
 
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Capture")
 	bool IsCaptureOpen() const { return Capture.IsValid(); }
 
-	// The rate the open capture device actually captures at, or 0 when none is open
+	// The rate the capture device actually captures at. Returns 0 when not open
 	UFUNCTION(BlueprintPure, Category = "Vercidium Audio|Capture")
 	int32 GetCaptureSampleRate() const { return CaptureSampleRate; }
 
-	// "System Default" followed by the names of the available capture devices
+	// The names of all available capture devices
 	UFUNCTION(BlueprintCallable, Category = "Vercidium Audio|Capture")
 	static TArray<FString> GetCaptureDeviceNames();
 
-	// Greatest absolute sample amplitude in a chunk of PCM data, scaled to a 16-bit range so MicrophoneThreshold means the same thing in every format
+	// Get the greatest amplitude, scaled to a 16-bit range so MicrophoneThreshold means the same thing in every format
 	static int32 PeakAmplitude(const uint8* Data, int32 NumBytes, EVAStreamFormat InFormat);
 
-	// Converts interleaved float frames from the capture device to CaptureFormat and queues them for the next tick. Called on the capture thread, and by tests to feed synthetic capture buffers
+	// Convert float data from the capture device to CaptureFormat and queues them for the next tick. Called on the capture thread
 	void ReceiveCapturedAudio(const float* Audio, int32 NumFrames, int32 NumChannels);
 
-	// Bytes that reached MicrophoneThreshold and were forwarded since OpenCapture
+	// Number of bytes in chunks that are above MicrophoneThreshold and were forwarded since OpenCapture
 	int64 GetForwardedByteCount() const { return ForwardedByteCount; }
 
-	// Bytes below MicrophoneThreshold since OpenCapture
+	// Number of bytes in chunks that are below MicrophoneThreshold since OpenCapture
 	int64 GetBelowThresholdByteCount() const { return BelowThresholdByteCount; }
 
-	// Lets tests feed ReceiveCapturedAudio without a capture device
+	// For testing without a capture device
 	void SetCaptureFormatForTesting(EVAStreamFormat InFormat) { CaptureFormat = InFormat; }
 
 private:
-	// Forwards the chunks queued by the capture thread
+	// Forward the audio chunks queued on the capture thread
 	void FlushCapturedAudio();
 
 	TUniquePtr<Audio::FAudioCapture> Capture;
@@ -104,7 +104,7 @@ private:
 
 	TQueue<TArray<uint8>, EQueueMode::Spsc> CapturedChunks;
 
-	// Chunks queued but not yet forwarded, so the queue can't grow without bound if this actor stops ticking
+	// Number of queued audio chunks that aren't forwarded yet. If it exceeds MaxPendingChunks, it is ignored. This prevents memory leaks if this actor stops ticking
 	FThreadSafeCounter PendingChunkCount;
 
 	int64 ForwardedByteCount = 0;
